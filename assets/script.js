@@ -79,14 +79,14 @@ Promise.all([
   walletPadY: 35       // ← offset vertical supplémentaire (px), généralement 0
 },
 
-
+// --- Taille des objets qui tombent ---
     palette: ["#1a1c2c","#5d275d","#b13e53","#ef7d57","#ffcd75","#a7f070","#38b764","#257179"],
     render: { supersample: 1.5 // 1.5–2.0 est un bon sweet spot. Monte si ton device tient la perf
     },
     items: {
       scale: 1.8,        // taille finale (1.0 = taille d'origine)
-      spawnScale: 0.25,  // taille relative à l'apparition
-      growDistance: 220  // distance (px) avant d'atteindre la taille finale
+      spawnScale: 0.35,  // taille relative à l'apparition
+      growDistance: 240  // distance (px) avant d'atteindre la taille finale
     },
 
 	
@@ -468,11 +468,11 @@ this.x = clamp(this.x, -overflow, BASE_W - this.w + overflow);
   // Les objets spawnent près du bout des doigts (bord droit de l'image)
   spawnX(){ 
   // pointe des doigts, sans jitter
-  return clamp((this._x||0) + (this._drawW||90) - 130, 16, BASE_W - 16);
+  return clamp((this._x||0) + (this._drawW||90) - 133, 16, BASE_W - 16);
 }
 spawnY(){ 
   // juste sous la main
-  return (this._y||0) + (this._drawH||48) - 105;
+  return (this._y||0) + (this._drawH||48) - 112;
 }
 
 }
