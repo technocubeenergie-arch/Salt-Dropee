@@ -1,1 +1,63 @@
 
+    /*
+    =============================================
+    Salt Droppee — Single-file build (index.html)
+    ---------------------------------------------
+    ▶ Mini-README
+      - Ce fichier contient TOUT (HTML/CSS/JS) pour lancer le jeu immédiatement.
+      - Ouvrir simplement index.html dans un navigateur moderne (mobile portrait recommandé).
+      - Mode portrait 9:16 verrouillé avec letterboxing. En paysage, un message s'affiche.
+      - Intégration Telegram WebApp: activée automatiquement si window.Telegram?.WebApp est présent.
+        * Le bouton "Partager" en fin de partie enverra { score, duration, version } via sendData().
+      - Config globale dans CONFIG (voir game.js embarqué en bas du fichier).
+      - Assets audio/visuels : rendu lissé HD (formes arrondies/ombres douces) ou via PNG.
+        Pour vos PNG:
+          • Déposez vos images dans assets/ et remplacez les draw* par drawImage (lissage activé).
+          • Conservez la cap de hauteur (≤20%) pour bras & portefeuille.
+      - SFX: Mini bip générés via WebAudio. Remplaçables par WAV/OGG courts dans assets/.
+
+    ▶ Clés localStorage
+      - sd_bestScore, sd_bestCombo, sd_settings (json), sd_runs (tableau des dernières parties).
+
+    ▶ Tests & QA rapides
+      - Vérifier en jeu: bras & portefeuille ≤ 20% hauteur, spawn depuis la main (≤20%), fonds changent aux seuils.
+      - Timer 75 s, vies=3, fin affiche le score + record local + combo max + niveau atteint.
+    =============================================
+    */
+
+    :root {
+      --bg: #0d0f1a; /* hors zone (letterbox) */
+      --ui: #ffcd75; /* texte UI principal */
+      --ui2: #a7f070; /* accents */
+      --danger: #b13e53;
+      --ok: #38b764;
+      --ink: #1a1c2c;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; background: var(--bg); color: var(--ui); font-family: monospace; }
+
+    /* Wrapper pour centrer le canvas et gérer le letterboxing */
+    .wrap {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;   /* centre horizontal + vertical */
+  width: 100vw;          /* optionnel, explicite */
+  height: 100vh;         /* optionnel, explicite */
+}
+
+    canvas { background: #111; display:block; }
+
+    /* Overlay messages (titre, pause, fin) */
+    .overlay { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
+    .panel { pointer-events: auto; background: rgba(0,0,0,0.7); border: 2px solid var(--ui); padding: 12px 16px; min-width: 260px; text-align: center; }
+    .panel h1 { margin: 0 0 8px; font-size: 18px; letter-spacing: 1px; }
+    .panel p { margin: 6px 0; }
+    .btnrow { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 10px; }
+    button { font-family: inherit; font-size: 14px; letter-spacing: 0.5px; padding: 8px 10px; border-radius: 6px; border: 2px solid var(--ui); background: transparent; color: var(--ui); cursor: pointer; }
+    button:hover { filter: brightness(1.2); }
+
+
+    .contrast-high { --ui: #ffffff; --ui2: #00ffea; --bg: #000000; --danger:#ff0044; --ok:#00ff66; --ink:#000000; }
+  
