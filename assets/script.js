@@ -150,6 +150,7 @@ Promise.all(handFrames.map(({ key, src }) => {
   // Scaling & viewport management
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
+  const overlay = document.getElementById('overlay');
 
   // HD + Supersampling (Option B)
 let DPR = Math.max(1, window.devicePixelRatio || 1);
@@ -1092,9 +1093,6 @@ for (const it of this.items){
 
       document.getElementById('menu').onclick = ()=>{
   this.reset({ showTitle: true }); // retour au menu
-};
-document.getElementById('quit').onclick = ()=>{
-  this.reset({ showTitle: true });
 };
       if (TG){ document.getElementById('share').onclick = ()=>{ try{ TG.sendData(JSON.stringify({ score:this.score, duration:CONFIG.runSeconds, version:VERSION })); }catch(e){} }; }
     }
