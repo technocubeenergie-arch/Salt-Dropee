@@ -76,15 +76,6 @@ Promise.all(handFrames.map(({ key, src }) => {
 }).catch(err => {
   console.error(err);
 });
-=======
-Hand.open.src  = 'assets/main_open.png';
-Hand.close.src = 'assets/main_close.png';
-Hand.pinch.src = 'assets/main_pince.png';
-Promise.all([
-  new Promise(r => Hand.open.onload = r),
-  new Promise(r => Hand.close.onload = r),
-  new Promise(r => Hand.pinch.onload = r),
-]).then(()=> Hand.ready = true);
 
   const VERSION = '1.0.0';
 
@@ -408,6 +399,8 @@ this.x = clamp(this.x, -overflow, BASE_W - this.w + overflow);
     this.g = game;
     this.t = 0;             // timer d'anim (pincée)
     this.frame = 0;         // 0..2 (open/close/pinch)
+    this.frameDuration = 0.1; // durée d'une frame d'animation
+    this.frameDir = 1;        // sens de lecture de l'animation
     this.handX = BASE_W/2;  // position horizontale de la main
     this.spriteHCapPx = 0;
 
@@ -432,7 +425,18 @@ this.x = clamp(this.x, -overflow, BASE_W - this.w + overflow);
   update(dt){
     // Animation 3 frames
     this.t += dt;
-    if (this.t > 0.2){ this.t = 0; this.frame = (this.frame + 1) % 3; }
+    while (this.t >= this.frameDuration){
+      this.t -= this.frameDuration;
+      this.frame += this.frameDir;
+
+      if (this.frame >= 2){
+        this.frame = 2;
+        this.frameDir = -1;
+      } else if (this.frame <= 0){
+        this.frame = 0;
+        this.frameDir = 1;
+      }
+    }
 
     // Re-ciblage horizontal
     this.retarget -= dt;
