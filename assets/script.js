@@ -81,9 +81,13 @@ Promise.all([
 
 
     palette: ["#1a1c2c","#5d275d","#b13e53","#ef7d57","#ffcd75","#a7f070","#38b764","#257179"],
-	 render: { supersample: 1.5 // 1.5–2.0 est un bon sweet spot. Monte si ton device tient la perf 
-	 },
-	 items: { scale: 1.8 }, // 1.0 = taille actuelle ; monte à 1.3–1.8 pour plus gros
+    render: { supersample: 1.5 // 1.5–2.0 est un bon sweet spot. Monte si ton device tient la perf
+    },
+    items: {
+      scale: 1.8,        // taille finale (1.0 = taille d'origine)
+      spawnScale: 0.55,  // taille relative à l'apparition
+      growDistance: 220  // distance (px) avant d'atteindre la taille finale
+    },
 
 	
   };
@@ -485,23 +489,37 @@ spawnY(){
     this.vx = rand(-20, 20);
     this.vy = rand(10, 40);
 
-    // tailles de base
-    this.w = 14; 
-    this.h = 14;
+    // tailles de base (taille finale visée)
+    this.baseW = 14;
+    this.baseH = 14;
 
     // overrides par sous-type
     if (this.kind === 'good') {
-      if (this.subtype === 'bronze')  { this.w = 18; this.h = 18; }
-      if (this.subtype === 'silver')  { this.w = 18; this.h = 18; }
-      if (this.subtype === 'gold')    { this.w = 18; this.h = 18; }
-      if (this.subtype === 'diamond') { this.w = 18; this.h = 18; }
+      if (this.subtype === 'bronze')  { this.baseW = 18; this.baseH = 18; }
+      if (this.subtype === 'silver')  { this.baseW = 18; this.baseH = 18; }
+      if (this.subtype === 'gold')    { this.baseW = 18; this.baseH = 18; }
+      if (this.subtype === 'diamond') { this.baseW = 18; this.baseH = 18; }
     }
-    if (this.subtype === 'bomb') { this.w = 18; this.h = 18; }
+    if (this.subtype === 'bomb') { this.baseW = 18; this.baseH = 18; }
 
-    // ⚠️ pas d'optional chaining ici
-    const S = (CONFIG.items && CONFIG.items.scale) ? CONFIG.items.scale : 1;
-    this.w *= S;
-    this.h *= S;
+    const itemCfg = CONFIG.items || {};
+    const finalScale = (itemCfg.scale != null) ? itemCfg.scale : 1;
+    this.baseW *= finalScale;
+    this.baseH *= finalScale;
+
+    const baseCenterX = this.x + this.baseW / 2;
+    const baseCenterY = this.y + this.baseH / 2;
+
+    this.spawnScale = (itemCfg.spawnScale != null) ? itemCfg.spawnScale : 1;
+    this.targetScale = 1;
+    this.growthDistance = (itemCfg.growDistance != null) ? itemCfg.growDistance : (BASE_H * 0.5);
+    this.scale = this.spawnScale;
+
+    this.w = this.baseW * this.scale;
+    this.h = this.baseH * this.scale;
+    this.x = baseCenterX - this.w / 2;
+    this.y = baseCenterY - this.h / 2;
+    this.spawnCenterY = baseCenterY;
 
     this.dead = false;
     this.spin = rand(-3, 3);
@@ -528,6 +546,20 @@ spawnY(){
       const dx = wx - (this.x+this.w/2);
       this.vx += clamp(dx*2, -140, 140)*dt;
     }
+
+    const centerX = this.x + this.w/2;
+    const centerY = this.y + this.h/2;
+    const growDist = Math.max(1, this.growthDistance);
+    const fallen = centerY - this.spawnCenterY;
+    const progress = clamp(fallen / growDist, 0, 1);
+    const eased = 1 - Math.pow(1 - progress, 2); // easeOutQuad
+    this.scale = lerp(this.spawnScale, this.targetScale, eased);
+
+    this.w = this.baseW * this.scale;
+    this.h = this.baseH * this.scale;
+    this.x = centerX - this.w/2;
+    this.y = centerY - this.h/2;
+
     if (this.y > BASE_H+50) this.dead=true;
   }
 
