@@ -42,17 +42,54 @@ const Hand = {
   pinch: new Image(),
   ready: false
 };
+
+
+
+const handFrames = [
+  { key: 'open',  src: 'assets/main_open.png' },
+  { key: 'close', src: 'assets/main_close.png' },
+  { key: 'pinch', src: 'assets/main_pince.png' },
+];
+
+Promise.all(handFrames.map(({ key, src }) => {
+  const img = Hand[key];
+  return new Promise((resolve, reject) => {
+    let done = false;
+    const finish = () => {
+      if (!done) {
+        done = true;
+        resolve();
+      }
+    };
+    img.onload = finish;
+    img.onerror = () => {
+      if (!done) {
+        done = true;
+        reject(new Error(`Failed to load hand frame: ${src}`));
+      }
+    };
+    img.src = src;
+    if (img.complete && img.naturalWidth > 0) finish();
+  });
+})).then(() => {
+  Hand.ready = true;
+}).catch(err => {
+  console.error(err);
+});
+
+=======
 Hand.open.src  = 'assets/main_open.png';
 Hand.pinch.src = 'assets/main_pince.png';
 Promise.all([
   new Promise(r => Hand.open.onload = r),
   new Promise(r => Hand.pinch.onload = r),
 ]).then(()=> Hand.ready = true);
+
   const VERSION = '1.0.0';
 
   const CONFIG = {
     portraitBase: { w: 360, h: 640 }, // 9:16
-    maxTopActorH: 0.20, // Bras cap 20%
+    maxTopActorH: 0.95, // Bras cap 95% (presque toute la hauteur)
     maxWalletH: 0.20,   // Portefeuille cap 20%
 
     runSeconds: 75,
@@ -81,9 +118,13 @@ Promise.all([
 
 
     palette: ["#1a1c2c","#5d275d","#b13e53","#ef7d57","#ffcd75","#a7f070","#38b764","#257179"],
-	 render: { supersample: 1.5 // 1.5–2.0 est un bon sweet spot. Monte si ton device tient la perf 
-	 },
-	 items: { scale: 1.8 }, // 1.0 = taille actuelle ; monte à 1.3–1.8 pour plus gros
+         render: { supersample: 1.5 // 1.5–2.0 est un bon sweet spot. Monte si ton device tient la perf
+         },
+         items: {
+           scale: 1.8,       // taille finale quand l'objet a fini de grossir
+           spawnScale: 0.35, // taille relative au spawn (0.35 = 35 %)
+           growSpeed: 6      // vitesse de grossissement (échelle par seconde)
+         },
 
 	
   };
@@ -121,6 +162,7 @@ Promise.all([
   // Scaling & viewport management
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
+  const overlay = document.getElementById('overlay');
 
   // HD + Supersampling (Option B)
 let DPR = Math.max(1, window.devicePixelRatio || 1);
@@ -369,7 +411,15 @@ this.x = clamp(this.x, -overflow, BASE_W - this.w + overflow);
   constructor(game){
     this.g = game;
     this.t = 0;             // timer d'anim (pincée)
+    this.frame = 0;         // 0..2 (open/close/pinch)
+    const animCfg = CONFIG.arm?.animation || CONFIG.arm || {};
+    const fd = typeof animCfg.frameDuration === 'number' ? animCfg.frameDuration : 0.1;
+    this.frameDuration = Math.max(0.016, fd); // durée d'une frame d'animation
+    this.frameDir = 1;        // sens de lecture de l'animation
+    this.maxFrameIndex = Math.max(0, handFrames.length - 1); // borne supérieure pour le ping-pong
+=======
     this.frame = 0;         // 0..1 (open/pinch)
+
     this.handX = BASE_W/2;  // position horizontale de la main
     this.spriteHCapPx = 0;
 
@@ -388,13 +438,32 @@ this.x = clamp(this.x, -overflow, BASE_W - this.w + overflow);
 
   applyCaps(){
     const maxH = Math.floor(BASE_H * CONFIG.maxTopActorH);
+
+    this.h = Math.min(Math.floor(BASE_H * 0.9), maxH); // ≈90% de la hauteur
+=======
     this.h = Math.min(Math.floor(BASE_H * 0.19), maxH); // ≤20%
+
   }
 
   update(dt){
     // Animation 2 frames
     this.t += dt;
+
+    while (this.t >= this.frameDuration){
+      this.t -= this.frameDuration;
+      this.frame += this.frameDir;
+
+      if (this.frame >= this.maxFrameIndex){
+        this.frame = this.maxFrameIndex;
+        this.frameDir = -1;
+      } else if (this.frame <= 0){
+        this.frame = 0;
+        this.frameDir = 1;
+      }
+    }
+=======
     if (this.t > 0.2){ this.t = 0; this.frame = (this.frame + 1) % 2; }
+
 
     // Re-ciblage horizontal
     this.retarget -= dt;
@@ -425,7 +494,11 @@ this.x = clamp(this.x, -overflow, BASE_W - this.w + overflow);
   draw(g){
     const maxH = Math.floor(BASE_H * CONFIG.maxTopActorH);
     const targetH = Math.min(this.h, maxH);  // hauteur disponible (zone "bras")
+
+    const y = 0;                              // collé au bandeau
+=======
     const y = 13;                              // léger padding haut
+
 
     // Sélection de frame
     const img = (this.frame === 0 ? Hand.open : Hand.pinch);
@@ -485,28 +558,40 @@ spawnY(){
     this.vx = rand(-20, 20);
     this.vy = rand(10, 40);
 
-    // tailles de base
-    this.w = 14; 
-    this.h = 14;
+    // tailles de base (pleine taille)
+    this.baseW = 14;
+    this.baseH = 14;
 
     // overrides par sous-type
     if (this.kind === 'good') {
-      if (this.subtype === 'bronze')  { this.w = 18; this.h = 18; }
-      if (this.subtype === 'silver')  { this.w = 18; this.h = 18; }
-      if (this.subtype === 'gold')    { this.w = 18; this.h = 18; }
-      if (this.subtype === 'diamond') { this.w = 18; this.h = 18; }
+      if (this.subtype === 'bronze')  { this.baseW = 18; this.baseH = 18; }
+      if (this.subtype === 'silver')  { this.baseW = 18; this.baseH = 18; }
+      if (this.subtype === 'gold')    { this.baseW = 18; this.baseH = 18; }
+      if (this.subtype === 'diamond') { this.baseW = 18; this.baseH = 18; }
     }
-    if (this.subtype === 'bomb') { this.w = 18; this.h = 18; }
+    if (this.subtype === 'bomb') { this.baseW = 18; this.baseH = 18; }
 
-    // ⚠️ pas d'optional chaining ici
-    const S = (CONFIG.items && CONFIG.items.scale) ? CONFIG.items.scale : 1;
-    this.w *= S;
-    this.h *= S;
+    const itemCfg = CONFIG.items || {};
+    const finalScale = ('scale' in itemCfg) ? itemCfg.scale : 1;
+    this.baseW *= finalScale;
+    this.baseH *= finalScale;
+
+    const spawnScale = clamp(('spawnScale' in itemCfg) ? itemCfg.spawnScale : 0.35, 0.05, 1);
+    this.targetScale = 1;
+    this.growSpeed = ('growSpeed' in itemCfg) ? itemCfg.growSpeed : 6;
+    this.scale = spawnScale;
 
     this.dead = false;
     this.spin = rand(-3, 3);
     this.magnet = false;
     this.t = 0;
+
+    this.cx = x + this.baseW / 2;
+    this.cy = y + this.baseH / 2;
+    this.w = this.baseW * this.scale;
+    this.h = this.baseH * this.scale;
+    this.x = this.cx - this.w / 2;
+    this.y = this.cy - this.h / 2;
   }
 
   baseGravity(){
@@ -518,17 +603,33 @@ spawnY(){
 
 
   update(dt){
-    this.t+=dt;
+    this.t += dt;
+
+    if (this.scale < this.targetScale){
+      const next = this.scale + this.growSpeed * dt;
+      this.scale = next > this.targetScale ? this.targetScale : next;
+    }
+
     this.vy += this.baseGravity()*dt*(1 + (this.g.timeElapsed/60)*0.2);
-    this.x += this.vx*dt;
-    this.y += this.vy*dt;
+    this.cx += this.vx*dt;
+    this.cy += this.vy*dt;
 
     if (this.g.effects.magnet>0 && this.kind==='good'){
       const wx = this.g.wallet.x + this.g.wallet.w/2;
-      const dx = wx - (this.x+this.w/2);
+      const dx = wx - this.cx;
       this.vx += clamp(dx*2, -140, 140)*dt;
     }
+
+    this.syncPos();
+
     if (this.y > BASE_H+50) this.dead=true;
+  }
+
+  syncPos(){
+    this.w = this.baseW * this.scale;
+    this.h = this.baseH * this.scale;
+    this.x = this.cx - this.w/2;
+    this.y = this.cy - this.h/2;
   }
 
   draw(g){
@@ -538,89 +639,65 @@ spawnY(){
     g.shadowColor = 'rgba(0,0,0,0.15)';
     g.shadowBlur = 4;
     g.shadowOffsetY = 1;
-	
-// avant de dessiner une image (gold / bomb)
-const ix = snap(x), iy = snap(y), iw = snap(w), ih = snap(h);
-const prev = g.imageSmoothingEnabled;
-g.imageSmoothingEnabled = false;       // ← pas de rééchantillonnage
-g.drawImage(GoldImg, ix, iy, iw, ih);  // ou BombImg
-g.imageSmoothingEnabled = prev;
 
-   
-if (this.kind === 'good') {
+    const drawSprite = (img, pad = 0) => {
+      const ix = snap(x - pad), iy = snap(y - pad);
+      const iw = snap(w + pad*2), ih = snap(h + pad*2);
+      const prev = g.imageSmoothingEnabled;
+      g.imageSmoothingEnabled = false;
+      g.drawImage(img, ix, iy, iw, ih);
+      g.imageSmoothingEnabled = prev;
+    };
 
-  // GOLD en priorité : si l'image est prête → on la dessine et on sort
-  
-  if (this.subtype === 'bronze' && bronzeReady) {
-    g.drawImage(BronzeImg, x, y, w, h);
-    g.restore();
-    return;
-  }  
-  
-  if (this.subtype === 'silver' && silverReady) {
-    g.drawImage(SilverImg, x, y, w, h);
-    g.restore();
-    return;
-  }  
-  
-  if (this.subtype === 'gold' && goldReady) {
-    g.drawImage(GoldImg, x, y, w, h);
-    g.restore();
-    return;
-  }
+    if (this.kind === 'good') {
+      let sprite = null;
+      if (this.subtype === 'bronze'  && bronzeReady)  sprite = BronzeImg;
+      else if (this.subtype === 'silver'  && silverReady)  sprite = SilverImg;
+      else if (this.subtype === 'gold'    && goldReady)    sprite = GoldImg;
+      else if (this.subtype === 'diamond' && diamondReady) sprite = DiamondImg;
 
-if (this.subtype === 'diamond' && diamondReady) {
-    g.drawImage(DiamondImg, x, y, w, h);
-    g.restore();
-    return;
-  }
+      if (sprite) {
+        drawSprite(sprite);
+        g.restore();
+        return;
+      }
 
-  // Fallback (ou autres sous-types bronze/silver/diamond)
-  let base = '#ffcd75';
-  if (this.subtype === 'bronze')  base = '#c07a45';
-  else if (this.subtype === 'silver')  base = '#cfd6e6';
-  else if (this.subtype === 'gold')    base = '#f2c14e'; // si l'image pas prête
-  else if (this.subtype === 'diamond') base = '#a8e6ff';
+      // Fallback (ou autres sous-types bronze/silver/diamond)
+      let base = '#ffcd75';
+      if (this.subtype === 'bronze')  base = '#c07a45';
+      else if (this.subtype === 'silver')  base = '#cfd6e6';
+      else if (this.subtype === 'gold')    base = '#f2c14e';
+      else if (this.subtype === 'diamond') base = '#a8e6ff';
 
-  const r = Math.min(w,h)/2;
-  g.fillStyle = base;
-  g.beginPath(); g.arc(x + w/2, y + h/2, r, 0, Math.PI*2); g.fill();
+      const r = Math.min(w,h)/2;
+      g.fillStyle = base;
+      g.beginPath(); g.arc(x + w/2, y + h/2, r, 0, Math.PI*2); g.fill();
 
-  const grad = g.createRadialGradient(x+w/2-2, y+h/2-2, 1, x+w/2, y+h/2, r);
-  grad.addColorStop(0, 'rgba(255,255,255,0.8)');
-  grad.addColorStop(0.4, 'rgba(255,255,255,0.0)');
-  grad.addColorStop(1, 'rgba(0,0,0,0.0)');
-  g.fillStyle = grad;
-  g.beginPath(); g.arc(x + w/2, y + h/2, r, 0, Math.PI*2); g.fill();
+      const grad = g.createRadialGradient(x+w/2-2, y+h/2-2, 1, x+w/2, y+h/2, r);
+      grad.addColorStop(0, 'rgba(255,255,255,0.8)');
+      grad.addColorStop(0.4, 'rgba(255,255,255,0.0)');
+      grad.addColorStop(1, 'rgba(0,0,0,0.0)');
+      g.fillStyle = grad;
+      g.beginPath(); g.arc(x + w/2, y + h/2, r, 0, Math.PI*2); g.fill();
 
-  g.restore();
-  return;
-
+      g.restore();
+      return;
 
 
     } else if (this.kind==='bad'){
-      // ✅ toute la logique des "bad" RESTE dans ce bloc
       if (this.subtype==='bomb'){
         if (bombReady){
-  const pad = 1;
-  const ix = snap(x - pad), iy = snap(y - pad);
-  const iw = snap(w + pad*2), ih = snap(h + pad*2);
-  const prev = g.imageSmoothingEnabled;
-  g.imageSmoothingEnabled = false;
-  g.drawImage(BombImg, ix, iy, iw, ih);
-  g.imageSmoothingEnabled = prev;
-} else {
+          drawSprite(BombImg, 1);
+        } else {
           // fallback vectoriel si l'image n'est pas encore chargée
           g.fillStyle = '#3b3b3b';
           g.beginPath(); g.arc(x+w/2, y+h/2, Math.min(w,h)/2, 0, Math.PI*2); g.fill();
           g.fillStyle = '#f4a261';
           g.fillRect(x+w/2+2, y-2, 3, 8);
         }
-
       } else if (this.subtype==='shitcoin'){
         g.fillStyle = '#8a6b3a';
         g.beginPath(); g.arc(x+w/2, y+h/2, Math.min(w,h)/2, 0, Math.PI*2); g.fill();
-
       } else if (this.subtype==='anvil'){
         g.fillStyle = '#60656f';
         g.beginPath();
@@ -630,17 +707,18 @@ if (this.subtype === 'diamond' && diamondReady) {
         g.lineTo(x+w*0.3, y+h*0.4);
         g.closePath();
         g.fill();
-
       } else if (this.subtype==='rugpull'){
         g.fillStyle = '#4a3d7a';
         g.beginPath(); g.ellipse(x+w/2, y+h/2, w/2, h/2, 0, 0, Math.PI*2); g.fill();
-
       } else if (this.subtype==='fakeAirdrop'){
         g.fillStyle = '#6b7cff';
         g.beginPath(); g.ellipse(x+w/2, y+h/2, w/2, h/2, 0, 0, Math.PI*2); g.fill();
         g.fillStyle = '#ffffff';
         g.fillRect(x+w/2-3, y+h/2-3, 6, 6);
       }
+
+      g.restore();
+      return;
 
     } else {
       // powerups
@@ -657,6 +735,9 @@ if (this.subtype === 'diamond' && diamondReady) {
       else if (this.subtype==='x2'){ cap('#00d1ff'); g.fillStyle='#fff'; g.fillRect(x+w/2-4, y+h/2-4, 8, 8); }
       else if (this.subtype==='shield'){ cap('#66a6ff'); }
       else if (this.subtype==='timeShard'){ cap('#9ff'); }
+
+      g.restore();
+      return;
     }
 
     g.restore();
@@ -1049,9 +1130,6 @@ for (const it of this.items){
 
       document.getElementById('menu').onclick = ()=>{
   this.reset({ showTitle: true }); // retour au menu
-};
-document.getElementById('quit').onclick = ()=>{
-  this.reset({ showTitle: true });
 };
       if (TG){ document.getElementById('share').onclick = ()=>{ try{ TG.sendData(JSON.stringify({ score:this.score, duration:CONFIG.runSeconds, version:VERSION })); }catch(e){} }; }
     }
