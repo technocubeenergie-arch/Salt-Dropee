@@ -76,15 +76,6 @@ Promise.all(handFrames.map(({ key, src }) => {
 }).catch(err => {
   console.error(err);
 });
-=======
-Hand.open.src  = 'assets/main_open.png';
-Hand.close.src = 'assets/main_close.png';
-Hand.pinch.src = 'assets/main_pince.png';
-Promise.all([
-  new Promise(r => Hand.open.onload = r),
-  new Promise(r => Hand.close.onload = r),
-  new Promise(r => Hand.pinch.onload = r),
-]).then(()=> Hand.ready = true);
 
   const VERSION = '1.0.0';
 
