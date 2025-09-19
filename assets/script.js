@@ -36,47 +36,18 @@ BombImg.onload = ()=> bombReady = true;
 BombImg.src = 'assets/bombe.png';
 
 
-// --- PNG de la main (3 frames) ---
+// --- PNG de la main (2 frames) ---
 const Hand = {
   open: new Image(),
-  close: new Image(),
   pinch: new Image(),
-  ready: false,
+  ready: false
 };
-
-
-const handFrames = [
-  { key: 'open',  src: 'assets/main_open.png' },
-  { key: 'close', src: 'assets/main_close.png' },
-  { key: 'pinch', src: 'assets/main_pince.png' },
-];
-
-Promise.all(handFrames.map(({ key, src }) => {
-  const img = Hand[key];
-  return new Promise((resolve, reject) => {
-    let done = false;
-    const finish = () => {
-      if (!done) {
-        done = true;
-        resolve();
-      }
-    };
-    img.onload = finish;
-    img.onerror = () => {
-      if (!done) {
-        done = true;
-        reject(new Error(`Failed to load hand frame: ${src}`));
-      }
-    };
-    img.src = src;
-    if (img.complete && img.naturalWidth > 0) finish();
-  });
-})).then(() => {
-  Hand.ready = true;
-}).catch(err => {
-  console.error(err);
-});
-
+Hand.open.src  = 'assets/main_open.png';
+Hand.pinch.src = 'assets/main_pince.png';
+Promise.all([
+  new Promise(r => Hand.open.onload = r),
+  new Promise(r => Hand.pinch.onload = r),
+]).then(()=> Hand.ready = true);
   const VERSION = '1.0.0';
 
   const CONFIG = {
@@ -150,7 +121,6 @@ Promise.all(handFrames.map(({ key, src }) => {
   // Scaling & viewport management
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
-  const overlay = document.getElementById('overlay');
 
   // HD + Supersampling (Option B)
 let DPR = Math.max(1, window.devicePixelRatio || 1);
@@ -399,9 +369,7 @@ this.x = clamp(this.x, -overflow, BASE_W - this.w + overflow);
   constructor(game){
     this.g = game;
     this.t = 0;             // timer d'anim (pincée)
-    this.frame = 0;         // 0..2 (open/close/pinch)
-    this.frameDuration = 0.2; // durée d'une frame d'animation
-    this.frameDir = 1;        // sens de lecture de l'animation
+    this.frame = 0;         // 0..1 (open/pinch)
     this.handX = BASE_W/2;  // position horizontale de la main
     this.spriteHCapPx = 0;
 
@@ -424,20 +392,9 @@ this.x = clamp(this.x, -overflow, BASE_W - this.w + overflow);
   }
 
   update(dt){
-    // Animation 3 frames
+    // Animation 2 frames
     this.t += dt;
-    while (this.t >= this.frameDuration){
-      this.t -= this.frameDuration;
-      this.frame += this.frameDir;
-
-      if (this.frame >= 2){
-        this.frame = 2;
-        this.frameDir = -1;
-      } else if (this.frame <= 0){
-        this.frame = 0;
-        this.frameDir = 1;
-      }
-    }
+    if (this.t > 0.2){ this.t = 0; this.frame = (this.frame + 1) % 2; }
 
     // Re-ciblage horizontal
     this.retarget -= dt;
@@ -471,8 +428,7 @@ this.x = clamp(this.x, -overflow, BASE_W - this.w + overflow);
     const y = 6;                              // léger padding haut
 
     // Sélection de frame
-    const frames = [Hand.open, Hand.close, Hand.pinch];
-    const img = frames[this.frame] || Hand.open;
+    const img = (this.frame === 0 ? Hand.open : Hand.pinch);
 
     // Si les images ne sont pas encore prêtes, on ne dessine rien (ou un placeholder)
     if (!Hand.ready || !img || !(img.naturalWidth > 0)) {
@@ -1093,6 +1049,9 @@ for (const it of this.items){
 
       document.getElementById('menu').onclick = ()=>{
   this.reset({ showTitle: true }); // retour au menu
+};
+document.getElementById('quit').onclick = ()=>{
+  this.reset({ showTitle: true });
 };
       if (TG){ document.getElementById('share').onclick = ()=>{ try{ TG.sendData(JSON.stringify({ score:this.score, duration:CONFIG.runSeconds, version:VERSION })); }catch(e){} }; }
     }
