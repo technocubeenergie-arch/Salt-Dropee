@@ -85,7 +85,7 @@ Promise.all([
     },
     items: {
       scale: 1.8,        // taille finale (1.0 = taille d'origine)
-      spawnScale: 0.55,  // taille relative à l'apparition
+      spawnScale: 0.25,  // taille relative à l'apparition
       growDistance: 220  // distance (px) avant d'atteindre la taille finale
     },
 
