@@ -9,31 +9,36 @@
 const BronzeImg = new Image();
 let bronzeReady = false;
 BronzeImg.onload = ()=> bronzeReady = true;
-BronzeImg.src = 'assets/bronze.png';  
+BronzeImg.src = 'assets/bronze.png';
+BronzeImg.decode?.().catch(()=>{});
 
 // --- PNG pour l'argent ---
 const SilverImg = new Image();
 let silverReady = false;
 SilverImg.onload = ()=> silverReady = true;
 SilverImg.src = 'assets/silver.png';
+SilverImg.decode?.().catch(()=>{});
   
 // --- PNG pour l'or ---
 const GoldImg = new Image();
 let goldReady = false;
 GoldImg.onload = ()=> goldReady = true;
 GoldImg.src = 'assets/gold.png';
+GoldImg.decode?.().catch(()=>{});
 
 // --- PNG pour le diamant ---
 const DiamondImg = new Image();
 let diamondReady = false;
 DiamondImg.onload = ()=> diamondReady = true;
 DiamondImg.src = 'assets/diamond.png';
+DiamondImg.decode?.().catch(()=>{});
 
 // --- PNG de la bombe ---
 const BombImg = new Image();
 let bombReady = false;
 BombImg.onload = ()=> bombReady = true;
 BombImg.src = 'assets/bombe.png';
+BombImg.decode?.().catch(()=>{});
 
 
 // --- PNG de la main (2 frames) ---
@@ -264,6 +269,7 @@ if ('imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality = 'high';
 // === Chargement de l'image du portefeuille ===
 const walletImg = new Image();
 walletImg.src = 'assets/wallet1.png';
+walletImg.decode?.().catch(()=>{});
 
   // Wallet (coffre lissé)
   class Wallet{
@@ -830,6 +836,7 @@ spawnY(){
       this.effects = { magnet:0, x2:0, shield:0, freeze:0 };
       this.shake=0;
       this.bgIndex = 0;
+      this.didFirstCatch = false;
       this.updateBgByScore();
 
       console.log('[STATE] reset -> title');
@@ -935,7 +942,8 @@ for (const it of this.items){
 
     this.fx.burst(it.x,it.y,'#a7f070', 6);
     this.audio.good();
-    if (this.settings.haptics) haptic(8);
+    if (this.settings.haptics && this.didFirstCatch) haptic(8);
+    this.didFirstCatch = true;
 
   } else if (it.kind === 'bad'){
     // gros rebond "ouch"
