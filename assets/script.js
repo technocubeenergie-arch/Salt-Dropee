@@ -205,7 +205,14 @@ if ('imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality = 'high';
     if (e.code === 'ArrowLeft' || e.code === 'KeyA') input.left = true;
     if (e.code === 'ArrowRight' || e.code === 'KeyD') input.right = true;
     if (e.code === 'Space') input.dash = true;
-    if (e.code === 'Enter') Game.instance?.uiStartFromTitle();
+    if (e.code === 'Enter'){
+      const g = Game.instance;
+      if (g && g.state==='title'){
+        g.audio.init().then(()=>{
+          requestAnimationFrame(()=> g.uiStartFromTitle());
+        });
+      }
+    }
   });
   window.addEventListener('keyup', e=>{
     if (e.code === 'ArrowLeft' || e.code === 'KeyA') input.left = false;
@@ -233,38 +240,99 @@ if ('imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality = 'high';
   function saveSettings(s){ try{ localStorage.setItem(LS.settings, JSON.stringify(s)); }catch(e){} }
 
   // Simple Audio (WebAudio beeps)
-  class AudioSys{
-    constructor(){ this.ctx = null; this.enabled = true; }
-    ensure(){ if (!this.ctx) this.ctx = new (window.AudioContext||window.webkitAudioContext)(); }
-
-    beepVol(freq=440, ms=60, type='square', vol=0.02){
-      if (!this.enabled) return; this.ensure();
-      const t = this.ctx.currentTime;
-      const o = this.ctx.createOscillator();
-      const g = this.ctx.createGain();
-      o.type = type; o.frequency.value = freq;
-      g.gain.value = vol;
-      o.connect(g); g.connect(this.ctx.destination);
-      o.start(t); o.stop(t + ms/1000);
-    }
-
-    beep(freq=440, ms=80, type='square', vol=0.02){ this.beepVol(freq, ms, type, vol); }
-    good(){ this.beepVol(660,60,'square',0.03); }
-    bad(){  this.beepVol(140,120,'square',0.04); }
-    pow(){  this.beepVol(880,90,'triangle',0.035); }
-    up(){   this.beepVol(520,80,'square',0.03); }
-
-    async warmup(){
-      try{
-        this.ensure();
-        await this.ctx.resume();
-
-        this.beepVol(660, 20, 'square',   0.001);
-        this.beepVol(140, 20, 'square',   0.001);
-        this.beepVol(880, 20, 'triangle', 0.001);
-      }catch(_){ }
-    }
+// Audio “sans freeze” : buffers pré-rendus + master gain
+class AudioSys {
+  constructor(){
+    this.ctx = null;
+    this.master = null;
+    this.enabled = true;
+    this.buffers = {};   // { good, bad, pow, up }
+    this.ready = false;
   }
+
+  ensure(){
+    if (this.ctx) return;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    this.ctx = new AC();
+    this.master = this.ctx.createGain();
+    this.master.gain.value = this.enabled ? 0.9 : 0.0; // volume global
+    this.master.connect(this.ctx.destination);
+  }
+
+  setEnabled(v){
+    this.enabled = !!v;
+    if (this.master) this.master.gain.value = this.enabled ? 0.9 : 0.0;
+  }
+
+  // génère un AudioBuffer court (bip) une seule fois
+  _makeBeep({freq=660, ms=80, type='square', fade=0.004}){
+    const sr = this.ctx.sampleRate;
+    const len = Math.max(1, Math.floor(sr * (ms/1000)));
+    const buf = this.ctx.createBuffer(1, len, sr);
+    const data = buf.getChannelData(0);
+
+    // simple osc
+    let phase = 0;
+    const dp = 2*Math.PI*freq/sr;
+
+    for (let i=0;i<len;i++){
+      let s;
+      if (type === 'square'){
+        s = Math.sign(Math.sin(phase)) * 0.25;
+      } else if (type === 'triangle'){
+        s = (2/Math.PI) * Math.asin(Math.sin(phase)) * 0.25;
+      } else { // sine (fallback)
+        s = Math.sin(phase) * 0.25;
+      }
+      // micro fade-in/out pour éviter click
+      const t = i/len;
+      const env = Math.min(1, Math.min(t/fade, (1-t)/fade));
+      data[i] = s * env;
+      phase += dp;
+    }
+    return buf;
+  }
+
+  async init(){
+    this.ensure();
+    await this.ctx.resume().catch(()=>{});
+    if (this.ready) return;
+
+    // pré-rendu des 4 sons utilisés
+    this.buffers.good = this._makeBeep({freq:660,  ms:80,  type:'square'});
+    this.buffers.bad  = this._makeBeep({freq:140,  ms:120, type:'square'});
+    this.buffers.pow  = this._makeBeep({freq:880,  ms:90,  type:'triangle'});
+    this.buffers.up   = this._makeBeep({freq:520,  ms:80,  type:'square'});
+
+    // warmup “inaudible” : on joue chaque buffer avec gain ~0 pour amorcer les drivers
+    const g = this.ctx.createGain();
+    g.gain.value = 0.00001;
+    g.connect(this.master);
+    ['good','bad','pow','up'].forEach(k=>{
+      const s = this.ctx.createBufferSource();
+      s.buffer = this.buffers[k];
+      s.connect(g);
+      s.start();
+    });
+
+    this.ready = true;
+  }
+
+  _play(name){
+    if (!this.enabled || !this.ready) return;
+    const buf = this.buffers[name];
+    if (!buf) return;
+    const s = this.ctx.createBufferSource();
+    s.buffer = buf;
+    s.connect(this.master);
+    s.start();
+  }
+
+  good(){ this._play('good'); }
+  bad(){  this._play('bad');  }
+  pow(){  this._play('pow');  }
+  up(){   this._play('up');   }
+}
 
   // Particles (smooth dots)
   class ParticleSys{
@@ -332,7 +400,7 @@ walletImg.src = 'assets/wallet1.png';
   
 
     evolveByScore(score){ const th = CONFIG.evolveThresholds; let lvl = 1; for (let i=0;i<th.length;i++){ if (score>=th[i]) lvl = i+1; }
-      if (lvl!==this.level){ this.level=lvl; this.applyCaps(); this.g.fx.burst(this.x, this.y, '#ffcd75', 12); this.g.playSfx(()=> this.g.audio.up()); this.squashTimer=0.12; }
+      if (lvl!==this.level){ this.level=lvl; this.applyCaps(); this.g.fx.burst(this.x, this.y, '#ffcd75', 12); this.g.audio.up(); this.squashTimer=0.12; }
     }
     update(dt){ const sets = this.g.settings; const sens = sets.sensitivity||1.0;
       let targetVX = 0;
@@ -846,8 +914,8 @@ spawnY(){
       this.random = seed? seededRandom(parseInt(seed)||1): Math.random;
 
       this.state='title';
-      this.audio = new AudioSys(); this.audio.enabled = !!this.settings.sound;
-      this.skipFirstCatchSounds = 2;
+      this.audio = new AudioSys();
+      this.audio.setEnabled(!!this.settings.sound);
       this.fx = new ParticleSys();
 
       this.timeLeft = CONFIG.runSeconds; this.timeElapsed=0;
@@ -867,14 +935,6 @@ spawnY(){
       console.log('[STATE] reset -> title');
       //this.renderTitle();
 	  if (showTitle) this.renderTitle();
-    }
-
-    playSfx(fn){
-      if (this.skipFirstCatchSounds > 0){
-        this.skipFirstCatchSounds--;
-        return;
-      }
-      fn?.();
     }
 
     diffMult(){
@@ -962,7 +1022,7 @@ for (const it of this.items){
         let pts = CONFIG.score[it.subtype] || 0;
         if (this.effects.freeze>0){
           this.fx.burst(it.x,it.y,'#88a', 4);
-          this.playSfx(()=> this.audio.bad());
+          this.audio.bad();
           this.didFirstCatch = true;
           return;
         }
@@ -977,7 +1037,7 @@ for (const it of this.items){
         this.score += pts;
 
         this.fx.burst(it.x,it.y,'#a7f070', 6);
-        this.playSfx(()=> this.audio.good());
+        this.audio.good();
         if (this.settings.haptics && !firstCatch) haptic(8);
 
       } else if (it.kind === 'bad'){
@@ -995,7 +1055,7 @@ for (const it of this.items){
         if (this.effects.shield>0){
           this.effects.shield=0;
           this.fx.burst(it.x,it.y,'#66a6ff', 8);
-          this.playSfx(()=> this.audio.pow());
+          this.audio.pow();
           this.didFirstCatch = true;
           return;
         }
@@ -1007,32 +1067,32 @@ for (const it of this.items){
         if (it.subtype==='bomb'){
           this.lives -= 1;
           this.shake = 0.8;
-          this.playSfx(()=> this.audio.bad());
+          this.audio.bad();
           if (this.settings.haptics && !firstCatch) haptic(40);
         } else if (it.subtype==='shitcoin'){
           this.score += CONFIG.score.bad.shitcoin;
-          this.playSfx(()=> this.audio.bad());
+          this.audio.bad();
         } else if (it.subtype==='anvil'){
           this.score += CONFIG.score.bad.anvil;
           this.wallet.slowTimer = 2.0;
-          this.playSfx(()=> this.audio.bad());
+          this.audio.bad();
         } else if (it.subtype==='rugpull'){
           const delta = Math.floor(this.score * CONFIG.score.rugpullPct);
           this.score = Math.max(0, this.score + delta);
-          this.playSfx(()=> this.audio.bad());
+          this.audio.bad();
         } else if (it.subtype==='fakeAirdrop'){
           this.effects.freeze = 3.0;
-          this.playSfx(()=> this.audio.bad());
+          this.audio.bad();
         }
 
       } else if (it.kind === 'power'){
         // petit pulse horizontal
         this.wallet.bump(0.25, 'horizontal');
 
-        if (it.subtype==='magnet'){ this.effects.magnet = CONFIG.powerups.magnet; this.playSfx(()=> this.audio.pow()); }
-        else if (it.subtype==='x2'){ this.effects.x2 = CONFIG.powerups.x2; this.playSfx(()=> this.audio.pow()); }
-        else if (it.subtype==='shield'){ this.effects.shield = 1; this.playSfx(()=> this.audio.pow()); }
-        else if (it.subtype==='timeShard'){ this.timeLeft = Math.min(CONFIG.runSeconds, this.timeLeft + 5); this.playSfx(()=> this.audio.pow()); }
+        if (it.subtype==='magnet'){ this.effects.magnet = CONFIG.powerups.magnet; this.audio.pow(); }
+        else if (it.subtype==='x2'){ this.effects.x2 = CONFIG.powerups.x2; this.audio.pow(); }
+        else if (it.subtype==='shield'){ this.effects.shield = 1; this.audio.pow(); }
+        else if (it.subtype==='timeShard'){ this.timeLeft = Math.min(CONFIG.runSeconds, this.timeLeft + 5); this.audio.pow(); }
 
         this.fx.burst(it.x,it.y,'#ffcd75', 10);
       }
@@ -1075,11 +1135,8 @@ for (const it of this.items){
       document.getElementById('btnLB').onclick = ()=> this.renderLeaderboard();
       // Play: bloque la propagation pour éviter le clic fantôme sur le canvas
       document.getElementById('btnPlay').addEventListener('click', async (e)=>{
-        e.preventDefault();
-        e.stopPropagation();
-
-        // --- WARM-UP AUDIO
-        await this.audio.warmup();
+        e.preventDefault(); e.stopPropagation();
+        await this.audio.init();
         await new Promise(r=>requestAnimationFrame(r));
 
         // --- WARM-UP GRAPHICS (force la création des pipelines/shaders)
@@ -1113,7 +1170,7 @@ for (const it of this.items){
           <button id="back">Retour</button>
         </div>
       </div>`;
-      document.getElementById('sound').onchange = e=>{ this.settings.sound = e.target.checked; this.audio.enabled = this.settings.sound; saveSettings(this.settings); };
+      document.getElementById('sound').onchange = e=>{ this.settings.sound = e.target.checked; saveSettings(this.settings); this.audio.setEnabled(this.settings.sound); };
       document.getElementById('contrast').onchange = e=>{ this.settings.contrast = e.target.checked; saveSettings(this.settings); this.reset(); };
       document.getElementById('haptics').onchange = e=>{ this.settings.haptics = e.target.checked; saveSettings(this.settings); };
       document.getElementById('sens').oninput = e=>{ this.settings.sensitivity = parseFloat(e.target.value); saveSettings(this.settings); };
@@ -1160,11 +1217,13 @@ for (const it of this.items){
           ${TG? '<button id="share">Partager</button>': ''}
         </div>
       </div>`;
-      document.getElementById('again').onclick = ()=>{
-  overlay.innerHTML = '';
-  this.reset({ showTitle: false }); // ne pas réafficher l'écran titre
-  this.start();
-};
+      document.getElementById('again').onclick = async ()=>{
+        overlay.innerHTML = '';
+        this.reset({ showTitle: false }); // ne pas réafficher l'écran titre
+        await this.audio.init();
+        await new Promise(r=>requestAnimationFrame(r));
+        this.start();
+      };
 
       document.getElementById('menu').onclick = ()=>{
   this.reset({ showTitle: true }); // retour au menu
@@ -1261,10 +1320,12 @@ this.hud.draw(ctx);
   });
 
   // Sécurité: empêcher qu’un clic sur "Jouer" (overlay) se propage au canvas
-  document.addEventListener('click', (e)=>{
-    if (e.target && e.target.id==='btnPlay'){
+  document.addEventListener('click', async (e)=>{
+    if (e.target && e.target.id==='btnPlay' && game.state==='title'){
       e.preventDefault();
       e.stopPropagation();
+      await game.audio.init();
+      await new Promise(r=>requestAnimationFrame(r));
       game.uiStartFromTitle();
     }
   }, {capture:true});
