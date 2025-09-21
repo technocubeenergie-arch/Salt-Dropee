@@ -129,7 +129,11 @@ Promise.all([
       r ^= r + Math.imul(r ^ r >>> 7, 61 | r); return ((r ^ r >>> 14) >>> 0) / 4294967296; };
   }
 
-  function haptic(ms=15){ try{ if (window.navigator?.vibrate) navigator.vibrate(ms); }catch(e){} }
+  const isTouchDevice = (('ontouchstart' in window) || (navigator.maxTouchPoints > 0));
+  function haptic(ms=15){
+    if (!isTouchDevice) return;
+    try{ navigator.vibrate && navigator.vibrate(ms); }catch(e){}
+  }
 
   // Scaling & viewport management
   const canvas = document.getElementById('game');
@@ -233,30 +237,33 @@ if ('imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality = 'high';
     constructor(){ this.ctx = null; this.enabled = true; }
     ensure(){ if (!this.ctx) this.ctx = new (window.AudioContext||window.webkitAudioContext)(); }
 
+    beepVol(freq=440, ms=60, type='square', vol=0.02){
+      if (!this.enabled) return; this.ensure();
+      const t = this.ctx.currentTime;
+      const o = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      o.type = type; o.frequency.value = freq;
+      g.gain.value = vol;
+      o.connect(g); g.connect(this.ctx.destination);
+      o.start(t); o.stop(t + ms/1000);
+    }
+
+    beep(freq=440, ms=80, type='square', vol=0.02){ this.beepVol(freq, ms, type, vol); }
+    good(){ this.beepVol(660,60,'square',0.03); }
+    bad(){  this.beepVol(140,120,'square',0.04); }
+    pow(){  this.beepVol(880,90,'triangle',0.035); }
+    up(){   this.beepVol(520,80,'square',0.03); }
+
     async warmup(){
       try{
         this.ensure();
         await this.ctx.resume();
-        const t = this.ctx.currentTime;
-        const o = this.ctx.createOscillator();
-        const g = this.ctx.createGain();
-        g.gain.setValueAtTime(0.00001, t);
-        o.connect(g); g.connect(this.ctx.destination);
-        o.frequency.value = 1;
-        o.start(t); o.stop(t + 0.02);
+
+        this.beepVol(660, 20, 'square',   0.001);
+        this.beepVol(140, 20, 'square',   0.001);
+        this.beepVol(880, 20, 'triangle', 0.001);
       }catch(_){ }
     }
-
-    beep(freq=440, ms=80, type='square', vol=0.02){
-      if (!this.enabled) return; this.ensure();
-      const t = this.ctx.currentTime; const o = this.ctx.createOscillator(); const g = this.ctx.createGain();
-      o.type = type; o.frequency.value = freq; g.gain.value = vol; o.connect(g); g.connect(this.ctx.destination);
-      o.start(t); o.stop(t + ms/1000);
-    }
-    good(){ this.beep(660,60,'square',0.03); }
-    bad(){ this.beep(140,120,'square',0.04); }
-    pow(){ this.beep(880,90,'triangle',0.035); }
-    up(){ this.beep(520,80,'square',0.03); }
   }
 
   // Particles (smooth dots)
