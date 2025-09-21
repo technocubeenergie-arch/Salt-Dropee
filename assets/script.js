@@ -1032,6 +1032,23 @@ for (const it of this.items){
       document.getElementById('btnPlay').addEventListener('click', (e)=>{
         e.preventDefault();
         e.stopPropagation();
+        // --- WARM-UP AUDIO (débloque l'AudioContext sans lag plus tard)
+        try {
+          this.audio.ensure();
+          const t = this.audio.ctx.currentTime;
+          const o = this.audio.ctx.createOscillator();
+          const g = this.audio.ctx.createGain();
+          g.gain.setValueAtTime(0.0001, t);
+          o.connect(g);
+          g.connect(this.audio.ctx.destination);
+          o.frequency.value = 1;
+          o.start(t);
+          o.stop(t + 0.01);
+        } catch (_) {}
+
+        // (optionnel) warm-up haptics sur mobile (valeur 0 = ignorée mais “réveille” parfois l’API)
+        try { if (this.settings.haptics) navigator.vibrate?.(0); } catch (_) {}
+
         this.uiStartFromTitle();
       }, {passive:false});
     }
