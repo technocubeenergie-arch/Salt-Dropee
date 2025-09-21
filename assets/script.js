@@ -106,10 +106,11 @@ Promise.all([
   const snap = v => Math.round(v);
   const snapR = (x, y, w, h) => [snap(x), snap(y), Math.round(w), Math.round(h)];
   function drawImgCrisp(g, img, x, y, w, h){
-    const [ix, iy, iw, ih] = snapR(x, y, w, h);
+    const ix = Math.round(x);
+    const iy = Math.round(y);
     const prev = g.imageSmoothingEnabled;
-    g.imageSmoothingEnabled = false;
-    g.drawImage(img, ix, iy, iw, ih);
+    g.imageSmoothingEnabled = false;   // net pour les petits sprites
+    g.drawImage(img, ix, iy, w, h);    // ⚠️ on NE snap PAS w,h
     g.imageSmoothingEnabled = prev;
   }
   const clamp = (v,min,max)=> Math.max(min, Math.min(max,v));
@@ -336,41 +337,44 @@ this.x = clamp(this.x, -overflow, BASE_W - this.w + overflow);
       if (this.squashTimer>0) this.squashTimer -= dt;
     }
     draw(g){
-  const hRaw = Math.min(this.h, this.spriteHCapPx);
-  const wRaw = this.w;
-  const [x, y, w, h] = snapR(this.x, this.y, wRaw, hRaw);
+    const maxH = this.spriteHCapPx || this.h;
+    const h = Math.min(this.h, maxH);
+    const w = this.w;
+    const x = this.x;
+    const y = this.y;
 
-  // facteur d'échelle en fonction de l'impact
-  // vertical: on compresse en hauteur (rebond vers le bas)
-  // horizontal: on étire en largeur (effet dash)
-  let sx = 1, sy = 1;
-  if (this.impactDir === 'vertical'){
-    sx = 1 + 0.18 * this.impact;
-    sy = 1 - 0.28 * this.impact;
-  } else {
-    sx = 1 + 0.25 * this.impact;
-    sy = 1 - 0.12 * this.impact;
-  }
+    // facteur d'échelle en fonction de l'impact
+    // vertical: on compresse en hauteur (rebond vers le bas)
+    // horizontal: on étire en largeur (effet dash)
+    let sx = 1, sy = 1;
+    if (this.impactDir === 'vertical'){
+      sx = 1 + 0.18 * this.impact;
+      sy = 1 - 0.28 * this.impact;
+    } else {
+      sx = 1 + 0.25 * this.impact;
+      sy = 1 - 0.12 * this.impact;
+    }
 
-  g.save();
+    g.save();
 
-  // point d'ancrage au centre du rectangle de destination
-  const cx = x + w/2, cy = y + h/2;
-  g.translate(cx, cy);
-  g.scale(sx, sy);
-  g.translate(-cx, -cy);
+    // point d'ancrage au centre du rectangle de destination
+    const cx = Math.round(x + w/2);
+    const cy = Math.round(y + h/2);
+    g.translate(cx, cy);
+    g.scale(sx, sy);
+    g.translate(-cx, -cy);
 
-  // ombre douce (optionnelle)
-  g.shadowColor = 'rgba(0,0,0,0.25)';
-  g.shadowBlur = 6;
-  g.shadowOffsetY = 2;
+    // ombre douce (optionnelle)
+    g.shadowColor = 'rgba(0,0,0,0.25)';
+    g.shadowBlur = 6;
+    g.shadowOffsetY = 2;
 
-  // dessiner le PNG ajusté aux dimensions w × h
-  // (si tu veux le “gonfler” en largeur: augmente w dans applyCaps())
-  g.drawImage(walletImg, x, y, w, h);
+    // dessiner le PNG ajusté aux dimensions w × h
+    // (si tu veux le “gonfler” en largeur: augmente w dans applyCaps())
+    g.drawImage(walletImg, Math.round(x), Math.round(y), w, h);
 
 
-  g.restore();
+    g.restore();
 
 }
 
@@ -389,7 +393,7 @@ this.x = clamp(this.x, -overflow, BASE_W - this.w + overflow);
     this.targetX = BASE_W/2;
     this.moveSpeed = 120;
     this.retarget = 0;
-    this.jitterAmt = 0.4;
+    this.jitterAmt = 0.05;
 
     // Dimensions de rendu calculées à chaque frame (pour spawn/limites)
     this._drawW = 90;
@@ -463,15 +467,16 @@ this.x = clamp(this.x, -overflow, BASE_W - this.w + overflow);
 
     g.save();
     g.imageSmoothingEnabled = true; // rendu lisse
-    const [ix, iy, iw, ih] = snapR(x, y, drawW, drawH);
-    g.drawImage(img, ix, iy, iw, ih);
+    const drawX = Math.round(x);
+    const drawY = Math.round(y);
+    g.drawImage(img, drawX, drawY, drawW, drawH);
     g.restore();
 
     // Mémoriser pour spawn/limites
-    this._drawW = iw;
-    this._drawH = ih;
-    this._x = ix;
-    this._y = iy;
+    this._drawW = drawW;
+    this._drawH = drawH;
+    this._x = drawX;
+    this._y = drawY;
   }
 
   // Les objets spawnent près du bout des doigts (bord droit de l'image)
@@ -615,9 +620,9 @@ spawnY(){
       else if (this.subtype === 'gold')    base = '#f2c14e'; // si l'image pas prête
       else if (this.subtype === 'diamond') base = '#a8e6ff';
 
-      const cx = snap(x + w/2);
-      const cy = snap(y + h/2);
-      const r = Math.round(Math.min(w,h)/2);
+      const cx = Math.round(x + w/2);
+      const cy = Math.round(y + h/2);
+      const r = Math.floor(Math.min(w, h)/2);
       g.fillStyle = base;
       g.beginPath(); g.arc(cx, cy, r, 0, Math.PI*2); g.fill();
 
@@ -639,9 +644,9 @@ spawnY(){
           drawImgCrisp(g, BombImg, x - pad, y - pad, w + pad*2, h + pad*2);
         } else {
           // fallback vectoriel si l'image n'est pas encore chargée
-          const cx = snap(x + w/2);
-          const cy = snap(y + h/2);
-          const r = Math.round(Math.min(w,h)/2);
+          const cx = Math.round(x + w/2);
+          const cy = Math.round(y + h/2);
+          const r = Math.floor(Math.min(w, h)/2);
           g.fillStyle = '#3b3b3b';
           g.beginPath(); g.arc(cx, cy, r, 0, Math.PI*2); g.fill();
           g.fillStyle = '#f4a261';
@@ -650,9 +655,9 @@ spawnY(){
         }
 
       } else if (this.subtype==='shitcoin'){
-        const cx = snap(x + w/2);
-        const cy = snap(y + h/2);
-        const r = Math.round(Math.min(w,h)/2);
+        const cx = Math.round(x + w/2);
+        const cy = Math.round(y + h/2);
+        const r = Math.floor(Math.min(w, h)/2);
         g.fillStyle = '#8a6b3a';
         g.beginPath(); g.arc(cx, cy, r, 0, Math.PI*2); g.fill();
 
@@ -667,18 +672,18 @@ spawnY(){
         g.fill();
 
       } else if (this.subtype==='rugpull'){
-        const cx = snap(x + w/2);
-        const cy = snap(y + h/2);
-        const rx = Math.round(w/2);
-        const ry = Math.round(h/2);
+        const cx = Math.round(x + w/2);
+        const cy = Math.round(y + h/2);
+        const rx = Math.floor(w/2);
+        const ry = Math.floor(h/2);
         g.fillStyle = '#4a3d7a';
         g.beginPath(); g.ellipse(cx, cy, rx, ry, 0, 0, Math.PI*2); g.fill();
 
       } else if (this.subtype==='fakeAirdrop'){
-        const cx = snap(x + w/2);
-        const cy = snap(y + h/2);
-        const rx = Math.round(w/2);
-        const ry = Math.round(h/2);
+        const cx = Math.round(x + w/2);
+        const cy = Math.round(y + h/2);
+        const rx = Math.floor(w/2);
+        const ry = Math.floor(h/2);
         g.fillStyle = '#6b7cff';
         g.beginPath(); g.ellipse(cx, cy, rx, ry, 0, 0, Math.PI*2); g.fill();
         g.fillStyle = '#ffffff';
