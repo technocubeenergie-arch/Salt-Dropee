@@ -268,8 +268,11 @@ if ('imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality = 'high';
 
   // Particles (smooth dots)
   class ParticleSys{
-    constructor(){ this.ps=[]; }
-    burst(x,y,color='#a7f070',n=6){ for(let i=0;i<n;i++){ this.ps.push({x,y,vx:rand(-40,40),vy:rand(-60,0),t:0,life:0.4,color}); } }
+    constructor(){ this.ps=[]; this.gpuPrimed = false; }
+    burst(x,y,color='#a7f070',n=6){
+      if (!this.gpuPrimed){ this.gpuPrimed = true; return; }
+      for(let i=0;i<n;i++){ this.ps.push({x,y,vx:rand(-40,40),vy:rand(-60,0),t:0,life:0.4,color}); }
+    }
     update(dt){ this.ps = this.ps.filter(p=> (p.t+=dt) < p.life); this.ps.forEach(p=>{ p.vy += 300*dt; p.x += p.vx*dt; p.y += p.vy*dt; }); }
     render(g){
       g.save();
@@ -329,7 +332,7 @@ walletImg.src = 'assets/wallet1.png';
   
 
     evolveByScore(score){ const th = CONFIG.evolveThresholds; let lvl = 1; for (let i=0;i<th.length;i++){ if (score>=th[i]) lvl = i+1; }
-      if (lvl!==this.level){ this.level=lvl; this.applyCaps(); this.g.fx.burst(this.x, this.y, '#ffcd75', 12); this.g.audio.up(); this.squashTimer=0.12; }
+      if (lvl!==this.level){ this.level=lvl; this.applyCaps(); this.g.fx.burst(this.x, this.y, '#ffcd75', 12); this.g.playSfx(()=> this.g.audio.up()); this.squashTimer=0.12; }
     }
     update(dt){ const sets = this.g.settings; const sens = sets.sensitivity||1.0;
       let targetVX = 0;
@@ -844,6 +847,7 @@ spawnY(){
 
       this.state='title';
       this.audio = new AudioSys(); this.audio.enabled = !!this.settings.sound;
+      this.skipFirstCatchSounds = 2;
       this.fx = new ParticleSys();
 
       this.timeLeft = CONFIG.runSeconds; this.timeElapsed=0;
@@ -863,6 +867,14 @@ spawnY(){
       console.log('[STATE] reset -> title');
       //this.renderTitle();
 	  if (showTitle) this.renderTitle();
+    }
+
+    playSfx(fn){
+      if (this.skipFirstCatchSounds > 0){
+        this.skipFirstCatchSounds--;
+        return;
+      }
+      fn?.();
     }
 
     diffMult(){
@@ -950,7 +962,7 @@ for (const it of this.items){
         let pts = CONFIG.score[it.subtype] || 0;
         if (this.effects.freeze>0){
           this.fx.burst(it.x,it.y,'#88a', 4);
-          if (!firstCatch) this.audio.bad();
+          this.playSfx(()=> this.audio.bad());
           this.didFirstCatch = true;
           return;
         }
@@ -965,7 +977,7 @@ for (const it of this.items){
         this.score += pts;
 
         this.fx.burst(it.x,it.y,'#a7f070', 6);
-        if (!firstCatch) this.audio.good();
+        this.playSfx(()=> this.audio.good());
         if (this.settings.haptics && !firstCatch) haptic(8);
 
       } else if (it.kind === 'bad'){
@@ -983,7 +995,7 @@ for (const it of this.items){
         if (this.effects.shield>0){
           this.effects.shield=0;
           this.fx.burst(it.x,it.y,'#66a6ff', 8);
-          if (!firstCatch) this.audio.pow();
+          this.playSfx(()=> this.audio.pow());
           this.didFirstCatch = true;
           return;
         }
@@ -995,32 +1007,32 @@ for (const it of this.items){
         if (it.subtype==='bomb'){
           this.lives -= 1;
           this.shake = 0.8;
-          if (!firstCatch) this.audio.bad();
+          this.playSfx(()=> this.audio.bad());
           if (this.settings.haptics && !firstCatch) haptic(40);
         } else if (it.subtype==='shitcoin'){
           this.score += CONFIG.score.bad.shitcoin;
-          if (!firstCatch) this.audio.bad();
+          this.playSfx(()=> this.audio.bad());
         } else if (it.subtype==='anvil'){
           this.score += CONFIG.score.bad.anvil;
           this.wallet.slowTimer = 2.0;
-          if (!firstCatch) this.audio.bad();
+          this.playSfx(()=> this.audio.bad());
         } else if (it.subtype==='rugpull'){
           const delta = Math.floor(this.score * CONFIG.score.rugpullPct);
           this.score = Math.max(0, this.score + delta);
-          if (!firstCatch) this.audio.bad();
+          this.playSfx(()=> this.audio.bad());
         } else if (it.subtype==='fakeAirdrop'){
           this.effects.freeze = 3.0;
-          if (!firstCatch) this.audio.bad();
+          this.playSfx(()=> this.audio.bad());
         }
 
       } else if (it.kind === 'power'){
         // petit pulse horizontal
         this.wallet.bump(0.25, 'horizontal');
 
-        if (it.subtype==='magnet'){ this.effects.magnet = CONFIG.powerups.magnet; if (!firstCatch) this.audio.pow(); }
-        else if (it.subtype==='x2'){ this.effects.x2 = CONFIG.powerups.x2; if (!firstCatch) this.audio.pow(); }
-        else if (it.subtype==='shield'){ this.effects.shield = 1; if (!firstCatch) this.audio.pow(); }
-        else if (it.subtype==='timeShard'){ this.timeLeft = Math.min(CONFIG.runSeconds, this.timeLeft + 5); if (!firstCatch) this.audio.pow(); }
+        if (it.subtype==='magnet'){ this.effects.magnet = CONFIG.powerups.magnet; this.playSfx(()=> this.audio.pow()); }
+        else if (it.subtype==='x2'){ this.effects.x2 = CONFIG.powerups.x2; this.playSfx(()=> this.audio.pow()); }
+        else if (it.subtype==='shield'){ this.effects.shield = 1; this.playSfx(()=> this.audio.pow()); }
+        else if (it.subtype==='timeShard'){ this.timeLeft = Math.min(CONFIG.runSeconds, this.timeLeft + 5); this.playSfx(()=> this.audio.pow()); }
 
         this.fx.burst(it.x,it.y,'#ffcd75', 10);
       }
@@ -1068,6 +1080,7 @@ for (const it of this.items){
 
         // --- WARM-UP AUDIO
         await this.audio.warmup();
+        await new Promise(r=>requestAnimationFrame(r));
 
         // --- WARM-UP GRAPHICS (force la création des pipelines/shaders)
         try{
@@ -1083,9 +1096,6 @@ for (const it of this.items){
           ctx.imageSmoothingEnabled = prev;
           ctx.clearRect(0,0,8,8);
         }catch(_){ }
-
-        // (facultatif) vibrate “no-op” pour réveiller l’API sur certains PC
-        try{ navigator.vibrate?.(0); }catch(_){ }
 
         this.uiStartFromTitle();
       }, {passive:false});
