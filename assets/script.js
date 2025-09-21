@@ -10,35 +10,30 @@ const BronzeImg = new Image();
 let bronzeReady = false;
 BronzeImg.onload = ()=> bronzeReady = true;
 BronzeImg.src = 'assets/bronze.png';
-BronzeImg.decode?.().catch(()=>{});
 
 // --- PNG pour l'argent ---
 const SilverImg = new Image();
 let silverReady = false;
 SilverImg.onload = ()=> silverReady = true;
 SilverImg.src = 'assets/silver.png';
-SilverImg.decode?.().catch(()=>{});
   
 // --- PNG pour l'or ---
 const GoldImg = new Image();
 let goldReady = false;
 GoldImg.onload = ()=> goldReady = true;
 GoldImg.src = 'assets/gold.png';
-GoldImg.decode?.().catch(()=>{});
 
 // --- PNG pour le diamant ---
 const DiamondImg = new Image();
 let diamondReady = false;
 DiamondImg.onload = ()=> diamondReady = true;
 DiamondImg.src = 'assets/diamond.png';
-DiamondImg.decode?.().catch(()=>{});
 
 // --- PNG de la bombe ---
 const BombImg = new Image();
 let bombReady = false;
 BombImg.onload = ()=> bombReady = true;
 BombImg.src = 'assets/bombe.png';
-BombImg.decode?.().catch(()=>{});
 
 
 // --- PNG de la main (2 frames) ---
@@ -237,7 +232,23 @@ if ('imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality = 'high';
   class AudioSys{
     constructor(){ this.ctx = null; this.enabled = true; }
     ensure(){ if (!this.ctx) this.ctx = new (window.AudioContext||window.webkitAudioContext)(); }
-    beep(freq=440, ms=80, type='square', vol=0.02){ if (!this.enabled) return; this.ensure();
+
+    async warmup(){
+      try{
+        this.ensure();
+        await this.ctx.resume();
+        const t = this.ctx.currentTime;
+        const o = this.ctx.createOscillator();
+        const g = this.ctx.createGain();
+        g.gain.setValueAtTime(0.00001, t);
+        o.connect(g); g.connect(this.ctx.destination);
+        o.frequency.value = 1;
+        o.start(t); o.stop(t + 0.02);
+      }catch(_){ }
+    }
+
+    beep(freq=440, ms=80, type='square', vol=0.02){
+      if (!this.enabled) return; this.ensure();
       const t = this.ctx.currentTime; const o = this.ctx.createOscillator(); const g = this.ctx.createGain();
       o.type = type; o.frequency.value = freq; g.gain.value = vol; o.connect(g); g.connect(this.ctx.destination);
       o.start(t); o.stop(t + ms/1000);
@@ -269,7 +280,10 @@ if ('imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality = 'high';
 // === Chargement de l'image du portefeuille ===
 const walletImg = new Image();
 walletImg.src = 'assets/wallet1.png';
-walletImg.decode?.().catch(()=>{});
+
+// Pré-décode (si supporté)
+[GoldImg, SilverImg, BronzeImg, DiamondImg, BombImg, walletImg, Hand.open, Hand.pinch]
+  .forEach(img => img?.decode?.().catch(()=>{}));
 
   // Wallet (coffre lissé)
   class Wallet{
@@ -920,87 +934,91 @@ for (const it of this.items){
     }
 
     onCatch(it){
-  if (it.kind === 'good'){
-    // rebond doux
-    this.wallet.bump(0.35, 'vertical');
+      const firstCatch = !this.didFirstCatch;
 
-    let pts = CONFIG.score[it.subtype] || 0;
-    if (this.effects.freeze>0){
-      this.fx.burst(it.x,it.y,'#88a', 4);
-      this.audio.bad();
-      return;
-    }
-    if (this.effects.x2>0) pts *= 2;
+      if (it.kind === 'good'){
+        // rebond doux
+        this.wallet.bump(0.35, 'vertical');
 
-    this.comboStreak += 1;
-    if (this.comboStreak % CONFIG.combo.step === 0){
-      this.comboMult = Math.min(CONFIG.combo.maxMult, this.comboMult+1);
-    }
-    this.maxCombo = Math.max(this.maxCombo, this.comboStreak);
-    pts = Math.floor(pts * this.comboMult);
-    this.score += pts;
+        let pts = CONFIG.score[it.subtype] || 0;
+        if (this.effects.freeze>0){
+          this.fx.burst(it.x,it.y,'#88a', 4);
+          if (!firstCatch) this.audio.bad();
+          this.didFirstCatch = true;
+          return;
+        }
+        if (this.effects.x2>0) pts *= 2;
 
-    this.fx.burst(it.x,it.y,'#a7f070', 6);
-    this.audio.good();
-    if (this.settings.haptics && this.didFirstCatch) haptic(8);
-    this.didFirstCatch = true;
+        this.comboStreak += 1;
+        if (this.comboStreak % CONFIG.combo.step === 0){
+          this.comboMult = Math.min(CONFIG.combo.maxMult, this.comboMult+1);
+        }
+        this.maxCombo = Math.max(this.maxCombo, this.comboStreak);
+        pts = Math.floor(pts * this.comboMult);
+        this.score += pts;
 
-  } else if (it.kind === 'bad'){
-    // gros rebond "ouch"
-    if (it.subtype==='bomb'){
-      this.wallet.bump(0.65, 'vertical');
-    } else if (it.subtype==='anvil'){
-      this.wallet.bump(0.55, 'vertical');
-    } else if (it.subtype==='shitcoin' || it.subtype==='rugpull'){
-      this.wallet.bump(0.40, 'vertical');
-    } else {
-      this.wallet.bump(0.35, 'vertical');
-    }
+        this.fx.burst(it.x,it.y,'#a7f070', 6);
+        if (!firstCatch) this.audio.good();
+        if (this.settings.haptics && !firstCatch) haptic(8);
 
-    if (this.effects.shield>0){
-      this.effects.shield=0;
-      this.fx.burst(it.x,it.y,'#66a6ff', 8);
-      this.audio.pow();
-      return;
-    }
+      } else if (it.kind === 'bad'){
+        // gros rebond "ouch"
+        if (it.subtype==='bomb'){
+          this.wallet.bump(0.65, 'vertical');
+        } else if (it.subtype==='anvil'){
+          this.wallet.bump(0.55, 'vertical');
+        } else if (it.subtype==='shitcoin' || it.subtype==='rugpull'){
+          this.wallet.bump(0.40, 'vertical');
+        } else {
+          this.wallet.bump(0.35, 'vertical');
+        }
 
-    // reset combo
-    this.comboStreak = 0;
-    this.comboMult = 1;
+        if (this.effects.shield>0){
+          this.effects.shield=0;
+          this.fx.burst(it.x,it.y,'#66a6ff', 8);
+          if (!firstCatch) this.audio.pow();
+          this.didFirstCatch = true;
+          return;
+        }
 
-    if (it.subtype==='bomb'){
-      this.lives -= 1;
-      this.shake = 0.8;
-      this.audio.bad();
-      if (this.settings.haptics) haptic(40);
-    } else if (it.subtype==='shitcoin'){
-      this.score += CONFIG.score.bad.shitcoin;
-      this.audio.bad();
-    } else if (it.subtype==='anvil'){
-      this.score += CONFIG.score.bad.anvil;
-      this.wallet.slowTimer = 2.0;
-      this.audio.bad();
-    } else if (it.subtype==='rugpull'){
-      const delta = Math.floor(this.score * CONFIG.score.rugpullPct);
-      this.score = Math.max(0, this.score + delta);
-      this.audio.bad();
-    } else if (it.subtype==='fakeAirdrop'){
-      this.effects.freeze = 3.0;
-      this.audio.bad();
-    }
+        // reset combo
+        this.comboStreak = 0;
+        this.comboMult = 1;
 
-  } else if (it.kind === 'power'){
-    // petit pulse horizontal
-    this.wallet.bump(0.25, 'horizontal');
+        if (it.subtype==='bomb'){
+          this.lives -= 1;
+          this.shake = 0.8;
+          if (!firstCatch) this.audio.bad();
+          if (this.settings.haptics && !firstCatch) haptic(40);
+        } else if (it.subtype==='shitcoin'){
+          this.score += CONFIG.score.bad.shitcoin;
+          if (!firstCatch) this.audio.bad();
+        } else if (it.subtype==='anvil'){
+          this.score += CONFIG.score.bad.anvil;
+          this.wallet.slowTimer = 2.0;
+          if (!firstCatch) this.audio.bad();
+        } else if (it.subtype==='rugpull'){
+          const delta = Math.floor(this.score * CONFIG.score.rugpullPct);
+          this.score = Math.max(0, this.score + delta);
+          if (!firstCatch) this.audio.bad();
+        } else if (it.subtype==='fakeAirdrop'){
+          this.effects.freeze = 3.0;
+          if (!firstCatch) this.audio.bad();
+        }
 
-    if (it.subtype==='magnet'){ this.effects.magnet = CONFIG.powerups.magnet; this.audio.pow(); }
-    else if (it.subtype==='x2'){ this.effects.x2 = CONFIG.powerups.x2; this.audio.pow(); }
-    else if (it.subtype==='shield'){ this.effects.shield = 1; this.audio.pow(); }
-    else if (it.subtype==='timeShard'){ this.timeLeft = Math.min(CONFIG.runSeconds, this.timeLeft + 5); this.audio.pow(); }
+      } else if (it.kind === 'power'){
+        // petit pulse horizontal
+        this.wallet.bump(0.25, 'horizontal');
 
-    this.fx.burst(it.x,it.y,'#ffcd75', 10);
-  }
+        if (it.subtype==='magnet'){ this.effects.magnet = CONFIG.powerups.magnet; if (!firstCatch) this.audio.pow(); }
+        else if (it.subtype==='x2'){ this.effects.x2 = CONFIG.powerups.x2; if (!firstCatch) this.audio.pow(); }
+        else if (it.subtype==='shield'){ this.effects.shield = 1; if (!firstCatch) this.audio.pow(); }
+        else if (it.subtype==='timeShard'){ this.timeLeft = Math.min(CONFIG.runSeconds, this.timeLeft + 5); if (!firstCatch) this.audio.pow(); }
 
+        this.fx.burst(it.x,it.y,'#ffcd75', 10);
+      }
+
+      this.didFirstCatch = true;
     }
 
     endGame(){
@@ -1037,25 +1055,30 @@ for (const it of this.items){
       document.getElementById('btnSettings').onclick = ()=> this.renderSettings();
       document.getElementById('btnLB').onclick = ()=> this.renderLeaderboard();
       // Play: bloque la propagation pour éviter le clic fantôme sur le canvas
-      document.getElementById('btnPlay').addEventListener('click', (e)=>{
+      document.getElementById('btnPlay').addEventListener('click', async (e)=>{
         e.preventDefault();
         e.stopPropagation();
-        // --- WARM-UP AUDIO (débloque l'AudioContext sans lag plus tard)
-        try {
-          this.audio.ensure();
-          const t = this.audio.ctx.currentTime;
-          const o = this.audio.ctx.createOscillator();
-          const g = this.audio.ctx.createGain();
-          g.gain.setValueAtTime(0.0001, t);
-          o.connect(g);
-          g.connect(this.audio.ctx.destination);
-          o.frequency.value = 1;
-          o.start(t);
-          o.stop(t + 0.01);
-        } catch (_) {}
 
-        // (optionnel) warm-up haptics sur mobile (valeur 0 = ignorée mais “réveille” parfois l’API)
-        try { if (this.settings.haptics) navigator.vibrate?.(0); } catch (_) {}
+        // --- WARM-UP AUDIO
+        await this.audio.warmup();
+
+        // --- WARM-UP GRAPHICS (force la création des pipelines/shaders)
+        try{
+          const prev = ctx.imageSmoothingEnabled;
+          ctx.imageSmoothingEnabled = false;
+          const imgs = [walletImg, GoldImg, SilverImg, BronzeImg, DiamondImg, BombImg, Hand.open, Hand.pinch];
+          for (const im of imgs){ if (im && im.naturalWidth) ctx.drawImage(im, 0, 0, 1, 1); }
+          ctx.save();
+          ctx.shadowColor = 'rgba(0,0,0,0.15)'; ctx.shadowBlur = 4; ctx.shadowOffsetY = 1;
+          ctx.fillStyle = '#fff';
+          ctx.beginPath(); ctx.arc(4,4,2,0,Math.PI*2); ctx.fill();
+          ctx.restore();
+          ctx.imageSmoothingEnabled = prev;
+          ctx.clearRect(0,0,8,8);
+        }catch(_){ }
+
+        // (facultatif) vibrate “no-op” pour réveiller l’API sur certains PC
+        try{ navigator.vibrate?.(0); }catch(_){ }
 
         this.uiStartFromTitle();
       }, {passive:false});
