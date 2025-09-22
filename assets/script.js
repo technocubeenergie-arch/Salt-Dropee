@@ -35,6 +35,32 @@ let bombReady = false;
 BombImg.onload = ()=> bombReady = true;
 BombImg.src = 'assets/bombe.png';
 
+// === PNG BAD ===
+const ShitcoinImg = new Image(); let shitcoinReady = false;
+ShitcoinImg.onload = ()=> shitcoinReady = true;
+ShitcoinImg.src = 'assets/shitcoin.png';
+
+const RugpullImg = new Image(); let rugpullReady = false;
+RugpullImg.onload = ()=> rugpullReady = true;
+RugpullImg.src = 'assets/rugpull.png';
+
+const FakeAirdropImg = new Image(); let fakeAirdropReady = false;
+FakeAirdropImg.onload = ()=> fakeAirdropReady = true;
+FakeAirdropImg.src = 'assets/fakeairdrop.png';
+
+// === PNG POWER ===
+const X2Img = new Image(); let x2Ready = false;
+X2Img.onload = ()=> x2Ready = true;
+X2Img.src = 'assets/x2.png';
+
+const ShieldImg = new Image(); let shieldReady = false;
+ShieldImg.onload = ()=> shieldReady = true;
+ShieldImg.src = 'assets/shield.png';
+
+const TimeImg = new Image(); let timeReady = false;
+TimeImg.onload = ()=> timeReady = true;
+TimeImg.src = 'assets/time.png';
+
 
 // --- PNG de la main (2 frames) ---
 const Hand = {
@@ -360,7 +386,10 @@ const walletImg = new Image();
 walletImg.src = 'assets/wallet1.png';
 
 // Pré-décode (si supporté)
-[GoldImg, SilverImg, BronzeImg, DiamondImg, BombImg, walletImg, Hand.open, Hand.pinch]
+[GoldImg, SilverImg, BronzeImg, DiamondImg, BombImg,
+ ShitcoinImg, RugpullImg, FakeAirdropImg,
+ X2Img, ShieldImg, TimeImg,
+ walletImg, Hand.open, Hand.pinch]
   .forEach(img => img?.decode?.().catch(()=>{}));
 
   // Wallet (coffre lissé)
@@ -605,6 +634,10 @@ spawnY(){
     this.baseW = 14;
     this.baseH = 14;
 
+    // Tailles par défaut un peu plus grandes
+    if (this.kind === 'bad')   { this.baseW = 18; this.baseH = 18; }
+    if (this.kind === 'power') { this.baseW = 18; this.baseH = 18; }
+
     // overrides par sous-type
     if (this.kind === 'good') {
       if (this.subtype === 'bronze')  { this.baseW = 18; this.baseH = 18; }
@@ -615,9 +648,11 @@ spawnY(){
     if (this.subtype === 'bomb') { this.baseW = 18; this.baseH = 18; }
 
     const itemCfg = CONFIG.items || {};
-    const finalScale = (itemCfg.scale != null) ? itemCfg.scale : 1;
-    this.baseW *= finalScale;
-    this.baseH *= finalScale;
+
+    // Applique un scale global si défini dans CONFIG.items.scale
+    const S = (CONFIG.items && CONFIG.items.scale) ? CONFIG.items.scale : 1;
+    this.baseW *= S;
+    this.baseH *= S;
 
     const baseCenterX = this.x + this.baseW / 2;
     const baseCenterY = this.y + this.baseH / 2;
@@ -752,41 +787,67 @@ spawnY(){
           g.fillRect(rx, ry, rw, rh);
         }
 
-      } else if (this.subtype==='shitcoin'){
-        const cx = Math.round(x + w/2);
-        const cy = Math.round(y + h/2);
-        const r = Math.floor(Math.min(w, h)/2);
-        g.fillStyle = '#8a6b3a';
-        g.beginPath(); g.arc(cx, cy, r, 0, Math.PI*2); g.fill();
+      } else {
+        if (this.subtype==='shitcoin' && shitcoinReady){
+          const ix = snap(x), iy = snap(y), iw = snap(w), ih = snap(h);
+          const prev = g.imageSmoothingEnabled; g.imageSmoothingEnabled = false;
+          g.drawImage(ShitcoinImg, ix, iy, iw, ih);
+          g.imageSmoothingEnabled = prev;
+          g.restore(); return;
+        }
 
-      } else if (this.subtype==='anvil'){
-        g.fillStyle = '#60656f';
-        g.beginPath();
-        g.moveTo(snap(x+2), snap(y+h*0.7));
-        g.lineTo(snap(x+w-2), snap(y+h*0.7));
-        g.lineTo(snap(x+w*0.7), snap(y+h*0.4));
-        g.lineTo(snap(x+w*0.3), snap(y+h*0.4));
-        g.closePath();
-        g.fill();
+        if (this.subtype==='rugpull' && rugpullReady){
+          const ix = snap(x), iy = snap(y), iw = snap(w), ih = snap(h);
+          const prev = g.imageSmoothingEnabled; g.imageSmoothingEnabled = false;
+          g.drawImage(RugpullImg, ix, iy, iw, ih);
+          g.imageSmoothingEnabled = prev;
+          g.restore(); return;
+        }
 
-      } else if (this.subtype==='rugpull'){
-        const cx = Math.round(x + w/2);
-        const cy = Math.round(y + h/2);
-        const rx = Math.floor(w/2);
-        const ry = Math.floor(h/2);
-        g.fillStyle = '#4a3d7a';
-        g.beginPath(); g.ellipse(cx, cy, rx, ry, 0, 0, Math.PI*2); g.fill();
+        if (this.subtype==='fakeAirdrop' && fakeAirdropReady){
+          const ix = snap(x), iy = snap(y), iw = snap(w), ih = snap(h);
+          const prev = g.imageSmoothingEnabled; g.imageSmoothingEnabled = false;
+          g.drawImage(FakeAirdropImg, ix, iy, iw, ih);
+          g.imageSmoothingEnabled = prev;
+          g.restore(); return;
+        }
 
-      } else if (this.subtype==='fakeAirdrop'){
-        const cx = Math.round(x + w/2);
-        const cy = Math.round(y + h/2);
-        const rx = Math.floor(w/2);
-        const ry = Math.floor(h/2);
-        g.fillStyle = '#6b7cff';
-        g.beginPath(); g.ellipse(cx, cy, rx, ry, 0, 0, Math.PI*2); g.fill();
-        g.fillStyle = '#ffffff';
-        const [rx2, ry2, rw2, rh2] = snapR(cx - 3, cy - 3, 6, 6);
-        g.fillRect(rx2, ry2, rw2, rh2);
+        if (this.subtype==='shitcoin'){
+          const cx = Math.round(x + w/2);
+          const cy = Math.round(y + h/2);
+          const r = Math.floor(Math.min(w, h)/2);
+          g.fillStyle = '#8a6b3a';
+          g.beginPath(); g.arc(cx, cy, r, 0, Math.PI*2); g.fill();
+
+        } else if (this.subtype==='anvil'){
+          g.fillStyle = '#60656f';
+          g.beginPath();
+          g.moveTo(snap(x+2), snap(y+h*0.7));
+          g.lineTo(snap(x+w-2), snap(y+h*0.7));
+          g.lineTo(snap(x+w*0.7), snap(y+h*0.4));
+          g.lineTo(snap(x+w*0.3), snap(y+h*0.4));
+          g.closePath();
+          g.fill();
+
+        } else if (this.subtype==='rugpull'){
+          const cx = Math.round(x + w/2);
+          const cy = Math.round(y + h/2);
+          const rx = Math.floor(w/2);
+          const ry = Math.floor(h/2);
+          g.fillStyle = '#4a3d7a';
+          g.beginPath(); g.ellipse(cx, cy, rx, ry, 0, 0, Math.PI*2); g.fill();
+
+        } else if (this.subtype==='fakeAirdrop'){
+          const cx = Math.round(x + w/2);
+          const cy = Math.round(y + h/2);
+          const rx = Math.floor(w/2);
+          const ry = Math.floor(h/2);
+          g.fillStyle = '#6b7cff';
+          g.beginPath(); g.ellipse(cx, cy, rx, ry, 0, 0, Math.PI*2); g.fill();
+          g.fillStyle = '#ffffff';
+          const [rx2, ry2, rw2, rh2] = snapR(cx - 3, cy - 3, 6, 6);
+          g.fillRect(rx2, ry2, rw2, rh2);
+        }
       }
 
     } else {
@@ -799,6 +860,28 @@ spawnY(){
         g.lineTo(x+r, y+h); g.quadraticCurveTo(x, y+h, x, y+h-r);
         g.lineTo(x, y+r); g.quadraticCurveTo(x, y, x+r, y); g.closePath(); g.fill();
       };
+
+      if (this.subtype==='x2' && x2Ready){
+        const ix = snap(x), iy = snap(y), iw = snap(w), ih = snap(h);
+        const prev = g.imageSmoothingEnabled; g.imageSmoothingEnabled = false;
+        g.drawImage(X2Img, ix, iy, iw, ih);
+        g.imageSmoothingEnabled = prev;
+        g.restore(); return;
+      }
+      if (this.subtype==='shield' && shieldReady){
+        const ix = snap(x), iy = snap(y), iw = snap(w), ih = snap(h);
+        const prev = g.imageSmoothingEnabled; g.imageSmoothingEnabled = false;
+        g.drawImage(ShieldImg, ix, iy, iw, ih);
+        g.imageSmoothingEnabled = prev;
+        g.restore(); return;
+      }
+      if (this.subtype==='timeShard' && timeReady){
+        const ix = snap(x), iy = snap(y), iw = snap(w), ih = snap(h);
+        const prev = g.imageSmoothingEnabled; g.imageSmoothingEnabled = false;
+        g.drawImage(TimeImg, ix, iy, iw, ih);
+        g.imageSmoothingEnabled = prev;
+        g.restore(); return;
+      }
 
       if (this.subtype==='magnet'){ cap('#2ecc71'); }
       else if (this.subtype==='x2'){
