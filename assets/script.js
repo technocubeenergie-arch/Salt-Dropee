@@ -674,7 +674,6 @@ spawnY(){
 
       const eased = easeOutCubic(progress);
       scale = lerp(this.spawnScale, 1, eased);
-=======
       scale = lerp(this.spawnScale, 1, progress);
 
     } else {
