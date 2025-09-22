@@ -104,6 +104,7 @@ Promise.all([
   }
   const clamp = (v,min,max)=> Math.max(min, Math.min(max,v));
   const lerp = (a,b,t)=> a+(b-a)*t;
+  const easeOutCubic = t => 1 - Math.pow(1 - t, 3);
   const rand = (a,b)=> Math.random()*(b-a)+a;
   const choiceWeighted = (entries)=>{
     const total = entries.reduce((s,e)=>s+e.w,0);
@@ -670,7 +671,12 @@ spawnY(){
     let scale = 1;
     if (grow > 0){
       const progress = clamp((this.cy - this.spawnCy)/grow, 0, 1);
+
+      const eased = easeOutCubic(progress);
+      scale = lerp(this.spawnScale, 1, eased);
+=======
       scale = lerp(this.spawnScale, 1, progress);
+
     } else {
       scale = 1;
     }
