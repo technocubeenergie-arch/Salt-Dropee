@@ -74,7 +74,8 @@ Promise.all([
     },
     items: {
       scale: 1.8,        // taille finale (1.0 = taille d'origine)
-      spawnScale: 0.35,  // taille relative à l'apparition
+      spawnScale: 0.30,  // taille relative à l'apparition
+      growEase: 'outQuad', // easing du zoom: 'linear' | 'outQuad' | 'outCubic'
       growDistance: 240  // distance (px) avant d'atteindre la taille finale
     },
 
@@ -106,6 +107,11 @@ Promise.all([
   const lerp = (a,b,t)=> a+(b-a)*t;
   const easeOutCubic = t => 1 - Math.pow(1 - t, 3);
   const rand = (a,b)=> Math.random()*(b-a)+a;
+  const ease = {
+    linear:  t => t,
+    outQuad: t => 1 - (1 - t) * (1 - t),
+    outCubic:t => 1 - Math.pow(1 - t, 3),
+  };
   const choiceWeighted = (entries)=>{
     const total = entries.reduce((s,e)=>s+e.w,0);
     let r = Math.random()*total;
@@ -627,13 +633,14 @@ spawnY(){
     this.baseH = this.h;
 
     const itemsCfg = CONFIG.items || {};
-    this.spawnScale = itemsCfg.spawnScale ?? 1;
-    this.growDistance = itemsCfg.growDistance ?? 0;
+    this.spawnScale = (itemsCfg.spawnScale != null) ? itemsCfg.spawnScale : 1;
     this.scale = this.spawnScale;
+
+    this.spawnY  = y;
+    this.targetY = this.g.wallet.y - 6;
 
     this.cx = x + this.baseW / 2;
     this.cy = y + this.baseH / 2;
-    this.spawnCy = this.cy;
 
     this.w = this.baseW * this.scale;
     this.h = this.baseH * this.scale;
@@ -660,31 +667,32 @@ spawnY(){
     // aimant (bonus) n’attire que les 'good'
     if (this.g.effects.magnet>0 && this.kind==='good'){
       const wx = this.g.wallet.x + this.g.wallet.w/2;
-      const dx = wx - this.cx;
+      const centerX = this.x + this.w / 2;
+      const dx = wx - centerX;
       this.vx += clamp(dx*2, -140, 140)*dt;
     }
 
-    this.cx += this.vx*dt;
-    this.cy += this.vy*dt;
+    this.x += this.vx*dt;
+    this.y += this.vy*dt;
 
-    const grow = this.growDistance;
-    let scale = 1;
-    if (grow > 0){
-      const progress = clamp((this.cy - this.spawnCy)/grow, 0, 1);
+    const total    = Math.max(1, this.targetY - this.spawnY);
+    const traveled = clamp(this.y - this.spawnY, 0, total);
+    let t = traveled / total;
 
-      const eased = easeOutCubic(progress);
-      scale = lerp(this.spawnScale, 1, eased);
-      scale = lerp(this.spawnScale, 1, progress);
+    const mode   = (CONFIG.items && CONFIG.items.growEase) ? CONFIG.items.growEase : 'outQuad';
+    const easeFn = (ease[mode] || ease.outQuad);
+    t = easeFn(t);
 
-    } else {
-      scale = 1;
-    }
+    this.scale = this.spawnScale + (1 - this.spawnScale) * t;
 
-    this.scale = scale;
-    this.w = this.baseW * scale;
-    this.h = this.baseH * scale;
-    this.x = this.cx - this.w/2;
-    this.y = this.cy - this.h/2;
+    this.cx = this.x + this.w / 2;
+    this.cy = this.y + this.h / 2;
+
+    this.w = this.baseW * this.scale;
+    this.h = this.baseH * this.scale;
+
+    this.x = this.cx - this.w / 2;
+    this.y = this.cy - this.h / 2;
 
     if (this.y > BASE_H + 50) this.dead = true;
   }
