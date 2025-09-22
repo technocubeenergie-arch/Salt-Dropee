@@ -671,8 +671,12 @@ spawnY(){
     let scale = 1;
     if (grow > 0){
       const progress = clamp((this.cy - this.spawnCy)/grow, 0, 1);
+
       const eased = easeOutCubic(progress);
       scale = lerp(this.spawnScale, 1, eased);
+=======
+      scale = lerp(this.spawnScale, 1, progress);
+
     } else {
       scale = 1;
     }
