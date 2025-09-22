@@ -622,6 +622,23 @@ spawnY(){
     this.w *= S;
     this.h *= S;
 
+    this.baseW = this.w;
+    this.baseH = this.h;
+
+    const itemsCfg = CONFIG.items || {};
+    this.spawnScale = itemsCfg.spawnScale ?? 1;
+    this.growDistance = itemsCfg.growDistance ?? 0;
+    this.scale = this.spawnScale;
+
+    this.cx = x + this.baseW / 2;
+    this.cy = y + this.baseH / 2;
+    this.spawnCy = this.cy;
+
+    this.w = this.baseW * this.scale;
+    this.h = this.baseH * this.scale;
+    this.x = this.cx - this.w / 2;
+    this.y = this.cy - this.h / 2;
+
     // états
     this.dead = false;
     this.spin = rand(-3,3);
@@ -638,15 +655,31 @@ spawnY(){
   update(dt){
     this.t += dt;
     this.vy += this.baseGravity()*dt*(1 + (this.g.timeElapsed/60)*0.2);
-    this.x  += this.vx*dt;
-    this.y  += this.vy*dt;
 
     // aimant (bonus) n’attire que les 'good'
     if (this.g.effects.magnet>0 && this.kind==='good'){
       const wx = this.g.wallet.x + this.g.wallet.w/2;
-      const dx = wx - (this.x + this.w/2);
+      const dx = wx - this.cx;
       this.vx += clamp(dx*2, -140, 140)*dt;
     }
+
+    this.cx += this.vx*dt;
+    this.cy += this.vy*dt;
+
+    const grow = this.growDistance;
+    let scale = 1;
+    if (grow > 0){
+      const progress = clamp((this.cy - this.spawnCy)/grow, 0, 1);
+      scale = lerp(this.spawnScale, 1, progress);
+    } else {
+      scale = 1;
+    }
+
+    this.scale = scale;
+    this.w = this.baseW * scale;
+    this.h = this.baseH * scale;
+    this.x = this.cx - this.w/2;
+    this.y = this.cy - this.h/2;
 
     if (this.y > BASE_H + 50) this.dead = true;
   }
