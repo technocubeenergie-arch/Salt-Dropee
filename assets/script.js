@@ -94,24 +94,10 @@ Promise.all([
 
   // Utils
   const snap = v => Math.round(v);
-  const snapR = (x, y, w, h) => [snap(x), snap(y), Math.round(w), Math.round(h)];
-  function drawImgCrisp(g, img, x, y, w, h){
-    const ix = Math.round(x);
-    const iy = Math.round(y);
-    const prev = g.imageSmoothingEnabled;
-    g.imageSmoothingEnabled = false;   // net pour les petits sprites
-    g.drawImage(img, ix, iy, w, h);    // ⚠️ on NE snap PAS w,h
-    g.imageSmoothingEnabled = prev;
-  }
+  const easeOutQuad = t => 1 - (1 - t) * (1 - t); // easing pour la croissance
   const clamp = (v,min,max)=> Math.max(min, Math.min(max,v));
   const lerp = (a,b,t)=> a+(b-a)*t;
-  const easeOutCubic = t => 1 - Math.pow(1 - t, 3);
   const rand = (a,b)=> Math.random()*(b-a)+a;
-  const ease = {
-    linear:  t => t,
-    outQuad: t => 1 - (1 - t) * (1 - t),
-    outCubic:t => 1 - Math.pow(1 - t, 3),
-  };
   const choiceWeighted = (entries)=>{
     const total = entries.reduce((s,e)=>s+e.w,0);
     let r = Math.random()*total;
@@ -183,9 +169,6 @@ SCALE_FACTOR = Math.min(4, DPR * SS);
 canvas.width  = BASE_W * SCALE_FACTOR;
 canvas.height = BASE_H * SCALE_FACTOR;
 ctx.setTransform(SCALE_FACTOR, 0, 0, SCALE_FACTOR, 0, 0);
-
-ctx.imageSmoothingEnabled = true;
-if ('imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality = 'high';
 
 
 
@@ -590,227 +573,213 @@ spawnY(){
 
 
   // Items
+
   class FallingItem{
-  constructor(game, kind, subtype, x, y){
-    this.g = game;
-    this.kind = kind;          // 'good' | 'bad' | 'power'
-    this.subtype = subtype;    // bronze/silver/gold/diamond, bomb/shitcoin/..., magnet/x2/...
-    this.x = x;
-    this.y = y;
-    this.vx = rand(-20, 20);
-    this.vy = rand(10, 40);
+    constructor(game, kind, subtype, x, y){
+      this.g = game;
+      this.kind = kind;
+      this.subtype = subtype;
 
-    // tailles de base (avant scale global)
-    // On part d’une base compacte puis on override par sous-type.
-    this.w = 14;
-    this.h = 14;
+      // vitesses (physique)
+      this.vx = rand(-20, 20);
+      this.vy = rand(10, 40);
 
-    // Overrides de taille par sous-type
-    if (this.kind === 'good'){
-      if (this.subtype === 'bronze')  { this.w = 18; this.h = 18; }
-      if (this.subtype === 'silver')  { this.w = 18; this.h = 18; }
-      if (this.subtype === 'gold')    { this.w = 18; this.h = 18; }
-      if (this.subtype === 'diamond') { this.w = 18; this.h = 18; }
-    } else if (this.kind === 'bad'){
-      if (this.subtype === 'bomb')       { this.w = 18; this.h = 18; }
-      if (this.subtype === 'shitcoin')   { this.w = 18; this.h = 18; }
-      if (this.subtype === 'rugpull')    { this.w = 18; this.h = 18; }
-      if (this.subtype === 'fakeAirdrop'){ this.w = 18; this.h = 18; }
-      if (this.subtype === 'anvil')      { this.w = 20; this.h = 20; }
-    } else { // power
-      if (this.subtype === 'magnet')   { this.w = 18; this.h = 18; }
-      if (this.subtype === 'x2')       { this.w = 18; this.h = 18; }
-      if (this.subtype === 'shield')   { this.w = 18; this.h = 18; }
-      if (this.subtype === 'timeShard'){ this.w = 18; this.h = 18; } // 'timeShard' coté logique, image 'time.png'
+      // tailles de base
+      let w = 14, h = 14;
+      if (this.kind === 'good') {
+        if (this.subtype === 'bronze')  { w = 18; h = 18; }
+        if (this.subtype === 'silver')  { w = 18; h = 18; }
+        if (this.subtype === 'gold')    { w = 18; h = 18; }
+        if (this.subtype === 'diamond') { w = 18; h = 18; }
+      }
+      if (this.subtype === 'bomb') { w = 18; h = 18; }
+      if (this.subtype === 'shitcoin') { w = 18; h = 18; }
+      if (this.subtype === 'rugpull') { w = 18; h = 18; }
+      if (this.subtype === 'fakeAirdrop') { w = 18; h = 18; }
+      if (this.subtype === 'anvil') { w = 20; h = 20; }
+      if (this.subtype === 'magnet') { w = 18; h = 18; }
+      if (this.subtype === 'x2') { w = 18; h = 18; }
+      if (this.subtype === 'shield') { w = 18; h = 18; }
+      if (this.subtype === 'timeShard') { w = 18; h = 18; }
+
+      // scale global
+      const S = (CONFIG.items && CONFIG.items.scale) ? CONFIG.items.scale : 1;
+      w *= S; h *= S;
+
+      // Taille de base mémorisée (indépendante de la scale runtime)
+      this.baseW = w;
+      this.baseH = h;
+
+      // Animation de scale (0.3 -> 1.0 par défaut)
+      const itemsCfg = CONFIG.items || {};
+      this.spawnScale = (itemsCfg.spawnScale != null) ? itemsCfg.spawnScale : 0.30; // 30% au spawn
+      this.scale = this.spawnScale;
+
+      // PHYSIQUE : position de référence au CENTRE (flottant)
+      this.px = x + this.baseW/2;
+      this.py = y + this.baseH/2;
+
+      // Références pour l’animation de scale (jusqu'à la zone du wallet)
+      this.spawnPy  = this.py;
+      this.targetPy = this.g.wallet.y - 6; // ajuste si besoin
+
+      // RENDU/HITBOX (calculées à chaque frame, mais init propre)
+      this.rw = snap(this.baseW * this.scale);
+      this.rh = snap(this.baseH * this.scale);
+      this.rx = snap(this.px - this.rw/2);
+      this.ry = snap(this.py - this.rh/2);
+
+      // états
+      this.dead = false;
+      this.spin = rand(-3, 3);
+      this.magnet = false;
+      this.t = 0;
+
+      // pour collision AABB du moteur (il lit x,y,w,h)
+      this.x = this.rx; this.y = this.ry; this.w = this.rw; this.h = this.rh;
     }
 
-    // scale global (évite optional chaining pour compat older)
-    const S = (CONFIG.items && CONFIG.items.scale) ? CONFIG.items.scale : 1;
-    this.w *= S;
-    this.h *= S;
-
-    this.baseW = this.w;
-    this.baseH = this.h;
-
-    const itemsCfg = CONFIG.items || {};
-    this.spawnScale = (itemsCfg.spawnScale != null) ? itemsCfg.spawnScale : 1;
-    this.scale = this.spawnScale;
-
-    this.spawnY  = y;
-    this.targetY = this.g.wallet.y - 6;
-
-    this.cx = x + this.baseW / 2;
-    this.cy = y + this.baseH / 2;
-
-    this.w = this.baseW * this.scale;
-    this.h = this.baseH * this.scale;
-    this.x = this.cx - this.w / 2;
-    this.y = this.cy - this.h / 2;
-
-    // états
-    this.dead = false;
-    this.spin = rand(-3,3);
-    this.magnet = false;
-    this.t = 0;
-  }
-
-  baseGravity(){
-    if (this.kind === 'good') return CONFIG.gravity.good;
-    if (this.kind === 'bad')  return CONFIG.gravity.bad;
-    return CONFIG.gravity.power;
-  }
-
-  update(dt){
-    this.t += dt;
-    this.vy += this.baseGravity()*dt*(1 + (this.g.timeElapsed/60)*0.2);
-
-    // aimant (bonus) n’attire que les 'good'
-    if (this.g.effects.magnet>0 && this.kind==='good'){
-      const wx = this.g.wallet.x + this.g.wallet.w/2;
-      const centerX = this.x + this.w / 2;
-      const dx = wx - centerX;
-      this.vx += clamp(dx*2, -140, 140)*dt;
+    baseGravity(){
+      if (this.kind==='good') return CONFIG.gravity.good;
+      if (this.kind==='bad')  return CONFIG.gravity.bad;
+      return CONFIG.gravity.power;
     }
 
-    this.x += this.vx*dt;
-    this.y += this.vy*dt;
+    update(dt){
+      this.t += dt;
 
-    const total    = Math.max(1, this.targetY - this.spawnY);
-    const traveled = clamp(this.y - this.spawnY, 0, total);
-    let t = traveled / total;
+      // Physique pure (toujours en flottant sur le CENTRE)
+      this.vy += this.baseGravity() * dt * (1 + (this.g.timeElapsed/60)*0.2);
+      this.px += this.vx * dt;
+      this.py += this.vy * dt;
 
-    const mode   = (CONFIG.items && CONFIG.items.growEase) ? CONFIG.items.growEase : 'outQuad';
-    const easeFn = (ease[mode] || ease.outQuad);
-    t = easeFn(t);
-
-    this.scale = this.spawnScale + (1 - this.spawnScale) * t;
-
-    this.cx = this.x + this.w / 2;
-    this.cy = this.y + this.h / 2;
-
-    this.w = this.baseW * this.scale;
-    this.h = this.baseH * this.scale;
-
-    this.x = this.cx - this.w / 2;
-    this.y = this.cy - this.h / 2;
-
-    if (this.y > BASE_H + 50) this.dead = true;
-  }
-
-  draw(g){
-    const x=this.x, y=this.y, w=this.w, h=this.h;
-
-    g.save();
-    g.shadowColor = 'rgba(0,0,0,0.15)';
-    g.shadowBlur = 4;
-    g.shadowOffsetY = 1;
-
-    // Raccourci dessin image nette (snap + smoothing off)
-    const drawPNG = (img, ready, pad=0)=>{
-      if (!ready) return false;
-      const ix = snap(x - pad), iy = snap(y - pad);
-      const iw = snap(w + pad*2), ih = snap(h + pad*2);
-      const prev = g.imageSmoothingEnabled;
-      g.imageSmoothingEnabled = false;
-      g.drawImage(img, ix, iy, iw, ih);
-      g.imageSmoothingEnabled = prev;
-      return true;
-    };
-
-    if (this.kind === 'good'){
-      // ordre: bronze, silver, gold, diamond
-      if (this.subtype==='bronze'  && drawPNG(BronzeImg,  bronzeReady))  { g.restore(); return; }
-      if (this.subtype==='silver'  && drawPNG(SilverImg,  silverReady))  { g.restore(); return; }
-      if (this.subtype==='gold'    && drawPNG(GoldImg,    goldReady))    { g.restore(); return; }
-      if (this.subtype==='diamond' && drawPNG(DiamondImg, diamondReady)) { g.restore(); return; }
-
-      // Fallback vectoriel (cercle)
-      let base = '#ffcd75';
-      if (this.subtype==='bronze')  base = '#c07a45';
-      else if (this.subtype==='silver')  base = '#cfd6e6';
-      else if (this.subtype==='gold')    base = '#f2c14e';
-      else if (this.subtype==='diamond') base = '#a8e6ff';
-
-      const cx = snap(x + w/2), cy = snap(y + h/2);
-      const r  = Math.round(Math.min(w,h)/2);
-      g.fillStyle = base;
-      g.beginPath(); g.arc(cx, cy, r, 0, Math.PI*2); g.fill();
-
-      const grad = g.createRadialGradient(cx-2, cy-2, 1, cx, cy, r);
-      grad.addColorStop(0, 'rgba(255,255,255,0.8)');
-      grad.addColorStop(0.4, 'rgba(255,255,255,0.0)');
-      grad.addColorStop(1, 'rgba(0,0,0,0.0)');
-      g.fillStyle = grad;
-      g.beginPath(); g.arc(cx, cy, r, 0, Math.PI*2); g.fill();
-
-      g.restore(); return;
-    }
-
-    if (this.kind === 'bad'){
-      if (this.subtype==='bomb'        && drawPNG(BombImg,     bombReady,     1)) { g.restore(); return; }
-      if (this.subtype==='shitcoin'    && drawPNG(ShitcoinImg, shitcoinReady))    { g.restore(); return; }
-      if (this.subtype==='rugpull'     && drawPNG(RugpullImg,  rugpullReady))     { g.restore(); return; }
-      if (this.subtype==='fakeAirdrop' && drawPNG(FakeADImg,   fakeADReady))      { g.restore(); return; }
-      if (this.subtype==='anvil'       && drawPNG(AnvilImg,    anvilReady))       { g.restore(); return; }
-
-      // Fallbacks vectoriels
-      if (this.subtype==='bomb'){
-        g.fillStyle = '#3b3b3b';
-        g.beginPath(); g.arc(x+w/2, y+h/2, Math.min(w,h)/2, 0, Math.PI*2); g.fill();
-        g.fillStyle = '#f4a261';
-        g.fillRect(x+w/2+2, y-2, 3, 8);
-      } else if (this.subtype==='shitcoin'){
-        g.fillStyle = '#8a6b3a';
-        g.beginPath(); g.arc(x+w/2, y+h/2, Math.min(w,h)/2, 0, Math.PI*2); g.fill();
-      } else if (this.subtype==='anvil'){
-        g.fillStyle = '#60656f';
-        g.beginPath();
-        g.moveTo(x+2, y+h*0.7);
-        g.lineTo(x+w-2, y+h*0.7);
-        g.lineTo(x+w*0.7, y+h*0.4);
-        g.lineTo(x+w*0.3, y+h*0.4);
-        g.closePath(); g.fill();
-      } else if (this.subtype==='rugpull'){
-        g.fillStyle = '#4a3d7a';
-        g.beginPath(); g.ellipse(x+w/2, y+h/2, w/2, h/2, 0, 0, Math.PI*2); g.fill();
-      } else if (this.subtype==='fakeAirdrop'){
-        g.fillStyle = '#6b7cff';
-        g.beginPath(); g.ellipse(x+w/2, y+h/2, w/2, h/2, 0, 0, Math.PI*2); g.fill();
-        g.fillStyle = '#ffffff';
-        g.fillRect(x+w/2-3, y+h/2-3, 6, 6);
+      // Aimant (utilise les centres physiques)
+      if (this.g.effects.magnet>0 && this.kind==='good'){
+        const wx = this.g.wallet.x + this.g.wallet.w/2;
+        const dx = wx - this.px;
+        this.vx += clamp(dx*2, -140, 140)*dt;
       }
 
-      g.restore(); return;
+      // Échelle progressive (spawnScale -> 1) en fonction de la chute vers le wallet
+      const total    = Math.max(1, this.targetPy - this.spawnPy);
+      const traveled = clamp(this.py - this.spawnPy, 0, total);
+      let t = traveled / total;
+      t = easeOutQuad(t); // easing fluide
+
+      this.scale = this.spawnScale + (1 - this.spawnScale) * t;
+
+      // RENDU : on arrondit seulement ici
+      this.rw = snap(this.baseW * this.scale);
+      this.rh = snap(this.baseH * this.scale);
+      this.rx = snap(this.px - this.rw/2);
+      this.ry = snap(this.py - this.rh/2);
+
+      // Met à jour la hitbox lue par le moteur (AABB)
+      this.x = this.rx; this.y = this.ry; this.w = this.rw; this.h = this.rh;
+
+      if (this.ry > BASE_H + 50) this.dead = true;
     }
 
-    // Powerups
-    if (this.kind === 'power'){
-      if (this.subtype==='magnet'   && drawPNG(MagnetImg, magnetReady)) { g.restore(); return; }
-      if (this.subtype==='x2'       && drawPNG(X2Img,     x2Ready))     { g.restore(); return; }
-      if (this.subtype==='shield'   && drawPNG(ShieldImg, shieldReady)) { g.restore(); return; }
-      if (this.subtype==='timeShard'&& drawPNG(TimeImg,   timeReady))   { g.restore(); return; }
+    draw(g){
+      g.save();
 
-      // Fallback générique: petit cap rounded
-      const cap = (color)=>{
-        g.fillStyle=color; const r=6;
-        g.beginPath();
-        g.moveTo(x+r, y); g.lineTo(x+w-r, y);
-        g.quadraticCurveTo(x+w, y, x+w, y+r);
-        g.lineTo(x+w, y+h-r); g.quadraticCurveTo(x+w, y+h, x+w-r, y+h);
-        g.lineTo(x+r, y+h); g.quadraticCurveTo(x, y+h, x, y+h-r);
-        g.lineTo(x, y+r); g.quadraticCurveTo(x, y, x+r, y); g.closePath(); g.fill();
-      };
-      if (this.subtype==='magnet')     cap('#2ecc71');
-      else if (this.subtype==='x2')    { cap('#00d1ff'); g.fillStyle='#fff'; g.fillRect(x+w/2-4, y+h/2-4, 8, 8); }
-      else if (this.subtype==='shield') cap('#66a6ff');
-      else if (this.subtype==='timeShard') cap('#9ff');
+      // Lissage global déjà activé au init → ne pas toggler à chaque objet
+      // g.imageSmoothingEnabled = true; // inutile si global
 
-      g.restore(); return;
+      const x=this.rx, y=this.ry, w=this.rw, h=this.rh;
+
+      // ====== RENDU PNG / fallback vectoriel ======
+      if (this.kind === 'good'){
+        // Dessine tes 4 PNG si prêts (exemples) :
+        if (this.subtype==='bronze'  && typeof BronzeImg  !== 'undefined' && BronzeImg.complete)  { g.drawImage(BronzeImg,  x, y, w, h); g.restore(); return; }
+        if (this.subtype==='silver'  && typeof SilverImg  !== 'undefined' && SilverImg.complete)  { g.drawImage(SilverImg,  x, y, w, h); g.restore(); return; }
+        if (this.subtype==='gold'    && typeof GoldImg    !== 'undefined' && GoldImg.complete)    { g.drawImage(GoldImg,    x, y, w, h); g.restore(); return; }
+        if (this.subtype==='diamond' && typeof DiamondImg !== 'undefined' && DiamondImg.complete) { g.drawImage(DiamondImg, x, y, w, h); g.restore(); return; }
+
+        // fallback vectoriel (si image non chargée)
+        let base = '#ffcd75';
+        if (this.subtype==='bronze')  base = '#c07a45';
+        if (this.subtype==='silver')  base = '#cfd6e6';
+        if (this.subtype==='gold')    base = '#f2c14e';
+        if (this.subtype==='diamond') base = '#a8e6ff';
+        g.fillStyle = base;
+        g.beginPath(); g.arc(x + w/2, y + h/2, Math.min(w,h)/2, 0, Math.PI*2); g.fill();
+        g.restore(); return;
+      }
+
+      if (this.kind === 'bad'){
+        if (this.subtype==='bomb' && typeof BombImg !== 'undefined' && BombImg.complete){
+          g.drawImage(BombImg, x, y, w, h); g.restore(); return;
+        }
+        if (this.subtype==='shitcoin' && typeof ShitcoinImg !== 'undefined' && ShitcoinImg.complete){
+          g.drawImage(ShitcoinImg, x, y, w, h); g.restore(); return;
+        }
+        if (this.subtype==='rugpull' && typeof RugpullImg !== 'undefined' && RugpullImg.complete){
+          g.drawImage(RugpullImg, x, y, w, h); g.restore(); return;
+        }
+        if (this.subtype==='fakeAirdrop' && typeof FakeADImg !== 'undefined' && FakeADImg.complete){
+          g.drawImage(FakeADImg, x, y, w, h); g.restore(); return;
+        }
+        if (this.subtype==='anvil' && typeof AnvilImg !== 'undefined' && AnvilImg.complete){
+          g.drawImage(AnvilImg, x, y, w, h); g.restore(); return;
+        }
+
+        // fallbacks vectoriels
+        if (this.subtype==='shitcoin'){
+          g.fillStyle = '#8a6b3a';
+          g.beginPath(); g.arc(x+w/2, y+h/2, Math.min(w,h)/2, 0, Math.PI*2); g.fill();
+          g.restore(); return;
+        }
+        if (this.subtype==='anvil'){
+          g.fillStyle = '#60656f';
+          g.beginPath();
+          g.moveTo(x+2, y+h*0.7);
+          g.lineTo(x+w-2, y+h*0.7);
+          g.lineTo(x+w*0.7, y+h*0.4);
+          g.lineTo(x+w*0.3, y+h*0.4);
+          g.closePath(); g.fill();
+          g.restore(); return;
+        }
+        if (this.subtype==='rugpull'){
+          g.fillStyle = '#4a3d7a';
+          g.beginPath(); g.ellipse(x+w/2, y+h/2, w/2, h/2, 0, 0, Math.PI*2); g.fill();
+          g.restore(); return;
+        }
+        if (this.subtype==='fakeAirdrop'){
+          g.fillStyle = '#6b7cff';
+          g.beginPath(); g.ellipse(x+w/2, y+h/2, w/2, h/2, 0, 0, Math.PI*2); g.fill();
+          g.fillStyle = '#ffffff';
+          g.fillRect(x+w/2-3, y+h/2-3, 6, 6);
+          g.restore(); return;
+        }
+
+        g.restore(); return;
+      }
+
+      // powerups
+      if (this.kind === 'power'){
+        if (this.subtype==='magnet' && typeof MagnetImg !== 'undefined' && MagnetImg.complete){
+          g.drawImage(MagnetImg, x, y, w, h); g.restore(); return;
+        }
+        if (this.subtype==='x2' && typeof X2Img !== 'undefined' && X2Img.complete){
+          g.drawImage(X2Img, x, y, w, h); g.restore(); return;
+        }
+        if (this.subtype==='shield' && typeof ShieldImg !== 'undefined' && ShieldImg.complete){
+          g.drawImage(ShieldImg, x, y, w, h); g.restore(); return;
+        }
+        if (this.subtype==='timeShard' && typeof TimeImg !== 'undefined' && TimeImg.complete){
+          g.drawImage(TimeImg, x, y, w, h); g.restore(); return;
+        }
+
+        // fallback vectoriel générique
+        g.fillStyle='#00d1ff';
+        g.fillRect(x, y, w, h);
+        g.restore(); return;
+      }
+
+      g.restore();
     }
-
-    g.restore();
   }
-}
 
 
   class Spawner{
