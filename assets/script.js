@@ -5,61 +5,24 @@
   
   
   
-// --- PNG pour le bronze ---
-const BronzeImg = new Image();
-let bronzeReady = false;
-BronzeImg.onload = ()=> bronzeReady = true;
-BronzeImg.src = 'assets/bronze.png';
-
-// --- PNG pour l'argent ---
-const SilverImg = new Image();
-let silverReady = false;
-SilverImg.onload = ()=> silverReady = true;
-SilverImg.src = 'assets/silver.png';
-  
-// --- PNG pour l'or ---
-const GoldImg = new Image();
-let goldReady = false;
-GoldImg.onload = ()=> goldReady = true;
-GoldImg.src = 'assets/gold.png';
-
-// --- PNG pour le diamant ---
-const DiamondImg = new Image();
-let diamondReady = false;
-DiamondImg.onload = ()=> diamondReady = true;
-DiamondImg.src = 'assets/diamond.png';
-
-// --- PNG de la bombe ---
-const BombImg = new Image();
-let bombReady = false;
-BombImg.onload = ()=> bombReady = true;
-BombImg.src = 'assets/bombe.png';
+// === PNG GOOD (pièces) ===
+const BronzeImg  = new Image(); let bronzeReady  = false; BronzeImg.onload  = ()=> bronzeReady  = true; BronzeImg.src  = 'assets/bronze.png';
+const SilverImg  = new Image(); let silverReady  = false; SilverImg.onload  = ()=> silverReady  = true; SilverImg.src  = 'assets/silver.png';
+const GoldImg    = new Image(); let goldReady    = false; GoldImg.onload    = ()=> goldReady    = true; GoldImg.src    = 'assets/gold.png';
+const DiamondImg = new Image(); let diamondReady = false; DiamondImg.onload = ()=> diamondReady = true; DiamondImg.src = 'assets/diamond.png';
 
 // === PNG BAD ===
-const ShitcoinImg = new Image(); let shitcoinReady = false;
-ShitcoinImg.onload = ()=> shitcoinReady = true;
-ShitcoinImg.src = 'assets/shitcoin.png';
+const BombImg     = new Image(); let bombReady     = false; BombImg.onload     = ()=> bombReady     = true; BombImg.src     = 'assets/bombe.png';
+const ShitcoinImg = new Image(); let shitcoinReady = false; ShitcoinImg.onload = ()=> shitcoinReady = true; ShitcoinImg.src = 'assets/shitcoin.png';
+const RugpullImg  = new Image(); let rugpullReady  = false; RugpullImg.onload  = ()=> rugpullReady  = true; RugpullImg.src  = 'assets/rugpull.png';
+const FakeADImg   = new Image(); let fakeADReady   = false; FakeADImg.onload   = ()=> fakeADReady   = true; FakeADImg.src   = 'assets/fakeairdrop.png';
+const AnvilImg    = new Image(); let anvilReady    = false; AnvilImg.onload    = ()=> anvilReady    = true; AnvilImg.src    = 'assets/anvil.png';
 
-const RugpullImg = new Image(); let rugpullReady = false;
-RugpullImg.onload = ()=> rugpullReady = true;
-RugpullImg.src = 'assets/rugpull.png';
-
-const FakeAirdropImg = new Image(); let fakeAirdropReady = false;
-FakeAirdropImg.onload = ()=> fakeAirdropReady = true;
-FakeAirdropImg.src = 'assets/fakeairdrop.png';
-
-// === PNG POWER ===
-const X2Img = new Image(); let x2Ready = false;
-X2Img.onload = ()=> x2Ready = true;
-X2Img.src = 'assets/x2.png';
-
-const ShieldImg = new Image(); let shieldReady = false;
-ShieldImg.onload = ()=> shieldReady = true;
-ShieldImg.src = 'assets/shield.png';
-
-const TimeImg = new Image(); let timeReady = false;
-TimeImg.onload = ()=> timeReady = true;
-TimeImg.src = 'assets/time.png';
+// === PNG POWERUPS ===
+const MagnetImg = new Image(); let magnetReady = false; MagnetImg.onload = ()=> magnetReady = true; MagnetImg.src = 'assets/magnet.png';
+const X2Img     = new Image(); let x2Ready     = false; X2Img.onload     = ()=> x2Ready     = true; X2Img.src     = 'assets/x2.png';
+const ShieldImg = new Image(); let shieldReady = false; ShieldImg.onload = ()=> shieldReady = true; ShieldImg.src = 'assets/shield.png';
+const TimeImg   = new Image(); let timeReady   = false; TimeImg.onload   = ()=> timeReady   = true; TimeImg.src   = 'assets/time.png';
 
 
 // --- PNG de la main (2 frames) ---
@@ -387,8 +350,8 @@ walletImg.src = 'assets/wallet1.png';
 
 // Pré-décode (si supporté)
 [GoldImg, SilverImg, BronzeImg, DiamondImg, BombImg,
- ShitcoinImg, RugpullImg, FakeAirdropImg,
- X2Img, ShieldImg, TimeImg,
+ ShitcoinImg, RugpullImg, FakeADImg, AnvilImg,
+ MagnetImg, X2Img, ShieldImg, TimeImg,
  walletImg, Hand.open, Hand.pinch]
   .forEach(img => img?.decode?.().catch(()=>{}));
 
@@ -623,91 +586,69 @@ spawnY(){
   class FallingItem{
   constructor(game, kind, subtype, x, y){
     this.g = game;
-    this.kind = kind;
-    this.subtype = subtype;
-    this.x = x; 
+    this.kind = kind;          // 'good' | 'bad' | 'power'
+    this.subtype = subtype;    // bronze/silver/gold/diamond, bomb/shitcoin/..., magnet/x2/...
+    this.x = x;
     this.y = y;
     this.vx = rand(-20, 20);
     this.vy = rand(10, 40);
 
-    // tailles de base (taille finale visée)
-    this.baseW = 14;
-    this.baseH = 14;
+    // tailles de base (avant scale global)
+    // On part d’une base compacte puis on override par sous-type.
+    this.w = 14;
+    this.h = 14;
 
-    // Tailles par défaut un peu plus grandes
-    if (this.kind === 'bad')   { this.baseW = 18; this.baseH = 18; }
-    if (this.kind === 'power') { this.baseW = 18; this.baseH = 18; }
-
-    // overrides par sous-type
-    if (this.kind === 'good') {
-      if (this.subtype === 'bronze')  { this.baseW = 18; this.baseH = 18; }
-      if (this.subtype === 'silver')  { this.baseW = 18; this.baseH = 18; }
-      if (this.subtype === 'gold')    { this.baseW = 18; this.baseH = 18; }
-      if (this.subtype === 'diamond') { this.baseW = 18; this.baseH = 18; }
+    // Overrides de taille par sous-type
+    if (this.kind === 'good'){
+      if (this.subtype === 'bronze')  { this.w = 18; this.h = 18; }
+      if (this.subtype === 'silver')  { this.w = 18; this.h = 18; }
+      if (this.subtype === 'gold')    { this.w = 18; this.h = 18; }
+      if (this.subtype === 'diamond') { this.w = 18; this.h = 18; }
+    } else if (this.kind === 'bad'){
+      if (this.subtype === 'bomb')       { this.w = 18; this.h = 18; }
+      if (this.subtype === 'shitcoin')   { this.w = 18; this.h = 18; }
+      if (this.subtype === 'rugpull')    { this.w = 18; this.h = 18; }
+      if (this.subtype === 'fakeAirdrop'){ this.w = 18; this.h = 18; }
+      if (this.subtype === 'anvil')      { this.w = 20; this.h = 20; }
+    } else { // power
+      if (this.subtype === 'magnet')   { this.w = 18; this.h = 18; }
+      if (this.subtype === 'x2')       { this.w = 18; this.h = 18; }
+      if (this.subtype === 'shield')   { this.w = 18; this.h = 18; }
+      if (this.subtype === 'timeShard'){ this.w = 18; this.h = 18; } // 'timeShard' coté logique, image 'time.png'
     }
-    if (this.subtype === 'bomb') { this.baseW = 18; this.baseH = 18; }
 
-    const itemCfg = CONFIG.items || {};
-
-    // Applique un scale global si défini dans CONFIG.items.scale
+    // scale global (évite optional chaining pour compat older)
     const S = (CONFIG.items && CONFIG.items.scale) ? CONFIG.items.scale : 1;
-    this.baseW *= S;
-    this.baseH *= S;
+    this.w *= S;
+    this.h *= S;
 
-    const baseCenterX = this.x + this.baseW / 2;
-    const baseCenterY = this.y + this.baseH / 2;
-
-    this.spawnScale = (itemCfg.spawnScale != null) ? itemCfg.spawnScale : 1;
-    this.targetScale = 1;
-    this.growthDistance = (itemCfg.growDistance != null) ? itemCfg.growDistance : (BASE_H * 0.5);
-    this.scale = this.spawnScale;
-
-    this.w = this.baseW * this.scale;
-    this.h = this.baseH * this.scale;
-    this.x = baseCenterX - this.w / 2;
-    this.y = baseCenterY - this.h / 2;
-    this.spawnCenterY = baseCenterY;
-
+    // états
     this.dead = false;
-    this.spin = rand(-3, 3);
+    this.spin = rand(-3,3);
     this.magnet = false;
     this.t = 0;
   }
 
   baseGravity(){
-    if (this.kind==='good') return CONFIG.gravity.good;
-    if (this.kind==='bad')  return CONFIG.gravity.bad;
+    if (this.kind === 'good') return CONFIG.gravity.good;
+    if (this.kind === 'bad')  return CONFIG.gravity.bad;
     return CONFIG.gravity.power;
   }
- 
-
 
   update(dt){
-    this.t+=dt;
+    this.t += dt;
     this.vy += this.baseGravity()*dt*(1 + (this.g.timeElapsed/60)*0.2);
-    this.x += this.vx*dt;
-    this.y += this.vy*dt;
+    this.x  += this.vx*dt;
+    this.y  += this.vy*dt;
 
+    // aimant (bonus) n’attire que les 'good'
     if (this.g.effects.magnet>0 && this.kind==='good'){
       const wx = this.g.wallet.x + this.g.wallet.w/2;
-      const dx = wx - (this.x+this.w/2);
+      const dx = wx - (this.x + this.w/2);
       this.vx += clamp(dx*2, -140, 140)*dt;
     }
 
-    const centerX = this.x + this.w/2;
-    const centerY = this.y + this.h/2;
-    const growDist = Math.max(1, this.growthDistance);
-    const fallen = centerY - this.spawnCenterY;
-    const progress = clamp(fallen / growDist, 0, 1);
-    const eased = 1 - Math.pow(1 - progress, 2); // easeOutQuad
-    this.scale = lerp(this.spawnScale, this.targetScale, eased);
-
-    this.w = this.baseW * this.scale;
-    this.h = this.baseH * this.scale;
-    this.x = centerX - this.w/2;
-    this.y = centerY - this.h/2;
-
-    if (this.y > BASE_H+50) this.dead=true;
+    if (this.y > BASE_H + 50) this.dead = true;
   }
 
   draw(g){
@@ -718,44 +659,34 @@ spawnY(){
     g.shadowBlur = 4;
     g.shadowOffsetY = 1;
 
-    if (this.kind === 'good') {
+    // Raccourci dessin image nette (snap + smoothing off)
+    const drawPNG = (img, ready, pad=0)=>{
+      if (!ready) return false;
+      const ix = snap(x - pad), iy = snap(y - pad);
+      const iw = snap(w + pad*2), ih = snap(h + pad*2);
+      const prev = g.imageSmoothingEnabled;
+      g.imageSmoothingEnabled = false;
+      g.drawImage(img, ix, iy, iw, ih);
+      g.imageSmoothingEnabled = prev;
+      return true;
+    };
 
-      // GOLD en priorité : si l'image est prête → on la dessine et on sort
+    if (this.kind === 'good'){
+      // ordre: bronze, silver, gold, diamond
+      if (this.subtype==='bronze'  && drawPNG(BronzeImg,  bronzeReady))  { g.restore(); return; }
+      if (this.subtype==='silver'  && drawPNG(SilverImg,  silverReady))  { g.restore(); return; }
+      if (this.subtype==='gold'    && drawPNG(GoldImg,    goldReady))    { g.restore(); return; }
+      if (this.subtype==='diamond' && drawPNG(DiamondImg, diamondReady)) { g.restore(); return; }
 
-      if (this.subtype === 'bronze' && bronzeReady) {
-        drawImgCrisp(g, BronzeImg, x, y, w, h);
-        g.restore();
-        return;
-      }
-
-      if (this.subtype === 'silver' && silverReady) {
-        drawImgCrisp(g, SilverImg, x, y, w, h);
-        g.restore();
-        return;
-      }
-
-      if (this.subtype === 'gold' && goldReady) {
-        drawImgCrisp(g, GoldImg, x, y, w, h);
-        g.restore();
-        return;
-      }
-
-      if (this.subtype === 'diamond' && diamondReady) {
-        drawImgCrisp(g, DiamondImg, x, y, w, h);
-        g.restore();
-        return;
-      }
-
-      // Fallback (ou autres sous-types bronze/silver/diamond)
+      // Fallback vectoriel (cercle)
       let base = '#ffcd75';
-      if (this.subtype === 'bronze')  base = '#c07a45';
-      else if (this.subtype === 'silver')  base = '#cfd6e6';
-      else if (this.subtype === 'gold')    base = '#f2c14e'; // si l'image pas prête
-      else if (this.subtype === 'diamond') base = '#a8e6ff';
+      if (this.subtype==='bronze')  base = '#c07a45';
+      else if (this.subtype==='silver')  base = '#cfd6e6';
+      else if (this.subtype==='gold')    base = '#f2c14e';
+      else if (this.subtype==='diamond') base = '#a8e6ff';
 
-      const cx = Math.round(x + w/2);
-      const cy = Math.round(y + h/2);
-      const r = Math.floor(Math.min(w, h)/2);
+      const cx = snap(x + w/2), cy = snap(y + h/2);
+      const r  = Math.round(Math.min(w,h)/2);
       g.fillStyle = base;
       g.beginPath(); g.arc(cx, cy, r, 0, Math.PI*2); g.fill();
 
@@ -766,132 +697,69 @@ spawnY(){
       g.fillStyle = grad;
       g.beginPath(); g.arc(cx, cy, r, 0, Math.PI*2); g.fill();
 
-      g.restore();
-      return;
+      g.restore(); return;
+    }
 
-    } else if (this.kind==='bad'){
-      // ✅ toute la logique des "bad" RESTE dans ce bloc
+    if (this.kind === 'bad'){
+      if (this.subtype==='bomb'        && drawPNG(BombImg,     bombReady,     1)) { g.restore(); return; }
+      if (this.subtype==='shitcoin'    && drawPNG(ShitcoinImg, shitcoinReady))    { g.restore(); return; }
+      if (this.subtype==='rugpull'     && drawPNG(RugpullImg,  rugpullReady))     { g.restore(); return; }
+      if (this.subtype==='fakeAirdrop' && drawPNG(FakeADImg,   fakeADReady))      { g.restore(); return; }
+      if (this.subtype==='anvil'       && drawPNG(AnvilImg,    anvilReady))       { g.restore(); return; }
+
+      // Fallbacks vectoriels
       if (this.subtype==='bomb'){
-        if (bombReady){
-          const pad = 1;
-          drawImgCrisp(g, BombImg, x - pad, y - pad, w + pad*2, h + pad*2);
-        } else {
-          // fallback vectoriel si l'image n'est pas encore chargée
-          const cx = Math.round(x + w/2);
-          const cy = Math.round(y + h/2);
-          const r = Math.floor(Math.min(w, h)/2);
-          g.fillStyle = '#3b3b3b';
-          g.beginPath(); g.arc(cx, cy, r, 0, Math.PI*2); g.fill();
-          g.fillStyle = '#f4a261';
-          const [rx, ry, rw, rh] = snapR(x + w/2 + 2, y - 2, 3, 8);
-          g.fillRect(rx, ry, rw, rh);
-        }
-
-      } else {
-        if (this.subtype==='shitcoin' && shitcoinReady){
-          const ix = snap(x), iy = snap(y), iw = snap(w), ih = snap(h);
-          const prev = g.imageSmoothingEnabled; g.imageSmoothingEnabled = false;
-          g.drawImage(ShitcoinImg, ix, iy, iw, ih);
-          g.imageSmoothingEnabled = prev;
-          g.restore(); return;
-        }
-
-        if (this.subtype==='rugpull' && rugpullReady){
-          const ix = snap(x), iy = snap(y), iw = snap(w), ih = snap(h);
-          const prev = g.imageSmoothingEnabled; g.imageSmoothingEnabled = false;
-          g.drawImage(RugpullImg, ix, iy, iw, ih);
-          g.imageSmoothingEnabled = prev;
-          g.restore(); return;
-        }
-
-        if (this.subtype==='fakeAirdrop' && fakeAirdropReady){
-          const ix = snap(x), iy = snap(y), iw = snap(w), ih = snap(h);
-          const prev = g.imageSmoothingEnabled; g.imageSmoothingEnabled = false;
-          g.drawImage(FakeAirdropImg, ix, iy, iw, ih);
-          g.imageSmoothingEnabled = prev;
-          g.restore(); return;
-        }
-
-        if (this.subtype==='shitcoin'){
-          const cx = Math.round(x + w/2);
-          const cy = Math.round(y + h/2);
-          const r = Math.floor(Math.min(w, h)/2);
-          g.fillStyle = '#8a6b3a';
-          g.beginPath(); g.arc(cx, cy, r, 0, Math.PI*2); g.fill();
-
-        } else if (this.subtype==='anvil'){
-          g.fillStyle = '#60656f';
-          g.beginPath();
-          g.moveTo(snap(x+2), snap(y+h*0.7));
-          g.lineTo(snap(x+w-2), snap(y+h*0.7));
-          g.lineTo(snap(x+w*0.7), snap(y+h*0.4));
-          g.lineTo(snap(x+w*0.3), snap(y+h*0.4));
-          g.closePath();
-          g.fill();
-
-        } else if (this.subtype==='rugpull'){
-          const cx = Math.round(x + w/2);
-          const cy = Math.round(y + h/2);
-          const rx = Math.floor(w/2);
-          const ry = Math.floor(h/2);
-          g.fillStyle = '#4a3d7a';
-          g.beginPath(); g.ellipse(cx, cy, rx, ry, 0, 0, Math.PI*2); g.fill();
-
-        } else if (this.subtype==='fakeAirdrop'){
-          const cx = Math.round(x + w/2);
-          const cy = Math.round(y + h/2);
-          const rx = Math.floor(w/2);
-          const ry = Math.floor(h/2);
-          g.fillStyle = '#6b7cff';
-          g.beginPath(); g.ellipse(cx, cy, rx, ry, 0, 0, Math.PI*2); g.fill();
-          g.fillStyle = '#ffffff';
-          const [rx2, ry2, rw2, rh2] = snapR(cx - 3, cy - 3, 6, 6);
-          g.fillRect(rx2, ry2, rw2, rh2);
-        }
+        g.fillStyle = '#3b3b3b';
+        g.beginPath(); g.arc(x+w/2, y+h/2, Math.min(w,h)/2, 0, Math.PI*2); g.fill();
+        g.fillStyle = '#f4a261';
+        g.fillRect(x+w/2+2, y-2, 3, 8);
+      } else if (this.subtype==='shitcoin'){
+        g.fillStyle = '#8a6b3a';
+        g.beginPath(); g.arc(x+w/2, y+h/2, Math.min(w,h)/2, 0, Math.PI*2); g.fill();
+      } else if (this.subtype==='anvil'){
+        g.fillStyle = '#60656f';
+        g.beginPath();
+        g.moveTo(x+2, y+h*0.7);
+        g.lineTo(x+w-2, y+h*0.7);
+        g.lineTo(x+w*0.7, y+h*0.4);
+        g.lineTo(x+w*0.3, y+h*0.4);
+        g.closePath(); g.fill();
+      } else if (this.subtype==='rugpull'){
+        g.fillStyle = '#4a3d7a';
+        g.beginPath(); g.ellipse(x+w/2, y+h/2, w/2, h/2, 0, 0, Math.PI*2); g.fill();
+      } else if (this.subtype==='fakeAirdrop'){
+        g.fillStyle = '#6b7cff';
+        g.beginPath(); g.ellipse(x+w/2, y+h/2, w/2, h/2, 0, 0, Math.PI*2); g.fill();
+        g.fillStyle = '#ffffff';
+        g.fillRect(x+w/2-3, y+h/2-3, 6, 6);
       }
 
-    } else {
-      // powerups
+      g.restore(); return;
+    }
+
+    // Powerups
+    if (this.kind === 'power'){
+      if (this.subtype==='magnet'   && drawPNG(MagnetImg, magnetReady)) { g.restore(); return; }
+      if (this.subtype==='x2'       && drawPNG(X2Img,     x2Ready))     { g.restore(); return; }
+      if (this.subtype==='shield'   && drawPNG(ShieldImg, shieldReady)) { g.restore(); return; }
+      if (this.subtype==='timeShard'&& drawPNG(TimeImg,   timeReady))   { g.restore(); return; }
+
+      // Fallback générique: petit cap rounded
       const cap = (color)=>{
-        g.fillStyle=color; const r=6; g.beginPath();
+        g.fillStyle=color; const r=6;
+        g.beginPath();
         g.moveTo(x+r, y); g.lineTo(x+w-r, y);
         g.quadraticCurveTo(x+w, y, x+w, y+r);
         g.lineTo(x+w, y+h-r); g.quadraticCurveTo(x+w, y+h, x+w-r, y+h);
         g.lineTo(x+r, y+h); g.quadraticCurveTo(x, y+h, x, y+h-r);
         g.lineTo(x, y+r); g.quadraticCurveTo(x, y, x+r, y); g.closePath(); g.fill();
       };
+      if (this.subtype==='magnet')     cap('#2ecc71');
+      else if (this.subtype==='x2')    { cap('#00d1ff'); g.fillStyle='#fff'; g.fillRect(x+w/2-4, y+h/2-4, 8, 8); }
+      else if (this.subtype==='shield') cap('#66a6ff');
+      else if (this.subtype==='timeShard') cap('#9ff');
 
-      if (this.subtype==='x2' && x2Ready){
-        const ix = snap(x), iy = snap(y), iw = snap(w), ih = snap(h);
-        const prev = g.imageSmoothingEnabled; g.imageSmoothingEnabled = false;
-        g.drawImage(X2Img, ix, iy, iw, ih);
-        g.imageSmoothingEnabled = prev;
-        g.restore(); return;
-      }
-      if (this.subtype==='shield' && shieldReady){
-        const ix = snap(x), iy = snap(y), iw = snap(w), ih = snap(h);
-        const prev = g.imageSmoothingEnabled; g.imageSmoothingEnabled = false;
-        g.drawImage(ShieldImg, ix, iy, iw, ih);
-        g.imageSmoothingEnabled = prev;
-        g.restore(); return;
-      }
-      if (this.subtype==='timeShard' && timeReady){
-        const ix = snap(x), iy = snap(y), iw = snap(w), ih = snap(h);
-        const prev = g.imageSmoothingEnabled; g.imageSmoothingEnabled = false;
-        g.drawImage(TimeImg, ix, iy, iw, ih);
-        g.imageSmoothingEnabled = prev;
-        g.restore(); return;
-      }
-
-      if (this.subtype==='magnet'){ cap('#2ecc71'); }
-      else if (this.subtype==='x2'){
-        cap('#00d1ff');
-        g.fillStyle='#fff';
-        const [rx3, ry3, rw3, rh3] = snapR(x + w/2 - 4, y + h/2 - 4, 8, 8);
-        g.fillRect(rx3, ry3, rw3, rh3);
-      }
-      else if (this.subtype==='shield'){ cap('#66a6ff'); }
-      else if (this.subtype==='timeShard'){ cap('#9ff'); }
+      g.restore(); return;
     }
 
     g.restore();
