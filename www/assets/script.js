@@ -2,6 +2,33 @@
 // Salt Droppee — script.js (patched 2025‑09‑23)
 // ================================
 
+// --- Détection d'input & utilitaire cross-platform
+const hasTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+const INPUT = {
+  tap: hasTouch ? 'touchstart' : 'click',
+  down: hasTouch ? 'touchstart' : 'mousedown',
+  move: hasTouch ? 'touchmove' : 'mousemove',
+  up:   hasTouch ? 'touchend'  : 'mouseup',
+};
+function addEvent(el, type, handler, opts) {
+  if (!el) return;
+  el.addEventListener(type, handler, opts || { passive: true });
+}
+function getPrimaryPoint(evt) {
+  if (hasTouch) {
+    const touches = evt.changedTouches || evt.touches;
+    if (touches && touches.length > 0) {
+      return touches[0];
+    }
+  }
+  return evt;
+}
+
+let canvas;
+let ctx;
+let overlay;
+let game;
+
 // === Chargement des images ===
 const BronzeImg  = new Image(); let bronzeReady  = false; BronzeImg.onload  = ()=> bronzeReady  = true; BronzeImg.src  = 'assets/bronze.png';
 const SilverImg  = new Image(); let silverReady  = false; SilverImg.onload  = ()=> silverReady  = true; SilverImg.src  = 'assets/silver.png';
@@ -112,11 +139,10 @@ function choiceWeighted(entries){ const total = entries.reduce((s,e)=>s+e.w,0); 
 // =====================
 // CANVAS & RENDER SETUP
 // =====================
-const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d');
 let DPR=1, SS=1, SCALE_FACTOR=1;
 
 function setupHiDPI(){
+  if (!canvas || !ctx) return;
   DPR = Math.max(1, window.devicePixelRatio || 1);
   const u = new URLSearchParams(location.search);
   const q = parseFloat(u.get('ss'));
@@ -134,6 +160,7 @@ const BASE_H = CONFIG.portraitBase.h;
 let SCALE = 1, VIEW_W = BASE_W, VIEW_H = BASE_H;
 
 function resize(){
+  if (!canvas) return;
   const vw = window.innerWidth, vh = window.innerHeight;
   const scale = Math.min(vw/BASE_W, vh/BASE_H);
   SCALE   = scale;
@@ -143,30 +170,37 @@ function resize(){
   canvas.style.height = VIEW_H + 'px';
   setupHiDPI();
 }
-window.addEventListener('resize', resize, {passive:true});
-resize();
 
 // =====================
 // INPUT
 // =====================
 const input = { left:false, right:false, dash:false, dragging:false, dragX:0 };
-window.addEventListener('keydown', e=>{
+function onKeyDown(e){
   if (e.code === 'ArrowLeft' || e.code === 'KeyA') input.left = true;
   if (e.code === 'ArrowRight' || e.code === 'KeyD') input.right = true;
   if (e.code === 'Space') input.dash = true;
   if (e.code === 'Enter'){
     const g = Game.instance; if (g && g.state==='title'){ g.audio.init().then(()=>{ requestAnimationFrame(()=> g.uiStartFromTitle()); }); }
   }
-});
-window.addEventListener('keyup', e=>{
+}
+function onKeyUp(e){
   if (e.code === 'ArrowLeft' || e.code === 'KeyA') input.left = false;
   if (e.code === 'ArrowRight' || e.code === 'KeyD') input.right = false;
   if (e.code === 'Space') input.dash = false;
-});
-
-canvas.addEventListener('touchstart', e=>{ input.dragging = true; input.dragX = e.changedTouches[0].clientX; }, {passive:true});
-canvas.addEventListener('touchmove',  e=>{ if (!input.dragging) return; input.dragX = e.changedTouches[0].clientX; }, {passive:true});
-canvas.addEventListener('touchend',   ()=>{ input.dragging=false; });
+}
+function onPointerDown(e){
+  const point = getPrimaryPoint(e);
+  input.dragging = true;
+  input.dragX = point.clientX;
+}
+function onPointerMove(e){
+  if (!input.dragging) return;
+  const point = getPrimaryPoint(e);
+  input.dragX = point.clientX;
+}
+function onPointerUp(){
+  input.dragging = false;
+}
 
 const TG = window.Telegram?.WebApp; if (TG){ try{ TG.ready(); TG.expand(); }catch(e){} }
 
@@ -405,13 +439,13 @@ class Game{
           <button id="btnLB">Leaderboard local</button>
         </div>
       </div>`;
-    document.getElementById('btnSettings').onclick = ()=> this.renderSettings();
-    document.getElementById('btnLB').onclick = ()=> this.renderLeaderboard();
-    document.getElementById('btnPlay').addEventListener('click', async (e)=>{
+    addEvent(document.getElementById('btnSettings'), INPUT.tap, ()=> this.renderSettings());
+    addEvent(document.getElementById('btnLB'), INPUT.tap, ()=> this.renderLeaderboard());
+    addEvent(document.getElementById('btnPlay'), INPUT.tap, async (e)=>{
       e.preventDefault(); e.stopPropagation(); await this.audio.init(); await new Promise(r=>requestAnimationFrame(r));
       try{ const prev=ctx.imageSmoothingEnabled; ctx.imageSmoothingEnabled=false; const imgs=[walletImg, GoldImg, SilverImg, BronzeImg, DiamondImg, BombImg, Hand.open, Hand.pinch]; for (const im of imgs){ if (im && im.naturalWidth) ctx.drawImage(im,0,0,1,1); } ctx.save(); ctx.shadowColor='rgba(0,0,0,0.15)'; ctx.shadowBlur=4; ctx.shadowOffsetY=1; ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(4,4,2,0,Math.PI*2); ctx.fill(); ctx.restore(); ctx.imageSmoothingEnabled=prev; ctx.clearRect(0,0,8,8); }catch(_){ }
       this.uiStartFromTitle();
-    }, {passive:false});
+    }, { passive:false });
   }
   renderSettings(){ const s=this.settings; overlay.innerHTML = `
     <div class="panel">
@@ -422,11 +456,11 @@ class Game{
       <p>Sensibilité: <input type="range" id="sens" min="0.5" max="1.5" step="0.05" value="${s.sensitivity}"></p>
       <div class="btnrow"><button id="back">Retour</button></div>
     </div>`;
-    document.getElementById('sound').onchange = e=>{ this.settings.sound = e.target.checked; saveSettings(this.settings); this.audio.setEnabled(this.settings.sound); };
-    document.getElementById('contrast').onchange = e=>{ this.settings.contrast = e.target.checked; saveSettings(this.settings); this.reset(); };
-    document.getElementById('haptics').onchange = e=>{ this.settings.haptics = e.target.checked; saveSettings(this.settings); };
-    document.getElementById('sens').oninput = e=>{ this.settings.sensitivity = parseFloat(e.target.value); saveSettings(this.settings); };
-    document.getElementById('back').onclick = ()=> this.renderTitle();
+    addEvent(document.getElementById('sound'), 'change', e=>{ this.settings.sound = e.target.checked; saveSettings(this.settings); this.audio.setEnabled(this.settings.sound); });
+    addEvent(document.getElementById('contrast'), 'change', e=>{ this.settings.contrast = e.target.checked; saveSettings(this.settings); this.reset(); });
+    addEvent(document.getElementById('haptics'), 'change', e=>{ this.settings.haptics = e.target.checked; saveSettings(this.settings); });
+    addEvent(document.getElementById('sens'), 'input', e=>{ this.settings.sensitivity = parseFloat(e.target.value); saveSettings(this.settings); });
+    addEvent(document.getElementById('back'), INPUT.tap, ()=> this.renderTitle());
   }
   renderLeaderboard(){ let runs=[]; try{ runs = JSON.parse(localStorage.getItem(LS.runs)||'[]'); }catch(e){}
     const best = parseInt(localStorage.getItem(LS.bestScore)||'0',10);
@@ -440,9 +474,9 @@ class Game{
       </div>
       <div class="btnrow"><button id="back">Retour</button></div>
     </div>`;
-    document.getElementById('back').onclick = ()=> this.renderTitle();
+    addEvent(document.getElementById('back'), INPUT.tap, ()=> this.renderTitle());
   }
-  renderPause(){ overlay.innerHTML = `<div class="panel"><h1>Pause</h1><div class="btnrow"><button id="resume">Reprendre</button><button id="quit">Menu</button></div></div>`; document.getElementById('resume').onclick = ()=>{ overlay.innerHTML=''; this.state='playing'; this.lastTime=performance.now(); this.loop(); }; document.getElementById('quit').onclick = ()=>{ this.reset(); }; }
+  renderPause(){ overlay.innerHTML = `<div class="panel"><h1>Pause</h1><div class="btnrow"><button id="resume">Reprendre</button><button id="quit">Menu</button></div></div>`; addEvent(document.getElementById('resume'), INPUT.tap, ()=>{ overlay.innerHTML=''; this.state='playing'; this.lastTime=performance.now(); this.loop(); }); addEvent(document.getElementById('quit'), INPUT.tap, ()=>{ this.reset(); }); }
   renderGameOver(){ const best=parseInt(localStorage.getItem(LS.bestScore)||'0',10); overlay.innerHTML = `
     <div class="panel">
       <h1>Fin de partie</h1>
@@ -454,9 +488,9 @@ class Game{
         ${TG? '<button id="share">Partager</button>': ''}
       </div>
     </div>`;
-    document.getElementById('again').onclick = async ()=>{ overlay.innerHTML=''; this.reset({showTitle:false}); await this.audio.init(); await new Promise(r=>requestAnimationFrame(r)); this.start(); };
-    document.getElementById('menu').onclick = ()=>{ this.reset({showTitle:true}); };
-    if (TG){ const sh=document.getElementById('share'); if (sh) sh.onclick = ()=>{ try{ TG.sendData(JSON.stringify({ score:this.score, duration:CONFIG.runSeconds, version:VERSION })); }catch(e){} }; }
+    addEvent(document.getElementById('again'), INPUT.tap, async ()=>{ overlay.innerHTML=''; this.reset({showTitle:false}); await this.audio.init(); await new Promise(r=>requestAnimationFrame(r)); this.start(); }, { passive:false });
+    addEvent(document.getElementById('menu'), INPUT.tap, ()=>{ this.reset({showTitle:true}); });
+    if (TG){ const sh=document.getElementById('share'); if (sh) addEvent(sh, INPUT.tap, ()=>{ try{ TG.sendData(JSON.stringify({ score:this.score, duration:CONFIG.runSeconds, version:VERSION })); }catch(e){} }); }
   }
   drawBg(g){ const grad=g.createLinearGradient(0,0,0,BASE_H); const presets=[ ['#0f2027','#203a43','#2c5364'], ['#232526','#414345','#6b6e70'], ['#1e3c72','#2a5298','#6fa3ff'], ['#42275a','#734b6d','#b57ea7'], ['#355c7d','#6c5b7b','#c06c84'] ]; const cols=presets[this.bgIndex % presets.length]; grad.addColorStop(0,cols[0]); grad.addColorStop(0.5,cols[1]); grad.addColorStop(1,cols[2]); g.fillStyle=grad; g.fillRect(0,0,BASE_W,BASE_H); }
   render(){ const sx = this.shake>0? Math.round(rand(-2,2)):0; const sy = this.shake>0? Math.round(rand(-2,2)):0; ctx.save(); ctx.clearRect(0,0,BASE_W,BASE_H); ctx.translate(sx,sy); this.drawBg(ctx); this.arm.draw(ctx); this.wallet.draw(ctx); for (const it of this.items) it.draw(ctx); this.fx.update(1/60); this.fx.render(ctx); this.hud.draw(ctx); ctx.restore(); }
@@ -464,13 +498,57 @@ class Game{
 
 function checkAABB(a,b){ return a.x<b.x+b.w && a.x+a.w>b.x && a.y<b.y+b.h && a.y+a.h>b.y; }
 
-const game = new Game();
+function getCanvasPoint(evt){
+  if (!canvas) return { x:0, y:0 };
+  const rect = canvas.getBoundingClientRect();
+  const point = getPrimaryPoint(evt);
+  return {
+    x: ((point.clientX - rect.left) / rect.width) * BASE_W,
+    y: ((point.clientY - rect.top) / rect.height) * BASE_H,
+  };
+}
 
-document.addEventListener('visibilitychange', ()=>{ if (document.hidden && game.state==='playing'){ const now = performance.now(); if (game.ignoreVisibilityUntil && now < game.ignoreVisibilityUntil) return; game.state='paused'; game.renderPause(); } });
+function startGame(){
+  if (window.__saltDroppeeStarted) return;
 
-canvas.addEventListener('click', (e)=>{ if (game.state!=='playing') return; const now=performance.now(); if (game.ignoreClicksUntil && now < game.ignoreClicksUntil) return; const rect=canvas.getBoundingClientRect(); const x=((e.clientX-rect.left)/rect.width)*BASE_W; const y=((e.clientY-rect.top)/rect.height)*BASE_H; if (y<40 && x>BASE_W-80){ game.state='paused'; game.renderPause(); } });
+  canvas = document.getElementById('game');
+  ctx = canvas?.getContext('2d');
+  overlay = document.getElementById('overlay');
+  if (!canvas || !ctx || !overlay) return;
 
-document.addEventListener('click', async (e)=>{ if (e.target && e.target.id==='btnPlay' && game.state==='title'){ e.preventDefault(); e.stopPropagation(); await game.audio.init(); await new Promise(r=>requestAnimationFrame(r)); game.uiStartFromTitle(); } }, {capture:true});
+  window.__saltDroppeeStarted = true;
 
-game.render();
+  resize();
+  addEvent(window, 'resize', resize);
+  addEvent(window, 'keydown', onKeyDown);
+  addEvent(window, 'keyup', onKeyUp);
+  addEvent(canvas, INPUT.down, onPointerDown);
+  addEvent(window, INPUT.move, onPointerMove);
+  addEvent(window, INPUT.up, onPointerUp);
+  if (hasTouch) addEvent(window, 'touchcancel', onPointerUp);
+
+  game = new Game();
+
+  addEvent(document, 'visibilitychange', ()=>{ if (document.hidden && game.state==='playing'){ const now = performance.now(); if (game.ignoreVisibilityUntil && now < game.ignoreVisibilityUntil) return; game.state='paused'; game.renderPause(); } });
+
+  addEvent(canvas, INPUT.tap, (e)=>{ if (game.state!=='playing') return; const now=performance.now(); if (game.ignoreClicksUntil && now < game.ignoreClicksUntil) return; const pt=getCanvasPoint(e); if (pt.y<40 && pt.x>BASE_W-80){ game.state='paused'; game.renderPause(); } });
+
+  addEvent(document, INPUT.tap, async (e)=>{ if (e.target && e.target.id==='btnPlay' && game.state==='title'){ e.preventDefault(); e.stopPropagation(); await game.audio.init(); await new Promise(r=>requestAnimationFrame(r)); game.uiStartFromTitle(); } }, { capture:true, passive:false });
+
+  game.render();
+}
+
+(function boot(){
+  if (window.cordova){
+    document.addEventListener('deviceready', () => {
+      startGame();
+    }, false);
+  } else {
+    if (document.readyState === 'loading'){
+      document.addEventListener('DOMContentLoaded', startGame, { once:true });
+    } else {
+      startGame();
+    }
+  }
+})();
 
