@@ -1,1301 +1,476 @@
+// ================================
+// Salt Droppee — script.js (patched 2025‑09‑23)
+// ================================
 
-  // ================================
-  // Salt Droppee — game.js (inline)
-  // ================================
-  
-  
-  
-// === PNG GOOD (pièces) ===
+// === Chargement des images ===
 const BronzeImg  = new Image(); let bronzeReady  = false; BronzeImg.onload  = ()=> bronzeReady  = true; BronzeImg.src  = 'assets/bronze.png';
 const SilverImg  = new Image(); let silverReady  = false; SilverImg.onload  = ()=> silverReady  = true; SilverImg.src  = 'assets/silver.png';
 const GoldImg    = new Image(); let goldReady    = false; GoldImg.onload    = ()=> goldReady    = true; GoldImg.src    = 'assets/gold.png';
 const DiamondImg = new Image(); let diamondReady = false; DiamondImg.onload = ()=> diamondReady = true; DiamondImg.src = 'assets/diamond.png';
 
-// === PNG BAD ===
 const BombImg     = new Image(); let bombReady     = false; BombImg.onload     = ()=> bombReady     = true; BombImg.src     = 'assets/bombe.png';
 const ShitcoinImg = new Image(); let shitcoinReady = false; ShitcoinImg.onload = ()=> shitcoinReady = true; ShitcoinImg.src = 'assets/shitcoin.png';
 const RugpullImg  = new Image(); let rugpullReady  = false; RugpullImg.onload  = ()=> rugpullReady  = true; RugpullImg.src  = 'assets/rugpull.png';
 const FakeADImg   = new Image(); let fakeADReady   = false; FakeADImg.onload   = ()=> fakeADReady   = true; FakeADImg.src   = 'assets/fakeairdrop.png';
 const AnvilImg    = new Image(); let anvilReady    = false; AnvilImg.onload    = ()=> anvilReady    = true; AnvilImg.src    = 'assets/anvil.png';
 
-// === PNG POWERUPS ===
 const MagnetImg = new Image(); let magnetReady = false; MagnetImg.onload = ()=> magnetReady = true; MagnetImg.src = 'assets/magnet.png';
 const X2Img     = new Image(); let x2Ready     = false; X2Img.onload     = ()=> x2Ready     = true; X2Img.src     = 'assets/x2.png';
 const ShieldImg = new Image(); let shieldReady = false; ShieldImg.onload = ()=> shieldReady = true; ShieldImg.src = 'assets/shield.png';
 const TimeImg   = new Image(); let timeReady   = false; TimeImg.onload   = ()=> timeReady   = true; TimeImg.src   = 'assets/time.png';
 
-
-// --- PNG de la main (2 frames) ---
-const Hand = {
-  open: new Image(),
-  pinch: new Image(),
-  ready: false
-};
+// --- Main (2 frames)
+const Hand = { open:new Image(), pinch:new Image(), ready:false };
 Hand.open.src  = 'assets/main_open.png';
 Hand.pinch.src = 'assets/main_pince.png';
 Promise.all([
   new Promise(r => Hand.open.onload = r),
   new Promise(r => Hand.pinch.onload = r),
 ]).then(()=> Hand.ready = true);
-  const VERSION = '1.0.0';
 
-  const CONFIG = {
-    portraitBase: { w: 360, h: 640 }, // 9:16
-    maxTopActorH: 0.20, // Bras cap 20%
-    maxWalletH: 0.20,   // Portefeuille cap 20%
-
-    runSeconds: 75,
-    lives: 3,
-    baseSpawnPerSec: 1.2,
-    spawnRampEverySec: 10,
-    spawnRampFactor: 1.15,
-
-    gravity: { good: 220, bad: 260, power: 200 }, // px/s²
-    wallet: { speed: 480, dashSpeed: 900, dashCD: 2.0 },
-
-    score: { bronze:10, silver:25, gold:50, diamond:100, bad:{shitcoin:-20, anvil:-10}, rugpullPct:-0.3 },
-    combo: { step: 10, maxMult: 3 },
-
-    evolveThresholds: [0,150,400,800,1400],
-
-    powerups: { magnet:3, x2:5, shield:0, timeShard:0 },
-    rarity: { bronze:0.45, silver:0.3, gold:0.2, diamond:0.05 },
-    badWeights: { bomb:0.35, shitcoin:0.25, anvil:0.2, rugpull:0.1, fakeAirdrop:0.1 },
-	collision: {
-  walletScaleX: 0.30, // ← 30% de la largeur visible captent les objets
-  walletScaleY: 1.00, // ← 100% de la hauteur (laisse 1.0 si tu ne veux pas réduire en hauteur)
-  walletPadX: 0,      // ← offset horizontal supplémentaire (px), généralement 0
-  walletPadY: 35       // ← offset vertical supplémentaire (px), généralement 0
-},
-
-// --- Taille des objets qui tombent ---
-    palette: ["#1a1c2c","#5d275d","#b13e53","#ef7d57","#ffcd75","#a7f070","#38b764","#257179"],
-    render: { supersample: 1.5 // 1.5–2.0 est un bon sweet spot. Monte si ton device tient la perf
-    },
-    items: {
-      scale: 1.8,        // taille finale (1.0 = taille d'origine)
-      spawnScale: 0.30,  // taille relative à l'apparition
-      growEase: 'outQuad', // easing du zoom: 'linear' | 'outQuad' | 'outCubic'
-      growDistance: 240  // distance (px) avant d'atteindre la taille finale
-    },
-
-	
-  };
-  
- 
-
-
-  const LS = {
-    bestScore: 'sd_bestScore',
-    bestCombo: 'sd_bestCombo',
-    settings: 'sd_settings',
-    runs: 'sd_runs',
-  };
-
-  // Utils
-  const snap = v => Math.round(v);
-  const easeOutQuad = t => 1 - (1 - t) * (1 - t); // easing pour la croissance
-  const clamp = (v,min,max)=> Math.max(min, Math.min(max,v));
-  const lerp = (a,b,t)=> a+(b-a)*t;
-  const rand = (a,b)=> Math.random()*(b-a)+a;
-  const choiceWeighted = (entries)=>{
-    const total = entries.reduce((s,e)=>s+e.w,0);
-    let r = Math.random()*total;
-    for (const e of entries){ if ((r-=e.w) <= 0) return e.k; }
-    return entries[entries.length-1].k;
-  };
-
-  function seededRandom(seed){
-    let t = seed >>> 0;
-    return function(){ t += 0x6D2B79F5; let r = Math.imul(t ^ t >>> 15, 1 | t);
-      r ^= r + Math.imul(r ^ r >>> 7, 61 | r); return ((r ^ r >>> 14) >>> 0) / 4294967296; };
-  }
-
-  const isTouchDevice = (('ontouchstart' in window) || (navigator.maxTouchPoints > 0));
-  function haptic(ms=15){
-    if (!isTouchDevice) return;
-    try{ navigator.vibrate && navigator.vibrate(ms); }catch(e){}
-  }
-
-  // Scaling & viewport management
-  const canvas = document.getElementById('game');
-  const ctx = canvas.getContext('2d');
-
-  // HD + Supersampling (Option B)
-let DPR = Math.max(1, window.devicePixelRatio || 1);
-let SS  = (() => {
-  const u = new URLSearchParams(location.search);
-  const q = parseFloat(u.get('ss'));
-  return Number.isFinite(q) && q > 0 ? q : (CONFIG.render?.supersample || 1);
-})();
-
-// facteur interne total (cap pour éviter l'explosion perf/mémoire)
-let SCALE_FACTOR = Math.min(4, DPR * SS);
-
-canvas.width  = CONFIG.portraitBase.w * SCALE_FACTOR;
-canvas.height = CONFIG.portraitBase.h * SCALE_FACTOR;
-ctx.setTransform(SCALE_FACTOR, 0, 0, SCALE_FACTOR, 0, 0);
-
-ctx.imageSmoothingEnabled = true;
-if ('imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality = 'high';
-
-const BASE_W = CONFIG.portraitBase.w;
-const BASE_H = CONFIG.portraitBase.h;
-let SCALE = 1, VIEW_W = BASE_W, VIEW_H = BASE_H;
-
-  function resize(){
-    const vw = window.innerWidth, vh = window.innerHeight;
-    const scale = Math.min(vw/BASE_W, vh/BASE_H);
-
-    // globals
-    SCALE   = scale;
-VIEW_W  = Math.floor(BASE_W * SCALE);
-VIEW_H  = Math.floor(BASE_H * SCALE);
-
-// Taille CSS (affichage) — PAS de marges ici
-canvas.style.width  = VIEW_W + 'px';
-canvas.style.height = VIEW_H + 'px';
-
-
-   // HiDPI + Supersampling interne
-DPR = Math.max(1, window.devicePixelRatio || 1);
-SS  = (() => {
-  const u = new URLSearchParams(location.search);
-  const q = parseFloat(u.get('ss'));
-  return Number.isFinite(q) && q > 0 ? q : (CONFIG.render?.supersample || 1);
-})();
-SCALE_FACTOR = Math.min(4, DPR * SS);
-
-canvas.width  = BASE_W * SCALE_FACTOR;
-canvas.height = BASE_H * SCALE_FACTOR;
-ctx.setTransform(SCALE_FACTOR, 0, 0, SCALE_FACTOR, 0, 0);
-
-
-
-  }
-
-  window.addEventListener('resize', resize, {passive:true});
-  resize();
-
-  // Input handling
-  const input = { left:false, right:false, dash:false, dragging:false, dragX:0 };
-
-  window.addEventListener('keydown', e=>{
-    if (e.code === 'ArrowLeft' || e.code === 'KeyA') input.left = true;
-    if (e.code === 'ArrowRight' || e.code === 'KeyD') input.right = true;
-    if (e.code === 'Space') input.dash = true;
-    if (e.code === 'Enter'){
-      const g = Game.instance;
-      if (g && g.state==='title'){
-        g.audio.init().then(()=>{
-          requestAnimationFrame(()=> g.uiStartFromTitle());
-        });
-      }
-    }
-  });
-  window.addEventListener('keyup', e=>{
-    if (e.code === 'ArrowLeft' || e.code === 'KeyA') input.left = false;
-    if (e.code === 'ArrowRight' || e.code === 'KeyD') input.right = false;
-    if (e.code === 'Space') input.dash = false;
-  });
-
-  // Touch drag (direct)
-  canvas.addEventListener('touchstart', e=>{
-    input.dragging = true; input.dragX = e.changedTouches[0].clientX;
-  }, {passive:true});
-  canvas.addEventListener('touchmove', e=>{
-    if (!input.dragging) return;
-    input.dragX = e.changedTouches[0].clientX;
-  }, {passive:true});
-  canvas.addEventListener('touchend', ()=>{ input.dragging=false; });
-
-  // Telegram WebApp integration (optional)
-  const TG = window.Telegram?.WebApp;
-  if (TG){ try{ TG.ready(); TG.expand(); }catch(e){} }
-
-  // Settings & persistence
-  const DefaultSettings = { sound:true, contrast:false, haptics:true, sensitivity:1.0 };
-  function loadSettings(){ try{ return { ...DefaultSettings, ...(JSON.parse(localStorage.getItem(LS.settings))||{}) }; }catch(e){ return {...DefaultSettings}; } }
-  function saveSettings(s){ try{ localStorage.setItem(LS.settings, JSON.stringify(s)); }catch(e){} }
-
-  // Simple Audio (WebAudio beeps)
-// Audio “sans freeze” : buffers pré-rendus + master gain
-class AudioSys {
-  constructor(){
-    this.ctx = null;
-    this.master = null;
-    this.enabled = true;
-    this.buffers = {};   // { good, bad, pow, up }
-    this.ready = false;
-  }
-
-  ensure(){
-    if (this.ctx) return;
-    const AC = window.AudioContext || window.webkitAudioContext;
-    this.ctx = new AC();
-    this.master = this.ctx.createGain();
-    this.master.gain.value = this.enabled ? 0.9 : 0.0; // volume global
-    this.master.connect(this.ctx.destination);
-  }
-
-  setEnabled(v){
-    this.enabled = !!v;
-    if (this.master) this.master.gain.value = this.enabled ? 0.9 : 0.0;
-  }
-
-  // génère un AudioBuffer court (bip) une seule fois
-  _makeBeep({freq=660, ms=80, type='square', fade=0.004}){
-    const sr = this.ctx.sampleRate;
-    const len = Math.max(1, Math.floor(sr * (ms/1000)));
-    const buf = this.ctx.createBuffer(1, len, sr);
-    const data = buf.getChannelData(0);
-
-    // simple osc
-    let phase = 0;
-    const dp = 2*Math.PI*freq/sr;
-
-    for (let i=0;i<len;i++){
-      let s;
-      if (type === 'square'){
-        s = Math.sign(Math.sin(phase)) * 0.25;
-      } else if (type === 'triangle'){
-        s = (2/Math.PI) * Math.asin(Math.sin(phase)) * 0.25;
-      } else { // sine (fallback)
-        s = Math.sin(phase) * 0.25;
-      }
-      // micro fade-in/out pour éviter click
-      const t = i/len;
-      const env = Math.min(1, Math.min(t/fade, (1-t)/fade));
-      data[i] = s * env;
-      phase += dp;
-    }
-    return buf;
-  }
-
-  async init(){
-    this.ensure();
-    await this.ctx.resume().catch(()=>{});
-    if (this.ready) return;
-
-    // pré-rendu des 4 sons utilisés
-    this.buffers.good = this._makeBeep({freq:660,  ms:80,  type:'square'});
-    this.buffers.bad  = this._makeBeep({freq:140,  ms:120, type:'square'});
-    this.buffers.pow  = this._makeBeep({freq:880,  ms:90,  type:'triangle'});
-    this.buffers.up   = this._makeBeep({freq:520,  ms:80,  type:'square'});
-
-    // warmup “inaudible” : on joue chaque buffer avec gain ~0 pour amorcer les drivers
-    const g = this.ctx.createGain();
-    g.gain.value = 0.00001;
-    g.connect(this.master);
-    ['good','bad','pow','up'].forEach(k=>{
-      const s = this.ctx.createBufferSource();
-      s.buffer = this.buffers[k];
-      s.connect(g);
-      s.start();
-    });
-
-    this.ready = true;
-  }
-
-  _play(name){
-    if (!this.enabled || !this.ready) return;
-    const buf = this.buffers[name];
-    if (!buf) return;
-    const s = this.ctx.createBufferSource();
-    s.buffer = buf;
-    s.connect(this.master);
-    s.start();
-  }
-
-  good(){ this._play('good'); }
-  bad(){  this._play('bad');  }
-  pow(){  this._play('pow');  }
-  up(){   this._play('up');   }
-}
-
-  // Particles (smooth dots)
-  class ParticleSys{
-    constructor(){ this.ps=[]; this.gpuPrimed = false; }
-    burst(x,y,color='#a7f070',n=6){
-      if (!this.gpuPrimed){ this.gpuPrimed = true; return; }
-      for(let i=0;i<n;i++){ this.ps.push({x,y,vx:rand(-40,40),vy:rand(-60,0),t:0,life:0.4,color}); }
-    }
-    update(dt){ this.ps = this.ps.filter(p=> (p.t+=dt) < p.life); this.ps.forEach(p=>{ p.vy += 300*dt; p.x += p.vx*dt; p.y += p.vy*dt; }); }
-    render(g){
-      g.save();
-      for (const p of this.ps){
-        g.globalAlpha = 1 - (p.t / p.life);
-        g.fillStyle = p.color;
-        g.beginPath();
-        g.arc(p.x, p.y, 2.2, 0, Math.PI*2);
-        g.fill();
-      }
-      g.globalAlpha = 1;
-      g.restore();
-    }
-  }
-// === Chargement de l'image du portefeuille ===
+// --- Portefeuille
 const walletImg = new Image();
 walletImg.src = 'assets/wallet1.png';
 
-// Pré-décode (si supporté)
+// Pré-decode (si supporté)
 [GoldImg, SilverImg, BronzeImg, DiamondImg, BombImg,
  ShitcoinImg, RugpullImg, FakeADImg, AnvilImg,
  MagnetImg, X2Img, ShieldImg, TimeImg,
  walletImg, Hand.open, Hand.pinch]
   .forEach(img => img?.decode?.().catch(()=>{}));
 
-  // Wallet (coffre lissé)
-  class Wallet{
-  constructor(game){
-    this.g = game;
-    this.level = 1;
-    this.x = BASE_W/2;
-    this.y = BASE_H-40;
-    this.w = 48;
-    this.h = 40;
-    this.vx = 0;
-    this.slowTimer = 0;
-    this.dashCD = 0;
-    this.spriteHCapPx = 0;
+const VERSION = '1.1.0';
 
-    // squash/stretch
-    this.impact = 0;
-    this.impactDir = 'vertical';
-  }
+// =====================
+// CONFIG & BALANCING
+// =====================
+const CONFIG = {
+  portraitBase: { w: 360, h: 640 }, // 9:16
+  maxTopActorH: 0.20,                // main ≤20%
+  maxWalletH:  0.20,                 // wallet ≤20%
 
-  bump(strength = 0.35, dir = 'vertical'){
-    this.impact = Math.min(1, this.impact + strength);
-    this.impactDir = dir;
-  }
+  runSeconds: 75,
+  lives: 3,
 
-  applyCaps(){
-    const maxH = Math.floor(BASE_H * CONFIG.maxWalletH);
-    this.spriteHCapPx = maxH;
+  baseSpawnPerSec: 1.25,
+  spawnRampEverySec: 10,
+  spawnRampFactor: 1.15,
 
-    // Dimensions basées sur l'image (ratio original)
-    const imgRatio = walletImg.naturalWidth / walletImg.naturalHeight || 1;
-    this.h = Math.min(maxH, 60);
-    this.w = this.h * imgRatio * 1.8; // élargi
-    this.y = BASE_H - this.h - 60;
-  }
-  
+  gravity: { good: 220, bad: 260, power: 200 }, // px/s² de base
+  // multiplicateurs par sous-type (ancre gameplay)
+  gravityMul: { anvil:1.35, bomb:1.15, diamond:1.08 },
 
-    evolveByScore(score){ const th = CONFIG.evolveThresholds; let lvl = 1; for (let i=0;i<th.length;i++){ if (score>=th[i]) lvl = i+1; }
-      if (lvl!==this.level){ this.level=lvl; this.applyCaps(); this.g.fx.burst(this.x, this.y, '#ffcd75', 12); this.g.audio.up(); this.squashTimer=0.12; }
-    }
-    update(dt){ const sets = this.g.settings; const sens = sets.sensitivity||1.0;
-      let targetVX = 0;
-      if (input.left) targetVX -= 1; if (input.right) targetVX += 1;
-      if (input.dragging){
-        const rect = canvas.getBoundingClientRect();
-        const nx = ((input.dragX - rect.left) / rect.width) * BASE_W; // screen -> logical
+  wallet: { speed: 500, dashSpeed: 900, dashCD: 2.0 },
 
-        const dx = nx - (this.x+this.w/2);
-        targetVX = clamp(dx*5, -1, 1);
-      }
-      let speed = CONFIG.wallet.speed * (this.slowTimer>0 ? 0.6 : 1.0) * sens;
-      if (input.dash && this.dashCD<=0){
-  this.vx = (targetVX>=0?1:-1) * CONFIG.wallet.dashSpeed;
-  this.dashCD = CONFIG.wallet.dashCD;
-  input.dash = false;
-  this.bump(0.25, 'horizontal'); // petit étirement latéral
+  score: { bronze:10, silver:25, gold:50, diamond:100, bad:{shitcoin:-20, anvil:-10}, rugpullPct:-0.3 },
+  combo: { step: 10, maxMult: 3 },
+
+  evolveThresholds: [0,150,400,800,1400],
+
+  powerups: { magnet:3, x2:5, shield:0, timeShard:0 },
+
+  rarity: { bronze:0.45, silver:0.30, gold:0.20, diamond:0.05 },
+  badWeights: { bomb:0.35, shitcoin:0.25, anvil:0.20, rugpull:0.10, fakeAirdrop:0.10 },
+
+  collision: {
+    walletScaleX: 0.30,
+    walletScaleY: 1.00,
+    walletPadX: 0,
+    walletPadY: 35
+  },
+
+  // Taille & animation des items
+  items: {
+    scale: 1.8,
+    spawnScale: 0.30,
+    growEase: 'outQuad',
+    growDistance: 240
+  },
+
+  // Dimensions visuelles (avant scale globale) —
+  // ajuste ici pour harmoniser chaque PNG sans toucher au code
+  itemSize: {
+    bronze:18, silver:18, gold:18, diamond:18,
+    bomb:18, shitcoin:18, rugpull:18, fakeAirdrop:18, anvil:20,
+    magnet:18, x2:18, shield:18, timeShard:18
+  },
+
+  render: { supersample: 1.5 },
+  palette: ["#1a1c2c","#5d275d","#b13e53","#ef7d57","#ffcd75","#a7f070","#38b764","#257179"],
+};
+
+// =====================
+// UTILS
+// =====================
+const snap = v => Math.round(v);
+const clamp = (v,min,max)=> Math.max(min, Math.min(max,v));
+const lerp = (a,b,t)=> a+(b-a)*t;
+const rand = (a,b)=> Math.random()*(b-a)+a;
+const easeOutQuad = t => 1 - (1 - t) * (1 - t);
+function choiceWeighted(entries){ const total = entries.reduce((s,e)=>s+e.w,0); let r = Math.random()*total; for (const e of entries){ if ((r-=e.w) <= 0) return e.k; } return entries[entries.length-1].k; }
+
+// =====================
+// CANVAS & RENDER SETUP
+// =====================
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+let DPR=1, SS=1, SCALE_FACTOR=1;
+
+function setupHiDPI(){
+  DPR = Math.max(1, window.devicePixelRatio || 1);
+  const u = new URLSearchParams(location.search);
+  const q = parseFloat(u.get('ss'));
+  SS  = (Number.isFinite(q) && q > 0) ? q : (CONFIG.render?.supersample || 1);
+  SCALE_FACTOR = Math.min(4, DPR * SS);
+  canvas.width  = CONFIG.portraitBase.w * SCALE_FACTOR;
+  canvas.height = CONFIG.portraitBase.h * SCALE_FACTOR;
+  ctx.setTransform(SCALE_FACTOR, 0, 0, SCALE_FACTOR, 0, 0);
+  ctx.imageSmoothingEnabled = true;
+  if ('imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality = 'high';
 }
 
-      if (this.dashCD>0) this.dashCD -= dt;
-	  
-	  // décroissance du rebond
-	  this.impact = Math.max(0, this.impact - 3 * dt);
+const BASE_W = CONFIG.portraitBase.w;
+const BASE_H = CONFIG.portraitBase.h;
+let SCALE = 1, VIEW_W = BASE_W, VIEW_H = BASE_H;
 
-      this.vx = lerp(this.vx, targetVX*speed, 0.2);
-      this.x += this.vx*dt;
-      // autorise un débordement de 60px à gauche et à droite
-const overflow = 60;
-this.x = clamp(this.x, -overflow, BASE_W - this.w + overflow);
+function resize(){
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const scale = Math.min(vw/BASE_W, vh/BASE_H);
+  SCALE   = scale;
+  VIEW_W  = Math.floor(BASE_W * SCALE);
+  VIEW_H  = Math.floor(BASE_H * SCALE);
+  canvas.style.width  = VIEW_W + 'px';
+  canvas.style.height = VIEW_H + 'px';
+  setupHiDPI();
+}
+window.addEventListener('resize', resize, {passive:true});
+resize();
 
-      if (this.slowTimer>0) this.slowTimer -= dt;
-      if (this.squashTimer>0) this.squashTimer -= dt;
+// =====================
+// INPUT
+// =====================
+const input = { left:false, right:false, dash:false, dragging:false, dragX:0 };
+window.addEventListener('keydown', e=>{
+  if (e.code === 'ArrowLeft' || e.code === 'KeyA') input.left = true;
+  if (e.code === 'ArrowRight' || e.code === 'KeyD') input.right = true;
+  if (e.code === 'Space') input.dash = true;
+  if (e.code === 'Enter'){
+    const g = Game.instance; if (g && g.state==='title'){ g.audio.init().then(()=>{ requestAnimationFrame(()=> g.uiStartFromTitle()); }); }
+  }
+});
+window.addEventListener('keyup', e=>{
+  if (e.code === 'ArrowLeft' || e.code === 'KeyA') input.left = false;
+  if (e.code === 'ArrowRight' || e.code === 'KeyD') input.right = false;
+  if (e.code === 'Space') input.dash = false;
+});
+
+canvas.addEventListener('touchstart', e=>{ input.dragging = true; input.dragX = e.changedTouches[0].clientX; }, {passive:true});
+canvas.addEventListener('touchmove',  e=>{ if (!input.dragging) return; input.dragX = e.changedTouches[0].clientX; }, {passive:true});
+canvas.addEventListener('touchend',   ()=>{ input.dragging=false; });
+
+const TG = window.Telegram?.WebApp; if (TG){ try{ TG.ready(); TG.expand(); }catch(e){} }
+
+// =====================
+// SETTINGS & STORAGE
+// =====================
+const LS = { bestScore:'sd_bestScore', bestCombo:'sd_bestCombo', settings:'sd_settings', runs:'sd_runs' };
+const DefaultSettings = { sound:true, contrast:false, haptics:true, sensitivity:1.0 };
+function loadSettings(){ try{ return { ...DefaultSettings, ...(JSON.parse(localStorage.getItem(LS.settings))||{}) }; }catch(e){ return {...DefaultSettings}; } }
+function saveSettings(s){ try{ localStorage.setItem(LS.settings, JSON.stringify(s)); }catch(e){} }
+
+// =====================
+// AUDIO — beeps sans freeze
+// =====================
+class AudioSys {
+  constructor(){ this.ctx=null; this.master=null; this.enabled=true; this.buffers={}; this.ready=false; }
+  ensure(){ if (this.ctx) return; const AC = window.AudioContext || window.webkitAudioContext; this.ctx = new AC(); this.master = this.ctx.createGain(); this.master.gain.value = this.enabled ? 0.9 : 0.0; this.master.connect(this.ctx.destination); }
+  setEnabled(v){ this.enabled = !!v; if (this.master) this.master.gain.value = this.enabled ? 0.9 : 0.0; }
+  _makeBeep({freq=660, ms=80, type='square', fade=0.004}){
+    const sr = this.ctx.sampleRate; const len = Math.max(1, Math.floor(sr * (ms/1000))); const buf = this.ctx.createBuffer(1, len, sr); const data = buf.getChannelData(0);
+    let phase=0; const dp = 2*Math.PI*freq/sr;
+    for (let i=0;i<len;i++){
+      let s;
+      if (type==='square') s = Math.sign(Math.sin(phase))*0.25; else if (type==='triangle') s = (2/Math.PI)*Math.asin(Math.sin(phase))*0.25; else s = Math.sin(phase)*0.25;
+      const t=i/len; const env = Math.min(1, Math.min(t/fade, (1-t)/fade)); data[i] = s * env; phase += dp;
     }
-    draw(g){
-    const maxH = this.spriteHCapPx || this.h;
-    const h = Math.min(this.h, maxH);
-    const w = this.w;
-    const x = this.x;
-    const y = this.y;
+    return buf;
+  }
+  async init(){
+    this.ensure(); await this.ctx.resume().catch(()=>{}); if (this.ready) return;
+    this.buffers.good = this._makeBeep({freq:660,  ms:80,  type:'square'});
+    this.buffers.bad  = this._makeBeep({freq:140,  ms:120, type:'square'});
+    this.buffers.pow  = this._makeBeep({freq:880,  ms:90,  type:'triangle'});
+    this.buffers.up   = this._makeBeep({freq:520,  ms:80,  type:'square'});
+    const g = this.ctx.createGain(); g.gain.value = 0.00001; g.connect(this.master);
+    ['good','bad','pow','up'].forEach(k=>{ const s = this.ctx.createBufferSource(); s.buffer = this.buffers[k]; s.connect(g); s.start(); });
+    this.ready = true;
+  }
+  _play(name){ if (!this.enabled || !this.ready) return; const s = this.ctx.createBufferSource(); s.buffer = this.buffers[name]; s.connect(this.master); s.start(); }
+  good(){ this._play('good'); } bad(){ this._play('bad'); } pow(){ this._play('pow'); } up(){ this._play('up'); }
+}
 
-    // facteur d'échelle en fonction de l'impact
-    // vertical: on compresse en hauteur (rebond vers le bas)
-    // horizontal: on étire en largeur (effet dash)
-    let sx = 1, sy = 1;
-    if (this.impactDir === 'vertical'){
-      sx = 1 + 0.18 * this.impact;
-      sy = 1 - 0.28 * this.impact;
-    } else {
-      sx = 1 + 0.25 * this.impact;
-      sy = 1 - 0.12 * this.impact;
-    }
-
+// =====================
+// FX — particules + ondes d'impact
+// =====================
+class ParticleSys{
+  constructor(){ this.ps=[]; this.rings=[]; this.gpuPrimed=false; }
+  burst(x,y,color='#a7f070',n=6){ if (!this.gpuPrimed){ this.gpuPrimed=true; return; } for(let i=0;i<n;i++){ this.ps.push({x,y,vx:rand(-40,40),vy:rand(-60,0),t:0,life:0.4,color}); } }
+  ring(x,y,life=0.35){ if (!this.gpuPrimed){ this.gpuPrimed=true; return; } this.rings.push({x,y,t:0,life}); }
+  update(dt){ this.ps = this.ps.filter(p=> (p.t+=dt) < p.life); this.ps.forEach(p=>{ p.vy += 300*dt; p.x += p.vx*dt; p.y += p.vy*dt; }); this.rings = this.rings.filter(r=> (r.t+=dt) < r.life); }
+  render(g){
     g.save();
-
-    // point d'ancrage au centre du rectangle de destination
-    const cx = Math.round(x + w/2);
-    const cy = Math.round(y + h/2);
-    g.translate(cx, cy);
-    g.scale(sx, sy);
-    g.translate(-cx, -cy);
-
-    // ombre douce (optionnelle)
-    g.shadowColor = 'rgba(0,0,0,0.25)';
-    g.shadowBlur = 6;
-    g.shadowOffsetY = 2;
-
-    // dessiner le PNG ajusté aux dimensions w × h
-    // (si tu veux le “gonfler” en largeur: augmente w dans applyCaps())
-    g.drawImage(walletImg, Math.round(x), Math.round(y), w, h);
-
-
-    g.restore();
-
+    for (const p of this.ps){ g.globalAlpha = 1 - (p.t / p.life); g.fillStyle = p.color; g.beginPath(); g.arc(p.x, p.y, 2.2, 0, Math.PI*2); g.fill(); }
+    for (const r of this.rings){ const k=r.t/r.life; g.globalAlpha = 1-k; g.lineWidth = 2; g.strokeStyle = 'rgba(255,255,255,0.6)'; g.beginPath(); g.arc(r.x, r.y, 6 + 20*k, 0, Math.PI*2); g.stroke(); }
+    g.globalAlpha = 1; g.restore();
+  }
 }
 
+// =====================
+// ENTITÉS
+// =====================
+class Wallet{
+  constructor(game){ this.g=game; this.level=1; this.x=BASE_W/2; this.y=BASE_H-40; this.w=48; this.h=40; this.vx=0; this.slowTimer=0; this.dashCD=0; this.spriteHCapPx=0; this.impact=0; this.impactDir='vertical'; this.squashTimer=0; }
+  bump(strength=0.35, dir='vertical'){ this.impact = Math.min(1, this.impact + strength); this.impactDir = dir; this.g.fx.ring(this.x+this.w/2, this.y, 0.25); }
+  applyCaps(){ const maxH = Math.floor(BASE_H * CONFIG.maxWalletH); this.spriteHCapPx = maxH; const imgRatio = (walletImg.naturalWidth / walletImg.naturalHeight) || 1; this.h = Math.min(maxH, 60); this.w = this.h * imgRatio * 1.8; this.y = BASE_H - this.h - 60; }
+  evolveByScore(score){ const th=CONFIG.evolveThresholds; let lvl=1; for (let i=0;i<th.length;i++){ if (score>=th[i]) lvl=i+1; } if (lvl!==this.level){ this.level=lvl; this.applyCaps(); this.g.fx.burst(this.x, this.y, '#ffcd75', 12); this.g.audio.up(); this.squashTimer=0.12; } }
+  update(dt){ const sens=this.g.settings.sensitivity||1.0; let targetVX=0; if (input.left) targetVX -= 1; if (input.right) targetVX += 1; if (input.dragging){ const rect = canvas.getBoundingClientRect(); const nx = ((input.dragX - rect.left) / rect.width) * BASE_W; const dx = nx - (this.x+this.w/2); targetVX = clamp(dx*5, -1, 1); }
+    let speed = CONFIG.wallet.speed * (this.slowTimer>0 ? 0.6 : 1.0) * sens;
+    if (input.dash && this.dashCD<=0){ this.vx = (targetVX>=0?1:-1) * CONFIG.wallet.dashSpeed; this.dashCD = CONFIG.wallet.dashCD; input.dash=false; this.bump(0.25,'horizontal'); }
+    if (this.dashCD>0) this.dashCD -= dt;
+    this.impact = Math.max(0, this.impact - 3*dt);
+    this.vx = lerp(this.vx, targetVX*speed, 0.2);
+    this.x += this.vx*dt;
+    const overflow=60; this.x = clamp(this.x, -overflow, BASE_W - this.w + overflow);
+    if (this.slowTimer>0) this.slowTimer -= dt; if (this.squashTimer>0) this.squashTimer -= dt;
   }
-
-  // Arm (bras + pince lissés)
-  class Arm{
-  constructor(game){
-    this.g = game;
-    this.t = 0;             // timer d'anim (pincée)
-    this.frame = 0;         // 0..1 (open/pinch)
-    this.handX = BASE_W/2;  // position horizontale de la main
-    this.spriteHCapPx = 0;
-
-    // Mouvement autonome
-    this.targetX = BASE_W/2;
-    this.moveSpeed = 120;
-    this.retarget = 0;
-    this.jitterAmt = 0.05;
-
-    // Dimensions de rendu calculées à chaque frame (pour spawn/limites)
-    this._drawW = 90;
-    this._drawH = 90;
-    this._x = 0;
-    this._y = 0;
-  }
-
-  applyCaps(){
-    const maxH = Math.floor(BASE_H * CONFIG.maxTopActorH);
-    this.h = Math.min(Math.floor(BASE_H * 0.19), maxH); // ≤20%
-  }
-
-  update(dt){
-    // Animation 2 frames
-    this.t += dt;
-    if (this.t > 0.2){ this.t = 0; this.frame = (this.frame + 1) % 2; }
-
-    // Re-ciblage horizontal
-    this.retarget -= dt;
-    const padding = 16;
-
-    // largeur approximative avant d'avoir le PNG chargé
-    const approxW = this._drawW || 90;
-    const halfW = approxW / 2;
-    const minX = padding + halfW;
-    const maxX = BASE_W - (padding + halfW);
-
-    if (this.retarget <= 0){
-      const maxStep = 140;
-      const next = clamp(this.handX + rand(-maxStep, maxStep), minX, maxX);
-      this.targetX = next;
-      this.retarget = rand(0.6, 1.8);
-    }
-
-    const dir = Math.sign(this.targetX - this.handX);
-    this.handX += dir * this.moveSpeed * dt;
-
-    // micro jitter
-    this.handX = clamp(this.handX + rand(-this.jitterAmt, this.jitterAmt), minX, maxX);
-
-    if (Math.abs(this.targetX - this.handX) < 2) this.handX = this.targetX;
-  }
-
   draw(g){
-    const maxH = Math.floor(BASE_H * CONFIG.maxTopActorH);
-    const targetH = Math.min(this.h, maxH);  // hauteur disponible (zone "bras")
-    const y = 13;                              // léger padding haut
-
-    // Sélection de frame
-    const img = (this.frame === 0 ? Hand.open : Hand.pinch);
-
-    // Si les images ne sont pas encore prêtes, on ne dessine rien (ou un placeholder)
-    if (!Hand.ready || !img || !(img.naturalWidth > 0)) {
-      this._drawW = 90; this._drawH = targetH; // fallback pour les bornes
-      const w = this._drawW;
-      const x = clamp(this.handX - w/2, 10, BASE_W - w - 10);
-      this._x = x; this._y = y;
-      return;
-    }
-
-    // --- Mise à l'échelle proportionnelle pour occuper toute la hauteur cible ---
-    const natW = img.naturalWidth;
-    const natH = img.naturalHeight;
-    const scale = targetH / natH;
-    const drawW = natW * scale;     // conserve le ratio
-    const drawH = natH * scale;     // = targetH (plein hauteur)
-
-    // Centrer la main autour de handX, en respectant les bords
-    const x = clamp(this.handX - drawW/2, 10, BASE_W - drawW - 10);
-
-    g.save();
-    g.imageSmoothingEnabled = true; // rendu lisse
-    const drawX = Math.round(x);
-    const drawY = Math.round(y);
-    g.drawImage(img, drawX, drawY, drawW, drawH);
+    const h = Math.min(this.h, this.spriteHCapPx||this.h); const w=this.w; const x=this.x; const y=this.y;
+    let sx=1, sy=1; if (this.impactDir==='vertical'){ sx = 1 + 0.18*this.impact; sy = 1 - 0.28*this.impact; } else { sx = 1 + 0.25*this.impact; sy = 1 - 0.12*this.impact; }
+    g.save(); const cx = Math.round(x + w/2), cy = Math.round(y + h/2); g.translate(cx,cy); g.scale(sx,sy); g.translate(-cx,-cy);
+    g.shadowColor = 'rgba(0,0,0,0.25)'; g.shadowBlur = 6; g.shadowOffsetY = 2;
+    g.drawImage(walletImg, Math.round(x), Math.round(y), w, h);
     g.restore();
-
-    // Mémoriser pour spawn/limites
-    this._drawW = drawW;
-    this._drawH = drawH;
-    this._x = drawX;
-    this._y = drawY;
   }
-
-  // Les objets spawnent près du bout des doigts (bord droit de l'image)
-  spawnX(){ 
-  // pointe des doigts, sans jitter
-  return clamp((this._x||0) + (this._drawW||90) - 133, 16, BASE_W - 16);
-}
-spawnY(){ 
-  // juste sous la main
-  return (this._y||0) + (this._drawH||48) - 112;
 }
 
+class Arm{
+  constructor(game){ this.g=game; this.t=0; this.frame=0; this.handX=BASE_W/2; this.spriteHCapPx=0; this.targetX=BASE_W/2; this.moveSpeed=120; this.retarget=0; this.jitterAmt=0.05; this._drawW=90; this._drawH=90; this._x=0; this._y=0; }
+  applyCaps(){ const maxH = Math.floor(BASE_H * CONFIG.maxTopActorH); this.h = Math.min(Math.floor(BASE_H * 0.19), maxH); }
+  update(dt){ this.t += dt; if (this.t > 0.2){ this.t=0; this.frame=(this.frame+1)%2; } this.retarget -= dt; const padding=16; const approxW=this._drawW||90; const halfW=approxW/2; const minX=padding+halfW; const maxX=BASE_W-(padding+halfW); if (this.retarget<=0){ const maxStep=140; const next=clamp(this.handX + rand(-maxStep, maxStep), minX, maxX); this.targetX=next; this.retarget=rand(0.6,1.8); } const dir=Math.sign(this.targetX - this.handX); this.handX += dir * this.moveSpeed * dt; this.handX = clamp(this.handX + rand(-this.jitterAmt, this.jitterAmt), minX, maxX); if (Math.abs(this.targetX - this.handX) < 2) this.handX = this.targetX; }
+  draw(g){ const maxH = Math.floor(BASE_H * CONFIG.maxTopActorH); const targetH = Math.min(this.h, maxH); const y=13; const img=(this.frame===0?Hand.open:Hand.pinch); if (!Hand.ready || !img || !(img.naturalWidth>0)){ this._drawW=90; this._drawH=targetH; const w=this._drawW; const x=clamp(this.handX - w/2, 10, BASE_W - w - 10); this._x=x; this._y=y; return; }
+    const natW=img.naturalWidth, natH=img.naturalHeight; const scale=targetH/natH; const drawW=natW*scale, drawH=natH*scale; const x = clamp(this.handX - drawW/2, 10, BASE_W - drawW - 10);
+    g.save(); g.imageSmoothingEnabled = true; const drawX=Math.round(x), drawY=Math.round(y); g.drawImage(img, drawX, drawY, drawW, drawH); g.restore(); this._drawW=drawW; this._drawH=drawH; this._x=drawX; this._y=drawY; }
+  spawnX(){ return clamp((this._x||0) + (this._drawW||90) - 133, 16, BASE_W - 16); }
+  spawnY(){ return (this._y||0) + (this._drawH||48) - 112; }
 }
 
-
-  // Items
-
-  class FallingItem{
-    constructor(game, kind, subtype, x, y){
-      this.g = game;
-      this.kind = kind;
-      this.subtype = subtype;
-
-      // vitesses (physique)
-      this.vx = rand(-20, 20);
-      this.vy = rand(10, 40);
-
-      // tailles de base
-      let w = 14, h = 14;
-      if (this.kind === 'good') {
-        if (this.subtype === 'bronze')  { w = 18; h = 18; }
-        if (this.subtype === 'silver')  { w = 18; h = 18; }
-        if (this.subtype === 'gold')    { w = 18; h = 18; }
-        if (this.subtype === 'diamond') { w = 18; h = 18; }
-      }
-      if (this.subtype === 'bomb') { w = 18; h = 18; }
-      if (this.subtype === 'shitcoin') { w = 18; h = 18; }
-      if (this.subtype === 'rugpull') { w = 18; h = 18; }
-      if (this.subtype === 'fakeAirdrop') { w = 18; h = 18; }
-      if (this.subtype === 'anvil') { w = 20; h = 20; }
-      if (this.subtype === 'magnet') { w = 18; h = 18; }
-      if (this.subtype === 'x2') { w = 18; h = 18; }
-      if (this.subtype === 'shield') { w = 18; h = 18; }
-      if (this.subtype === 'timeShard') { w = 18; h = 18; }
-
-      // scale global
-      const S = (CONFIG.items && CONFIG.items.scale) ? CONFIG.items.scale : 1;
-      w *= S; h *= S;
-
-      // Taille de base mémorisée (indépendante de la scale runtime)
-      this.baseW = w;
-      this.baseH = h;
-
-      // Animation de scale (0.3 -> 1.0 par défaut)
-      const itemsCfg = CONFIG.items || {};
-      this.spawnScale = (itemsCfg.spawnScale != null) ? itemsCfg.spawnScale : 0.30; // 30% au spawn
-      this.scale = this.spawnScale;
-
-      // PHYSIQUE : position de référence au CENTRE (flottant)
-      this.px = x + this.baseW/2;
-      this.py = y + this.baseH/2;
-
-      // Références pour l’animation de scale (jusqu'à la zone du wallet)
-      this.spawnPy  = this.py;
-      this.targetPy = this.g.wallet.y - 6; // ajuste si besoin
-
-      // RENDU/HITBOX (calculées à chaque frame, mais init propre)
-      this.rw = snap(this.baseW * this.scale);
-      this.rh = snap(this.baseH * this.scale);
-      this.rx = snap(this.px - this.rw/2);
-      this.ry = snap(this.py - this.rh/2);
-
-      // états
-      this.dead = false;
-      this.spin = rand(-3, 3);
-      this.magnet = false;
-      this.t = 0;
-
-      // pour collision AABB du moteur (il lit x,y,w,h)
-      this.x = this.rx; this.y = this.ry; this.w = this.rw; this.h = this.rh;
-    }
-
-    baseGravity(){
-      if (this.kind==='good') return CONFIG.gravity.good;
-      if (this.kind==='bad')  return CONFIG.gravity.bad;
-      return CONFIG.gravity.power;
-    }
-
-    update(dt){
-      this.t += dt;
-
-      // Physique pure (toujours en flottant sur le CENTRE)
-      this.vy += this.baseGravity() * dt * (1 + (this.g.timeElapsed/60)*0.2);
-      this.px += this.vx * dt;
-      this.py += this.vy * dt;
-
-      // Aimant (utilise les centres physiques)
-      if (this.g.effects.magnet>0 && this.kind==='good'){
-        const wx = this.g.wallet.x + this.g.wallet.w/2;
-        const dx = wx - this.px;
-        this.vx += clamp(dx*2, -140, 140)*dt;
-      }
-
-      // Échelle progressive (spawnScale -> 1) en fonction de la chute vers le wallet
-      const total    = Math.max(1, this.targetPy - this.spawnPy);
-      const traveled = clamp(this.py - this.spawnPy, 0, total);
-      let t = traveled / total;
-      t = easeOutQuad(t); // easing fluide
-
-      this.scale = this.spawnScale + (1 - this.spawnScale) * t;
-
-      // RENDU : on arrondit seulement ici
-      this.rw = snap(this.baseW * this.scale);
-      this.rh = snap(this.baseH * this.scale);
-      this.rx = snap(this.px - this.rw/2);
-      this.ry = snap(this.py - this.rh/2);
-
-      // Met à jour la hitbox lue par le moteur (AABB)
-      this.x = this.rx; this.y = this.ry; this.w = this.rw; this.h = this.rh;
-
-      if (this.ry > BASE_H + 50) this.dead = true;
-    }
-
-    draw(g){
-      g.save();
-
-      // Lissage global déjà activé au init → ne pas toggler à chaque objet
-      // g.imageSmoothingEnabled = true; // inutile si global
-
-      const x=this.rx, y=this.ry, w=this.rw, h=this.rh;
-
-      // ====== RENDU PNG / fallback vectoriel ======
-      if (this.kind === 'good'){
-        // Dessine tes 4 PNG si prêts (exemples) :
-        if (this.subtype==='bronze'  && typeof BronzeImg  !== 'undefined' && BronzeImg.complete)  { g.drawImage(BronzeImg,  x, y, w, h); g.restore(); return; }
-        if (this.subtype==='silver'  && typeof SilverImg  !== 'undefined' && SilverImg.complete)  { g.drawImage(SilverImg,  x, y, w, h); g.restore(); return; }
-        if (this.subtype==='gold'    && typeof GoldImg    !== 'undefined' && GoldImg.complete)    { g.drawImage(GoldImg,    x, y, w, h); g.restore(); return; }
-        if (this.subtype==='diamond' && typeof DiamondImg !== 'undefined' && DiamondImg.complete) { g.drawImage(DiamondImg, x, y, w, h); g.restore(); return; }
-
-        // fallback vectoriel (si image non chargée)
-        let base = '#ffcd75';
-        if (this.subtype==='bronze')  base = '#c07a45';
-        if (this.subtype==='silver')  base = '#cfd6e6';
-        if (this.subtype==='gold')    base = '#f2c14e';
-        if (this.subtype==='diamond') base = '#a8e6ff';
-        g.fillStyle = base;
-        g.beginPath(); g.arc(x + w/2, y + h/2, Math.min(w,h)/2, 0, Math.PI*2); g.fill();
-        g.restore(); return;
-      }
-
-      if (this.kind === 'bad'){
-        if (this.subtype==='bomb' && typeof BombImg !== 'undefined' && BombImg.complete){
-          g.drawImage(BombImg, x, y, w, h); g.restore(); return;
-        }
-        if (this.subtype==='shitcoin' && typeof ShitcoinImg !== 'undefined' && ShitcoinImg.complete){
-          g.drawImage(ShitcoinImg, x, y, w, h); g.restore(); return;
-        }
-        if (this.subtype==='rugpull' && typeof RugpullImg !== 'undefined' && RugpullImg.complete){
-          g.drawImage(RugpullImg, x, y, w, h); g.restore(); return;
-        }
-        if (this.subtype==='fakeAirdrop' && typeof FakeADImg !== 'undefined' && FakeADImg.complete){
-          g.drawImage(FakeADImg, x, y, w, h); g.restore(); return;
-        }
-        if (this.subtype==='anvil' && typeof AnvilImg !== 'undefined' && AnvilImg.complete){
-          g.drawImage(AnvilImg, x, y, w, h); g.restore(); return;
-        }
-
-        // fallbacks vectoriels
-        if (this.subtype==='shitcoin'){
-          g.fillStyle = '#8a6b3a';
-          g.beginPath(); g.arc(x+w/2, y+h/2, Math.min(w,h)/2, 0, Math.PI*2); g.fill();
-          g.restore(); return;
-        }
-        if (this.subtype==='anvil'){
-          g.fillStyle = '#60656f';
-          g.beginPath();
-          g.moveTo(x+2, y+h*0.7);
-          g.lineTo(x+w-2, y+h*0.7);
-          g.lineTo(x+w*0.7, y+h*0.4);
-          g.lineTo(x+w*0.3, y+h*0.4);
-          g.closePath(); g.fill();
-          g.restore(); return;
-        }
-        if (this.subtype==='rugpull'){
-          g.fillStyle = '#4a3d7a';
-          g.beginPath(); g.ellipse(x+w/2, y+h/2, w/2, h/2, 0, 0, Math.PI*2); g.fill();
-          g.restore(); return;
-        }
-        if (this.subtype==='fakeAirdrop'){
-          g.fillStyle = '#6b7cff';
-          g.beginPath(); g.ellipse(x+w/2, y+h/2, w/2, h/2, 0, 0, Math.PI*2); g.fill();
-          g.fillStyle = '#ffffff';
-          g.fillRect(x+w/2-3, y+h/2-3, 6, 6);
-          g.restore(); return;
-        }
-
-        g.restore(); return;
-      }
-
-      // powerups
-      if (this.kind === 'power'){
-        if (this.subtype==='magnet' && typeof MagnetImg !== 'undefined' && MagnetImg.complete){
-          g.drawImage(MagnetImg, x, y, w, h); g.restore(); return;
-        }
-        if (this.subtype==='x2' && typeof X2Img !== 'undefined' && X2Img.complete){
-          g.drawImage(X2Img, x, y, w, h); g.restore(); return;
-        }
-        if (this.subtype==='shield' && typeof ShieldImg !== 'undefined' && ShieldImg.complete){
-          g.drawImage(ShieldImg, x, y, w, h); g.restore(); return;
-        }
-        if (this.subtype==='timeShard' && typeof TimeImg !== 'undefined' && TimeImg.complete){
-          g.drawImage(TimeImg, x, y, w, h); g.restore(); return;
-        }
-
-        // fallback vectoriel générique
-        g.fillStyle='#00d1ff';
-        g.fillRect(x, y, w, h);
-        g.restore(); return;
-      }
-
-      g.restore();
-    }
+// === Assets registry pour simplifier le rendu ===
+const ITEM_ASSETS = {
+  good: {
+    bronze: { img: BronzeImg, ready: ()=>bronzeReady, fallback: (g,x,y,w,h)=>{ g.fillStyle='#c07a45'; g.beginPath(); g.arc(x+w/2, y+h/2, Math.min(w,h)/2, 0, Math.PI*2); g.fill(); } },
+    silver: { img: SilverImg, ready: ()=>silverReady, fallback: (g,x,y,w,h)=>{ g.fillStyle='#cfd6e6'; g.beginPath(); g.arc(x+w/2, y+h/2, Math.min(w,h)/2, 0, Math.PI*2); g.fill(); } },
+    gold:   { img: GoldImg,   ready: ()=>goldReady,   fallback: (g,x,y,w,h)=>{ g.fillStyle='#f2c14e'; g.beginPath(); g.arc(x+w/2, y+h/2, Math.min(w,h)/2, 0, Math.PI*2); g.fill(); } },
+    diamond:{ img: DiamondImg,ready: ()=>diamondReady,fallback: (g,x,y,w,h)=>{ g.fillStyle='#a8e6ff'; g.beginPath(); g.arc(x+w/2, y+h/2, Math.min(w,h)/2, 0, Math.PI*2); g.fill(); } }
+  },
+  bad: {
+    bomb: { img: BombImg, ready: ()=>bombReady, fallback: (g,x,y,w,h)=>{ g.fillStyle='#333'; g.fillRect(x, y, w, h); } },
+    shitcoin: { img: ShitcoinImg, ready: ()=>shitcoinReady, fallback: (g,x,y,w,h)=>{ g.fillStyle='#8a6b3a'; g.beginPath(); g.arc(x+w/2, y+h/2, Math.min(w,h)/2, 0, Math.PI*2); g.fill(); } },
+    rugpull: { img: RugpullImg, ready: ()=>rugpullReady, fallback: (g,x,y,w,h)=>{ g.fillStyle='#4a3d7a'; g.beginPath(); g.ellipse(x+w/2, y+h/2, w/2, h/2, 0, 0, Math.PI*2); g.fill(); } },
+    fakeAirdrop: { img: FakeADImg, ready: ()=>fakeADReady, fallback: (g,x,y,w,h)=>{ g.fillStyle='#6b7cff'; g.beginPath(); g.ellipse(x+w/2, y+h/2, w/2, h/2, 0, 0, Math.PI*2); g.fill(); g.fillStyle='#fff'; g.fillRect(x+w/2-3, y+h/2-3, 6, 6); } },
+    anvil: { img: AnvilImg, ready: ()=>anvilReady, fallback: (g,x,y,w,h)=>{ g.fillStyle='#60656f'; g.beginPath(); g.moveTo(x+2, y+h*0.7); g.lineTo(x+w-2, y+h*0.7); g.lineTo(x+w*0.7, y+h*0.4); g.lineTo(x+w*0.3, y+h*0.4); g.closePath(); g.fill(); } },
+  },
+  power: {
+    magnet: { img: MagnetImg, ready: ()=>magnetReady, fallback: (g,x,y,w,h)=>{ g.fillStyle='#00d1ff'; g.fillRect(x,y,w,h); } },
+    x2:     { img: X2Img,     ready: ()=>x2Ready,     fallback: (g,x,y,w,h)=>{ g.fillStyle='#00d1ff'; g.fillRect(x,y,w,h); } },
+    shield: { img: ShieldImg, ready: ()=>shieldReady, fallback: (g,x,y,w,h)=>{ g.fillStyle='#00d1ff'; g.fillRect(x,y,w,h); } },
+    timeShard:{img: TimeImg,  ready: ()=>timeReady,   fallback: (g,x,y,w,h)=>{ g.fillStyle='#00d1ff'; g.fillRect(x,y,w,h); } },
   }
-
-
-  class Spawner{
-    constructor(game){ this.g=game; this.acc=0; }
-    update(dt){ const diff = this.g.diffMult(); this.acc += dt * (CONFIG.baseSpawnPerSec * diff);
-      while (this.acc >= 1){ this.spawnOne(); this.acc -= 1; }
-    }
-    spawnOne(){
-      const x = this.g.arm.spawnX();
-      const y = this.g.arm.spawnY();
-      let pGood=0.7, pBad=0.2, pPow=0.1;
-      if (this.g.timeElapsed>30){ pGood=0.6; pBad=0.3; pPow=0.1; }
-      const r = Math.random();
-      if (r < pGood){
-        const rar = CONFIG.rarity; const sub = choiceWeighted([
-          {k:'bronze', w:rar.bronze}, {k:'silver', w:rar.silver}, {k:'gold', w:rar.gold}, {k:'diamond', w:rar.diamond}
-        ]);
-        this.g.items.push(new FallingItem(this.g,'good',sub,x,y));
-      } else if (r < pGood + pBad){
-        const bw = CONFIG.badWeights; const sub = choiceWeighted([
-          {k:'bomb', w: bw.bomb*(this.g.timeElapsed>30?1.2:1)},
-          {k:'shitcoin', w:bw.shitcoin}, {k:'anvil', w:bw.anvil}, {k:'rugpull', w:bw.rugpull}, {k:'fakeAirdrop', w:bw.fakeAirdrop}
-        ]);
-        this.g.items.push(new FallingItem(this.g,'bad',sub,x,y));
-      } else {
-        const pu = choiceWeighted([{k:'magnet',w:1},{k:'x2',w:1},{k:'shield',w:1},{k:'timeShard',w:1}]);
-        this.g.items.push(new FallingItem(this.g,'power',pu,x,y));
-      }
-    }
-  }
-
-  class HUD{
-    constructor(game){ this.g=game; }
-    draw(g){
-      const P = this.g.palette;
-      g.save();
-
-      const topCap = Math.floor(BASE_H * CONFIG.maxTopActorH);
-      const BAR_H = 28;
-      const barY  = topCap + 2;
-
-      g.fillStyle = P[0];
-      g.fillRect(0, barY, BASE_W, BAR_H);
-
-      g.fillStyle = P[4];
-      g.font = '12px monospace';
-      g.textBaseline = 'top';
-
-      const ty = barY + 10;
-
-      const s = `SCORE ${this.g.score|0}`;
-      const t = `TIME ${(Math.max(0,this.g.timeLeft)).toFixed(0)}s`;
-      const v = `LIVES ${'♥'.repeat(this.g.lives)}`;
-      const c = `COMBO x${this.g.comboMult.toFixed(1)} (${this.g.comboStreak|0})`;
-
-      g.fillText(s, 6, ty);
-      g.fillText(v, 100, ty);
-      g.fillText(t, 300, ty);
-      g.fillText(c, 190, ty);
-
-      let ex = 6, ey = barY + BAR_H + 4;
-      const iconSize = 10;
-      const icon = (label, active, timer)=>{
-        if (!active) return;
-        g.fillStyle = P[5];
-        g.fillRect(ex, ey, iconSize, iconSize);
-        g.fillStyle = P[0];
-        g.fillText(label, ex + iconSize + 4, ey - 1);
-        g.fillStyle = P[4];
-        g.fillText((timer>0?timer.toFixed(0)+'s':'1x'), ex + iconSize + 42, ey - 1);
-        ey += iconSize + 4;
-      };
-
-      icon('MAG', this.g.effects.magnet>0, this.g.effects.magnet);
-      icon('x2',  this.g.effects.x2>0,     this.g.effects.x2);
-      icon('SHD', this.g.effects.shield>0, 1);
-      if (this.g.effects.freeze>0){
-        g.fillStyle = P[2];
-        g.fillRect(ex, ey, iconSize, iconSize);
-        g.fillStyle = P[4];
-        g.fillText('FRZ', ex + iconSize + 4, ey - 1);
-        g.fillText(this.g.effects.freeze.toFixed(0)+'s', ex + iconSize + 40, ey - 1);
-      }
-
-      g.restore();
-    }
-  }
-
-  class Game{
-    static instance = null;
-    constructor(){ Game.instance=this; this.reset({ showTitle: true }); }
-    reset({ showTitle = true } = {}){
-      this.settings = loadSettings();
-      document.documentElement.classList.toggle('contrast-high', !!this.settings.contrast);
-      this.palette = CONFIG.palette.slice(); if (this.settings.contrast){ this.palette = ['#000','#444','#ff0044','#ffaa00','#ffffff','#00ffea','#00ff66','#66a6ff']; }
-
-      const u = new URLSearchParams(location.search); const seed = u.get('seed');
-      this.random = seed? seededRandom(parseInt(seed)||1): Math.random;
-
-      this.state='title';
-      this.audio = new AudioSys();
-      this.audio.setEnabled(!!this.settings.sound);
-      this.fx = new ParticleSys();
-
-      this.timeLeft = CONFIG.runSeconds; this.timeElapsed=0;
-      this.lives = CONFIG.lives; this.score = 0; this.comboStreak=0; this.comboMult=1; this.maxCombo=0; this.levelReached=1;
-
-      this.arm = new Arm(this); this.arm.applyCaps();
-      this.wallet = new Wallet(this); this.wallet.applyCaps();
-      this.hud = new HUD(this);
-      this.spawner = new Spawner(this);
-      this.items = [];
-      this.effects = { magnet:0, x2:0, shield:0, freeze:0 };
-      this.shake=0;
-      this.bgIndex = 0;
-      this.didFirstCatch = false;
-      this.updateBgByScore();
-
-      console.log('[STATE] reset -> title');
-      //this.renderTitle();
-	  if (showTitle) this.renderTitle();
-    }
-
-    diffMult(){
-      const r = 1 * Math.pow(CONFIG.spawnRampFactor, Math.floor(this.timeElapsed/CONFIG.spawnRampEverySec));
-      return r;
-    }
-
-    updateBgByScore(){ const th=CONFIG.evolveThresholds; let idx=0; for (let i=0;i<th.length;i++){ if (this.score>=th[i]) idx=i; }
-      if (idx!==this.bgIndex){ this.bgIndex=idx; this.wallet.evolveByScore(this.score); this.levelReached = Math.max(this.levelReached, this.wallet.level); }
-    }
-
-    start(){
-      this.state='playing';
-      this.lastTime = performance.now();
-      // Anti double-clic/visibility au démarrage
-      this.ignoreClicksUntil = this.lastTime + 500;      // 0.5s
-      this.ignoreVisibilityUntil = this.lastTime + 1000; // 1s
-      console.log('[STATE] start -> playing');
-      this.loop();
-    }
-
-    loop(){
-      if (this.state==='playing'){
-        const now=performance.now();
-        const dt = Math.min(0.033, (now-this.lastTime)/1000);
-        this.lastTime=now;
-        this.step(dt);
-        this.render();
-        requestAnimationFrame(()=>this.loop());
-      }
-    }
-
-    step(dt){
-      this.timeElapsed += dt;
-      if (this.timeLeft>0) this.timeLeft = Math.max(0, this.timeLeft - dt);
-      if (this.timeLeft<=0 || this.lives<=0){
-        this.endGame(); return;
-      }
-
-      this.arm.update(dt);
-      this.wallet.update(dt);
-
-      this.spawner.update(dt);
-      for (const it of this.items) it.update(dt);
-
-      const w = this.wallet;
-const cx = CONFIG.collision.walletScaleX;
-const cy = CONFIG.collision.walletScaleY;
-const px = CONFIG.collision.walletPadX;
-const py = CONFIG.collision.walletPadY;
-
-// hitbox réduite + centrée, puis décalée par les pads
-const wr = {
-  x: w.x + (w.w - w.w * cx) / 2 + px,
-  y: w.y + (w.h - w.h * cy) / 2 + py,
-  w: w.w * cx,
-  h: w.h * cy
 };
 
-for (const it of this.items){
-  if (it.dead) continue;
-  if (checkAABB(wr, { x: it.x, y: it.y, w: it.w, h: it.h })){
-    this.onCatch(it);
-    it.dead = true;
+function drawItemSprite(g, kind, subtype, x, y, w, h){
+  const entry = ITEM_ASSETS[kind]?.[subtype];
+  if (entry){ const im = entry.img; if (im && im.complete) { g.drawImage(im, x, y, w, h); } else { entry.fallback(g,x,y,w,h); } return; }
+  // Fallback ultime
+  g.fillStyle = '#00d1ff'; g.fillRect(x,y,w,h);
+}
+
+class FallingItem{
+  constructor(game, kind, subtype, x, y){
+    this.g=game; this.kind=kind; this.subtype=subtype; this.vx=rand(-20,20); this.vy=rand(10,40);
+    const base = CONFIG.itemSize[subtype] ?? 18; const S = CONFIG.items?.scale ?? 1; let w=base*S, h=base*S; this.baseW=w; this.baseH=h;
+    this.spawnScale = (CONFIG.items?.spawnScale != null) ? CONFIG.items.spawnScale : 0.30; this.scale = this.spawnScale;
+    this.px = x + this.baseW/2; this.py = y + this.baseH/2; this.spawnPy=this.py; this.targetPy=this.g.wallet.y - 6;
+    this.rw = snap(this.baseW * this.scale); this.rh = snap(this.baseH * this.scale); this.rx = snap(this.px - this.rw/2); this.ry = snap(this.py - this.rh/2);
+    this.dead=false; this.spin=rand(-3,3); this.magnet=false; this.t=0; this.x=this.rx; this.y=this.ry; this.w=this.rw; this.h=this.rh;
+  }
+  baseGravity(){ if (this.kind==='good') return CONFIG.gravity.good; if (this.kind==='bad') return CONFIG.gravity.bad; return CONFIG.gravity.power; }
+  update(dt){
+    this.t += dt;
+    let gAcc = this.baseGravity(); const mul = CONFIG.gravityMul[this.subtype]; if (mul) gAcc *= mul; this.vy += gAcc * dt * (1 + (this.g.timeElapsed/60)*0.2);
+    this.px += this.vx * dt; this.py += this.vy * dt;
+    if (this.g.effects.magnet>0 && this.kind==='good'){ const wx = this.g.wallet.x + this.g.wallet.w/2; const dx = wx - this.px; this.vx += clamp(dx*2, -140, 140)*dt; }
+    const total = Math.max(1, this.targetPy - this.spawnPy); const traveled = clamp(this.py - this.spawnPy, 0, total); let t = traveled / total; t = easeOutQuad(t); this.scale = this.spawnScale + (1 - this.spawnScale) * t;
+    this.rw = snap(this.baseW * this.scale); this.rh = snap(this.baseH * this.scale); this.rx = snap(this.px - this.rw/2); this.ry = snap(this.py - this.rh/2);
+    this.x=this.rx; this.y=this.ry; this.w=this.rw; this.h=this.rh; if (this.ry > BASE_H + 50) this.dead = true;
+  }
+  draw(g){ g.save(); const x=this.rx, y=this.ry, w=this.rw, h=this.rh; drawItemSprite(g, this.kind, this.subtype, x, y, w, h); g.restore(); }
+}
+
+class Spawner{
+  constructor(game){ this.g=game; this.acc=0; }
+  update(dt){ const diff=this.g.diffMult(); this.acc += dt * (CONFIG.baseSpawnPerSec * diff); while (this.acc >= 1){ this.spawnOne(); this.acc -= 1; } }
+  spawnOne(){
+    const x = this.g.arm.spawnX(); const y = this.g.arm.spawnY();
+    let pGood=0.7, pBad=0.2, pPow=0.1; if (this.g.timeElapsed>30){ pGood=0.6; pBad=0.3; pPow=0.1; }
+    const r=Math.random();
+    if (r < pGood){ const rar = CONFIG.rarity; const sub = choiceWeighted([{k:'bronze',w:rar.bronze},{k:'silver',w:rar.silver},{k:'gold',w:rar.gold},{k:'diamond',w:rar.diamond}]); this.g.items.push(new FallingItem(this.g,'good',sub,x,y)); }
+    else if (r < pGood + pBad){ const bw = CONFIG.badWeights; const sub = choiceWeighted([{k:'bomb',w:bw.bomb*(this.g.timeElapsed>30?1.2:1)},{k:'shitcoin',w:bw.shitcoin},{k:'anvil',w:bw.anvil},{k:'rugpull',w:bw.rugpull},{k:'fakeAirdrop',w:bw.fakeAirdrop}]); this.g.items.push(new FallingItem(this.g,'bad',sub,x,y)); }
+    else { const pu = choiceWeighted([{k:'magnet',w:1},{k:'x2',w:1},{k:'shield',w:1},{k:'timeShard',w:1}]); this.g.items.push(new FallingItem(this.g,'power',pu,x,y)); }
   }
 }
-      this.items = this.items.filter(i=>!i.dead);
 
-      for (const k of ['magnet','x2','freeze']){ if (this.effects[k]>0) this.effects[k]-=dt; if (this.effects[k]<0) this.effects[k]=0; }
+class HUD{ constructor(game){ this.g=game; } draw(g){ const P=this.g.palette; g.save(); const topCap = Math.floor(BASE_H * CONFIG.maxTopActorH); const BAR_H=28; const barY=topCap+2; g.fillStyle=P[0]; g.fillRect(0,barY,BASE_W,BAR_H); g.fillStyle=P[4]; g.font='12px monospace'; g.textBaseline='top'; const ty=barY+10; const s=`SCORE ${this.g.score|0}`; const t=`TIME ${(Math.max(0,this.g.timeLeft)).toFixed(0)}s`; const v=`LIVES ${'♥'.repeat(this.g.lives)}`; const c=`COMBO x${this.g.comboMult.toFixed(1)} (${this.g.comboStreak|0})`; g.fillText(s,6,ty); g.fillText(v,100,ty); g.fillText(t,300,ty); g.fillText(c,190,ty); let ex=6, ey=barY+BAR_H+4; const iconSize=10; const icon=(label,active,timer)=>{ if (!active) return; g.fillStyle=P[5]; g.fillRect(ex,ey,iconSize,iconSize); g.fillStyle=P[0]; g.fillText(label, ex+iconSize+4, ey-1); g.fillStyle=P[4]; g.fillText((timer>0?timer.toFixed(0)+'s':'1x'), ex+iconSize+42, ey-1); ey += iconSize+4; };
+  icon('MAG', this.g.effects.magnet>0, this.g.effects.magnet); icon('x2', this.g.effects.x2>0, this.g.effects.x2); icon('SHD', this.g.effects.shield>0, 1); if (this.g.effects.freeze>0){ g.fillStyle=P[2]; g.fillRect(ex,ey,iconSize,iconSize); g.fillStyle=P[4]; g.fillText('FRZ', ex+iconSize+4, ey-1); g.fillText(this.g.effects.freeze.toFixed(0)+'s', ex+iconSize+40, ey-1); }
+  g.restore(); } }
 
-      this.updateBgByScore();
-
-      if (this.shake>0) this.shake = Math.max(0, this.shake - dt*6);
-
-      
+// =====================
+// GAME
+// =====================
+class Game{
+  static instance=null;
+  constructor(){ Game.instance=this; this.reset({ showTitle:true }); }
+  reset({showTitle=true}={}){
+    this.settings = loadSettings(); document.documentElement.classList.toggle('contrast-high', !!this.settings.contrast);
+    this.palette = CONFIG.palette.slice(); if (this.settings.contrast){ this.palette = ['#000','#444','#ff0044','#ffaa00','#ffffff','#00ffea','#00ff66','#66a6ff']; }
+    const u=new URLSearchParams(location.search); const seed=u.get('seed'); this.random = seed? (function(seed){ let t=seed>>>0; return function(){ t += 0x6D2B79F5; let r = Math.imul(t ^ t >>> 15, 1 | t); r ^= r + Math.imul(r ^ r >>> 7, 61 | r); return ((r ^ r >>> 14) >>> 0) / 4294967296; };})(parseInt(seed)||1) : Math.random;
+    this.state='title'; this.audio=new AudioSys(); this.audio.setEnabled(!!this.settings.sound); this.fx=new ParticleSys();
+    this.timeLeft=CONFIG.runSeconds; this.timeElapsed=0; this.lives=CONFIG.lives; this.score=0; this.comboStreak=0; this.comboMult=1; this.maxCombo=0; this.levelReached=1;
+    this.arm=new Arm(this); this.arm.applyCaps(); this.wallet=new Wallet(this); this.wallet.applyCaps(); this.hud=new HUD(this); this.spawner=new Spawner(this);
+    this.items=[]; this.effects={magnet:0,x2:0,shield:0,freeze:0}; this.shake=0; this.bgIndex=0; this.didFirstCatch=false; this.updateBgByScore();
+    if (showTitle) this.renderTitle(); else this.render();
+  }
+  diffMult(){ return Math.pow(CONFIG.spawnRampFactor, Math.floor(this.timeElapsed/CONFIG.spawnRampEverySec)); }
+  updateBgByScore(){ const th=CONFIG.evolveThresholds; let idx=0; for (let i=0;i<th.length;i++){ if (this.score>=th[i]) idx=i; } if (idx!==this.bgIndex){ this.bgIndex=idx; this.wallet.evolveByScore(this.score); this.levelReached = Math.max(this.levelReached, this.wallet.level); } }
+  start(){ this.state='playing'; this.lastTime=performance.now(); this.ignoreClicksUntil=this.lastTime+500; this.ignoreVisibilityUntil=this.lastTime+1000; this.loop(); }
+  loop(){ if (this.state==='playing'){ const now=performance.now(); const dt=Math.min(0.033, (now-this.lastTime)/1000); this.lastTime=now; this.step(dt); this.render(); requestAnimationFrame(()=>this.loop()); } }
+  step(dt){
+    this.timeElapsed += dt; if (this.timeLeft>0) this.timeLeft = Math.max(0, this.timeLeft - dt); if (this.timeLeft<=0 || this.lives<=0){ this.endGame(); return; }
+    this.arm.update(dt); this.wallet.update(dt); this.spawner.update(dt); for (const it of this.items) it.update(dt);
+    const w=this.wallet; const cx=CONFIG.collision.walletScaleX, cy=CONFIG.collision.walletScaleY, px=CONFIG.collision.walletPadX, py=CONFIG.collision.walletPadY;
+    const wr = { x: w.x + (w.w - w.w*cx)/2 + px, y: w.y + (w.h - w.h*cy)/2 + py, w: w.w*cx, h: w.h*cy };
+    for (const it of this.items){ if (it.dead) continue; if (checkAABB(wr, {x:it.x,y:it.y,w:it.w,h:it.h})){ this.onCatch(it); it.dead=true; } }
+    this.items = this.items.filter(i=>!i.dead);
+    for (const k of ['magnet','x2','freeze']){ if (this.effects[k]>0) this.effects[k]-=dt; if (this.effects[k]<0) this.effects[k]=0; }
+    this.updateBgByScore(); if (this.shake>0) this.shake = Math.max(0, this.shake - dt*6);
+  }
+  onCatch(it){
+    const firstCatch = !this.didFirstCatch;
+    if (it.kind==='good'){
+      this.wallet.bump(0.35, 'vertical');
+      let pts = CONFIG.score[it.subtype] || 0; if (this.effects.freeze>0){ this.fx.burst(it.x,it.y,'#88a',4); this.audio.bad(); this.didFirstCatch=true; return; }
+      if (this.effects.x2>0) pts *= 2; this.comboStreak += 1; if (this.comboStreak % CONFIG.combo.step === 0){ this.comboMult = Math.min(CONFIG.combo.maxMult, this.comboMult+1); }
+      this.maxCombo = Math.max(this.maxCombo, this.comboStreak); pts = Math.floor(pts * this.comboMult); this.score += pts;
+      this.fx.burst(it.x,it.y,'#a7f070',6); this.audio.good(); if (this.settings.haptics && !firstCatch) try{ navigator.vibrate && navigator.vibrate(8); }catch(e){}
+    } else if (it.kind==='bad'){
+      if (it.subtype==='bomb') this.wallet.bump(0.65,'vertical'); else if (it.subtype==='anvil') this.wallet.bump(0.55,'vertical'); else this.wallet.bump(0.40,'vertical');
+      if (this.effects.shield>0){ this.effects.shield=0; this.fx.burst(it.x,it.y,'#66a6ff',8); this.audio.pow(); this.didFirstCatch=true; return; }
+      this.comboStreak=0; this.comboMult=1;
+      if (it.subtype==='bomb'){ this.lives -= 1; this.shake = 0.8; this.audio.bad(); if (this.settings.haptics && !firstCatch) try{ navigator.vibrate && navigator.vibrate(40); }catch(e){} }
+      else if (it.subtype==='shitcoin'){ this.score += CONFIG.score.bad.shitcoin; this.audio.bad(); }
+      else if (it.subtype==='anvil'){ this.score += CONFIG.score.bad.anvil; this.wallet.slowTimer = 2.0; this.audio.bad(); }
+      else if (it.subtype==='rugpull'){ const delta = Math.floor(this.score * CONFIG.score.rugpullPct); this.score = Math.max(0, this.score + delta); this.audio.bad(); }
+      else if (it.subtype==='fakeAirdrop'){ this.effects.freeze = 3.0; this.audio.bad(); }
+    } else if (it.kind==='power'){
+      this.wallet.bump(0.25,'horizontal');
+      if (it.subtype==='magnet'){ this.effects.magnet = CONFIG.powerups.magnet; this.audio.pow(); }
+      else if (it.subtype==='x2'){ this.effects.x2 = CONFIG.powerups.x2; this.audio.pow(); }
+      else if (it.subtype==='shield'){ this.effects.shield = 1; this.audio.pow(); }
+      else if (it.subtype==='timeShard'){ this.timeLeft = Math.min(CONFIG.runSeconds, this.timeLeft + 5); this.audio.pow(); }
+      this.fx.burst(it.x,it.y,'#ffcd75',10);
     }
-
-    onCatch(it){
-      const firstCatch = !this.didFirstCatch;
-
-      if (it.kind === 'good'){
-        // rebond doux
-        this.wallet.bump(0.35, 'vertical');
-
-        let pts = CONFIG.score[it.subtype] || 0;
-        if (this.effects.freeze>0){
-          this.fx.burst(it.x,it.y,'#88a', 4);
-          this.audio.bad();
-          this.didFirstCatch = true;
-          return;
-        }
-        if (this.effects.x2>0) pts *= 2;
-
-        this.comboStreak += 1;
-        if (this.comboStreak % CONFIG.combo.step === 0){
-          this.comboMult = Math.min(CONFIG.combo.maxMult, this.comboMult+1);
-        }
-        this.maxCombo = Math.max(this.maxCombo, this.comboStreak);
-        pts = Math.floor(pts * this.comboMult);
-        this.score += pts;
-
-        this.fx.burst(it.x,it.y,'#a7f070', 6);
-        this.audio.good();
-        if (this.settings.haptics && !firstCatch) haptic(8);
-
-      } else if (it.kind === 'bad'){
-        // gros rebond "ouch"
-        if (it.subtype==='bomb'){
-          this.wallet.bump(0.65, 'vertical');
-        } else if (it.subtype==='anvil'){
-          this.wallet.bump(0.55, 'vertical');
-        } else if (it.subtype==='shitcoin' || it.subtype==='rugpull'){
-          this.wallet.bump(0.40, 'vertical');
-        } else {
-          this.wallet.bump(0.35, 'vertical');
-        }
-
-        if (this.effects.shield>0){
-          this.effects.shield=0;
-          this.fx.burst(it.x,it.y,'#66a6ff', 8);
-          this.audio.pow();
-          this.didFirstCatch = true;
-          return;
-        }
-
-        // reset combo
-        this.comboStreak = 0;
-        this.comboMult = 1;
-
-        if (it.subtype==='bomb'){
-          this.lives -= 1;
-          this.shake = 0.8;
-          this.audio.bad();
-          if (this.settings.haptics && !firstCatch) haptic(40);
-        } else if (it.subtype==='shitcoin'){
-          this.score += CONFIG.score.bad.shitcoin;
-          this.audio.bad();
-        } else if (it.subtype==='anvil'){
-          this.score += CONFIG.score.bad.anvil;
-          this.wallet.slowTimer = 2.0;
-          this.audio.bad();
-        } else if (it.subtype==='rugpull'){
-          const delta = Math.floor(this.score * CONFIG.score.rugpullPct);
-          this.score = Math.max(0, this.score + delta);
-          this.audio.bad();
-        } else if (it.subtype==='fakeAirdrop'){
-          this.effects.freeze = 3.0;
-          this.audio.bad();
-        }
-
-      } else if (it.kind === 'power'){
-        // petit pulse horizontal
-        this.wallet.bump(0.25, 'horizontal');
-
-        if (it.subtype==='magnet'){ this.effects.magnet = CONFIG.powerups.magnet; this.audio.pow(); }
-        else if (it.subtype==='x2'){ this.effects.x2 = CONFIG.powerups.x2; this.audio.pow(); }
-        else if (it.subtype==='shield'){ this.effects.shield = 1; this.audio.pow(); }
-        else if (it.subtype==='timeShard'){ this.timeLeft = Math.min(CONFIG.runSeconds, this.timeLeft + 5); this.audio.pow(); }
-
-        this.fx.burst(it.x,it.y,'#ffcd75', 10);
-      }
-
-      this.didFirstCatch = true;
-    }
-
-    endGame(){
-      this.state='over';
-      console.log('[STATE] endGame -> over');
-      this.render();
-      try{
-        const best = parseInt(localStorage.getItem(LS.bestScore)||'0',10); if (this.score>best) localStorage.setItem(LS.bestScore, String(this.score));
-        const bestC = parseInt(localStorage.getItem(LS.bestCombo)||'0',10); if (this.maxCombo>bestC) localStorage.setItem(LS.bestCombo, String(this.maxCombo));
-        const runs = JSON.parse(localStorage.getItem(LS.runs)||'[]'); runs.unshift({ ts:Date.now(), score:this.score, combo:this.maxCombo, lvl:this.levelReached }); while (runs.length>20) runs.pop(); localStorage.setItem(LS.runs, JSON.stringify(runs));
-      }catch(e){}
-      this.renderGameOver();
-      if (TG){ try{ TG.sendData(JSON.stringify({ score:this.score, duration:CONFIG.runSeconds, version:VERSION })); }catch(e){} }
-    }
-
-    uiStartFromTitle(){
-      if (this.state==='title'){
-        overlay.innerHTML='';
-        this.start();
-      }
-    }
-
-    renderTitle(){
-      overlay.innerHTML = `
-        <div class="panel">
-          <h1>Salt Droppee</h1>
-          <p>Attrapez les bons tokens, évitez les malus. 75s, 3 vies.</p>
-          <div class="btnrow">
-            <button id="btnPlay">Jouer</button>
-            <button id="btnSettings">Paramètres</button>
-            <button id="btnLB">Leaderboard local</button>
-          </div>
-        </div>`;
-      document.getElementById('btnSettings').onclick = ()=> this.renderSettings();
-      document.getElementById('btnLB').onclick = ()=> this.renderLeaderboard();
-      // Play: bloque la propagation pour éviter le clic fantôme sur le canvas
-      document.getElementById('btnPlay').addEventListener('click', async (e)=>{
-        e.preventDefault(); e.stopPropagation();
-        await this.audio.init();
-        await new Promise(r=>requestAnimationFrame(r));
-
-        // --- WARM-UP GRAPHICS (force la création des pipelines/shaders)
-        try{
-          const prev = ctx.imageSmoothingEnabled;
-          ctx.imageSmoothingEnabled = false;
-          const imgs = [walletImg, GoldImg, SilverImg, BronzeImg, DiamondImg, BombImg, Hand.open, Hand.pinch];
-          for (const im of imgs){ if (im && im.naturalWidth) ctx.drawImage(im, 0, 0, 1, 1); }
-          ctx.save();
-          ctx.shadowColor = 'rgba(0,0,0,0.15)'; ctx.shadowBlur = 4; ctx.shadowOffsetY = 1;
-          ctx.fillStyle = '#fff';
-          ctx.beginPath(); ctx.arc(4,4,2,0,Math.PI*2); ctx.fill();
-          ctx.restore();
-          ctx.imageSmoothingEnabled = prev;
-          ctx.clearRect(0,0,8,8);
-        }catch(_){ }
-
-        this.uiStartFromTitle();
-      }, {passive:false});
-    }
-
-    renderSettings(){ const s=this.settings;
-      overlay.innerHTML = `
+    this.didFirstCatch=true;
+  }
+  endGame(){ this.state='over'; this.render(); try{ const best=parseInt(localStorage.getItem(LS.bestScore)||'0',10); if (this.score>best) localStorage.setItem(LS.bestScore, String(this.score)); const bestC=parseInt(localStorage.getItem(LS.bestCombo)||'0',10); if (this.maxCombo>bestC) localStorage.setItem(LS.bestCombo, String(this.maxCombo)); const runs=JSON.parse(localStorage.getItem(LS.runs)||'[]'); runs.unshift({ ts:Date.now(), score:this.score, combo:this.maxCombo, lvl:this.levelReached }); while (runs.length>20) runs.pop(); localStorage.setItem(LS.runs, JSON.stringify(runs)); }catch(e){}
+    this.renderGameOver(); if (TG){ try{ TG.sendData(JSON.stringify({ score:this.score, duration:CONFIG.runSeconds, version:VERSION })); }catch(e){} }
+  }
+  uiStartFromTitle(){ if (this.state==='title'){ overlay.innerHTML=''; this.start(); } }
+  renderTitle(){
+    overlay.innerHTML = `
       <div class="panel">
-        <h1>Paramètres</h1>
-        <p><label><input type="checkbox" id="sound" ${s.sound?'checked':''}/> Son</label></p>
-        <p><label><input type="checkbox" id="contrast" ${s.contrast?'checked':''}/> Contraste élevé</label></p>
-        <p><label><input type="checkbox" id="haptics" ${s.haptics?'checked':''}/> Vibrations</label></p>
-        <p>Sensibilité: <input type="range" id="sens" min="0.5" max="1.5" step="0.05" value="${s.sensitivity}"></p>
+        <h1>Salt Droppee</h1>
+        <p>Attrapez les bons tokens, évitez les malus. 75s, 3 vies.</p>
         <div class="btnrow">
-          <button id="back">Retour</button>
+          <button id="btnPlay">Jouer</button>
+          <button id="btnSettings">Paramètres</button>
+          <button id="btnLB">Leaderboard local</button>
         </div>
       </div>`;
-      document.getElementById('sound').onchange = e=>{ this.settings.sound = e.target.checked; saveSettings(this.settings); this.audio.setEnabled(this.settings.sound); };
-      document.getElementById('contrast').onchange = e=>{ this.settings.contrast = e.target.checked; saveSettings(this.settings); this.reset(); };
-      document.getElementById('haptics').onchange = e=>{ this.settings.haptics = e.target.checked; saveSettings(this.settings); };
-      document.getElementById('sens').oninput = e=>{ this.settings.sensitivity = parseFloat(e.target.value); saveSettings(this.settings); };
-      document.getElementById('back').onclick = ()=> this.renderTitle();
-    }
-
-    renderLeaderboard(){ let runs=[]; try{ runs = JSON.parse(localStorage.getItem(LS.runs)||'[]'); }catch(e){}
-      const best = parseInt(localStorage.getItem(LS.bestScore)||'0',10);
-      const bestC = parseInt(localStorage.getItem(LS.bestCombo)||'0',10);
-      overlay.innerHTML = `
-      <div class="panel">
-        <h1>Leaderboard (local)</h1>
-        <p>Record: <b>${best}</b> | Combo max: <b>${bestC}</b></p>
-        <div style="text-align:left; max-height:200px; overflow:auto; border:1px solid var(--ui); padding:6px;">
-          ${runs.map((r,i)=>`#${i+1} — ${new Date(r.ts).toLocaleString()} — Score ${r.score} — Combo ${r.combo} — N${r.lvl}`).join('<br/>') || 'Aucune partie'}
-        </div>
-        <div class="btnrow"><button id="back">Retour</button></div>
-      </div>`;
-      document.getElementById('back').onclick = ()=> this.renderTitle();
-    }
-
-    renderPause(){
-      overlay.innerHTML = `<div class="panel"><h1>Pause</h1><div class="btnrow"><button id="resume">Reprendre</button><button id="quit">Menu</button></div></div>`;
-      document.getElementById('resume').onclick = ()=>{
-        overlay.innerHTML='';
-        this.state='playing';
-        this.lastTime=performance.now();
-        console.log('[STATE] resume -> playing');
-        this.loop();
-      };
-      document.getElementById('quit').onclick = ()=>{ console.log('[STATE] quit -> reset'); this.reset(); };
-    }
-
-    renderGameOver(){
-      const best = parseInt(localStorage.getItem(LS.bestScore)||'0',10);
-      overlay.innerHTML = `
-      <div class="panel">
-        <h1>Fin de partie</h1>
-        <p>Score: <b>${this.score}</b> | Record local: <b>${best}</b></p>
-        <p>Combo max: <b>${this.maxCombo}</b> | Niveau atteint: <b>N${this.levelReached}</b></p>
-        <div class="btnrow">
-          <button id="again">Rejouer</button>
-          <button id="menu">Menu</button>
-          ${TG? '<button id="share">Partager</button>': ''}
-        </div>
-      </div>`;
-      document.getElementById('again').onclick = async ()=>{
-        overlay.innerHTML = '';
-        this.reset({ showTitle: false }); // ne pas réafficher l'écran titre
-        await this.audio.init();
-        await new Promise(r=>requestAnimationFrame(r));
-        this.start();
-      };
-
-      document.getElementById('menu').onclick = ()=>{
-  this.reset({ showTitle: true }); // retour au menu
-};
-document.getElementById('quit').onclick = ()=>{
-  this.reset({ showTitle: true });
-};
-      if (TG){ document.getElementById('share').onclick = ()=>{ try{ TG.sendData(JSON.stringify({ score:this.score, duration:CONFIG.runSeconds, version:VERSION })); }catch(e){} }; }
-    }
-
-    drawBg(g){
-      const grad = g.createLinearGradient(0, 0, 0, BASE_H);
-      const presets = [
-        ['#0f2027', '#203a43', '#2c5364'],
-        ['#232526', '#414345', '#6b6e70'],
-        ['#1e3c72', '#2a5298', '#6fa3ff'],
-        ['#42275a', '#734b6d', '#b57ea7'],
-        ['#355c7d', '#6c5b7b', '#c06c84']
-      ];
-      const cols = presets[this.bgIndex % presets.length];
-      grad.addColorStop(0,   cols[0]);
-      grad.addColorStop(0.5, cols[1]);
-      grad.addColorStop(1,   cols[2]);
-      g.fillStyle = grad;
-      g.fillRect(0, 0, BASE_W, BASE_H);
-    }
-
-    render(){
-      const sx = this.shake>0? Math.round(rand(-2,2)):0; const sy = this.shake>0? Math.round(rand(-2,2)):0;
-      ctx.save(); ctx.clearRect(0,0,BASE_W,BASE_H);
-      ctx.translate(sx, sy);
-
-      this.drawBg(ctx);
-
-// Arm en haut
-this.arm.draw(ctx);
-
-// Wallet d'abord
-this.wallet.draw(ctx);
-
-// Items ensuite → passent PAR-DESSUS le wallet
-for (const it of this.items) it.draw(ctx);
-
-// (Optionnel) Particules au-dessus de tout le gameplay
-this.fx.update(1/60); this.fx.render(ctx);
-
-// HUD en dernier (reste au-dessus)
-this.hud.draw(ctx);
-
-
-      ctx.restore();
-    }
+    document.getElementById('btnSettings').onclick = ()=> this.renderSettings();
+    document.getElementById('btnLB').onclick = ()=> this.renderLeaderboard();
+    document.getElementById('btnPlay').addEventListener('click', async (e)=>{
+      e.preventDefault(); e.stopPropagation(); await this.audio.init(); await new Promise(r=>requestAnimationFrame(r));
+      try{ const prev=ctx.imageSmoothingEnabled; ctx.imageSmoothingEnabled=false; const imgs=[walletImg, GoldImg, SilverImg, BronzeImg, DiamondImg, BombImg, Hand.open, Hand.pinch]; for (const im of imgs){ if (im && im.naturalWidth) ctx.drawImage(im,0,0,1,1); } ctx.save(); ctx.shadowColor='rgba(0,0,0,0.15)'; ctx.shadowBlur=4; ctx.shadowOffsetY=1; ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(4,4,2,0,Math.PI*2); ctx.fill(); ctx.restore(); ctx.imageSmoothingEnabled=prev; ctx.clearRect(0,0,8,8); }catch(_){ }
+      this.uiStartFromTitle();
+    }, {passive:false});
   }
+  renderSettings(){ const s=this.settings; overlay.innerHTML = `
+    <div class="panel">
+      <h1>Paramètres</h1>
+      <p><label><input type="checkbox" id="sound" ${s.sound?'checked':''}/> Son</label></p>
+      <p><label><input type="checkbox" id="contrast" ${s.contrast?'checked':''}/> Contraste élevé</label></p>
+      <p><label><input type="checkbox" id="haptics" ${s.haptics?'checked':''}/> Vibrations</label></p>
+      <p>Sensibilité: <input type="range" id="sens" min="0.5" max="1.5" step="0.05" value="${s.sensitivity}"></p>
+      <div class="btnrow"><button id="back">Retour</button></div>
+    </div>`;
+    document.getElementById('sound').onchange = e=>{ this.settings.sound = e.target.checked; saveSettings(this.settings); this.audio.setEnabled(this.settings.sound); };
+    document.getElementById('contrast').onchange = e=>{ this.settings.contrast = e.target.checked; saveSettings(this.settings); this.reset(); };
+    document.getElementById('haptics').onchange = e=>{ this.settings.haptics = e.target.checked; saveSettings(this.settings); };
+    document.getElementById('sens').oninput = e=>{ this.settings.sensitivity = parseFloat(e.target.value); saveSettings(this.settings); };
+    document.getElementById('back').onclick = ()=> this.renderTitle();
+  }
+  renderLeaderboard(){ let runs=[]; try{ runs = JSON.parse(localStorage.getItem(LS.runs)||'[]'); }catch(e){}
+    const best = parseInt(localStorage.getItem(LS.bestScore)||'0',10);
+    const bestC = parseInt(localStorage.getItem(LS.bestCombo)||'0',10);
+    overlay.innerHTML = `
+    <div class="panel">
+      <h1>Leaderboard (local)</h1>
+      <p>Record: <b>${best}</b> | Combo max: <b>${bestC}</b></p>
+      <div style="text-align:left; max-height:200px; overflow:auto; border:1px solid var(--ui); padding:6px;">
+        ${runs.map((r,i)=>`#${i+1} — ${new Date(r.ts).toLocaleString()} — Score ${r.score} — Combo ${r.combo} — N${r.lvl}`).join('<br/>') || 'Aucune partie'}
+      </div>
+      <div class="btnrow"><button id="back">Retour</button></div>
+    </div>`;
+    document.getElementById('back').onclick = ()=> this.renderTitle();
+  }
+  renderPause(){ overlay.innerHTML = `<div class="panel"><h1>Pause</h1><div class="btnrow"><button id="resume">Reprendre</button><button id="quit">Menu</button></div></div>`; document.getElementById('resume').onclick = ()=>{ overlay.innerHTML=''; this.state='playing'; this.lastTime=performance.now(); this.loop(); }; document.getElementById('quit').onclick = ()=>{ this.reset(); }; }
+  renderGameOver(){ const best=parseInt(localStorage.getItem(LS.bestScore)||'0',10); overlay.innerHTML = `
+    <div class="panel">
+      <h1>Fin de partie</h1>
+      <p>Score: <b>${this.score}</b> | Record local: <b>${best}</b></p>
+      <p>Combo max: <b>${this.maxCombo}</b> | Niveau atteint: <b>N${this.levelReached}</b></p>
+      <div class="btnrow">
+        <button id="again">Rejouer</button>
+        <button id="menu">Menu</button>
+        ${TG? '<button id="share">Partager</button>': ''}
+      </div>
+    </div>`;
+    document.getElementById('again').onclick = async ()=>{ overlay.innerHTML=''; this.reset({showTitle:false}); await this.audio.init(); await new Promise(r=>requestAnimationFrame(r)); this.start(); };
+    document.getElementById('menu').onclick = ()=>{ this.reset({showTitle:true}); };
+    if (TG){ const sh=document.getElementById('share'); if (sh) sh.onclick = ()=>{ try{ TG.sendData(JSON.stringify({ score:this.score, duration:CONFIG.runSeconds, version:VERSION })); }catch(e){} }; }
+  }
+  drawBg(g){ const grad=g.createLinearGradient(0,0,0,BASE_H); const presets=[ ['#0f2027','#203a43','#2c5364'], ['#232526','#414345','#6b6e70'], ['#1e3c72','#2a5298','#6fa3ff'], ['#42275a','#734b6d','#b57ea7'], ['#355c7d','#6c5b7b','#c06c84'] ]; const cols=presets[this.bgIndex % presets.length]; grad.addColorStop(0,cols[0]); grad.addColorStop(0.5,cols[1]); grad.addColorStop(1,cols[2]); g.fillStyle=grad; g.fillRect(0,0,BASE_W,BASE_H); }
+  render(){ const sx = this.shake>0? Math.round(rand(-2,2)):0; const sy = this.shake>0? Math.round(rand(-2,2)):0; ctx.save(); ctx.clearRect(0,0,BASE_W,BASE_H); ctx.translate(sx,sy); this.drawBg(ctx); this.arm.draw(ctx); this.wallet.draw(ctx); for (const it of this.items) it.draw(ctx); this.fx.update(1/60); this.fx.render(ctx); this.hud.draw(ctx); ctx.restore(); }
+}
 
-  // AABB collision
-  function checkAABB(a,b){ return a.x<b.x+b.w && a.x+a.w>b.x && a.y<b.y+b.h && a.y+a.h>b.y; }
+function checkAABB(a,b){ return a.x<b.x+b.w && a.x+a.w>b.x && a.y<b.y+b.h && a.y+a.h>b.y; }
 
-  // Global game instance
-  const game = new Game();
+const game = new Game();
 
-  // Debounce visibilitychange (évite pause juste après Start)
-  document.addEventListener('visibilitychange', ()=>{
-    if (document.hidden && game.state==='playing'){
-      const now = performance.now();
-      if (game.ignoreVisibilityUntil && now < game.ignoreVisibilityUntil){
-        console.log('[VISIBILITY] ignoré juste après start');
-        return;
-      }
-      console.log('[STATE] visibility -> paused');
-      game.state='paused';
-      game.renderPause();
-    }
-  });
+document.addEventListener('visibilitychange', ()=>{ if (document.hidden && game.state==='playing'){ const now = performance.now(); if (game.ignoreVisibilityUntil && now < game.ignoreVisibilityUntil) return; game.state='paused'; game.renderPause(); } });
 
-  // Clic coin haut-droit pour pause (robuste + anti double-clic)
-  canvas.addEventListener('click', (e)=>{
-    if (game.state!=='playing') return;
+canvas.addEventListener('click', (e)=>{ if (game.state!=='playing') return; const now=performance.now(); if (game.ignoreClicksUntil && now < game.ignoreClicksUntil) return; const rect=canvas.getBoundingClientRect(); const x=((e.clientX-rect.left)/rect.width)*BASE_W; const y=((e.clientY-rect.top)/rect.height)*BASE_H; if (y<40 && x>BASE_W-80){ game.state='paused'; game.renderPause(); } });
 
-    const now = performance.now();
-    if (game.ignoreClicksUntil && now < game.ignoreClicksUntil){
-      console.log('[CLICK] ignoré (anti-ghost)');
-      return;
-    }
+document.addEventListener('click', async (e)=>{ if (e.target && e.target.id==='btnPlay' && game.state==='title'){ e.preventDefault(); e.stopPropagation(); await game.audio.init(); await new Promise(r=>requestAnimationFrame(r)); game.uiStartFromTitle(); } }, {capture:true});
 
-    const rect = canvas.getBoundingClientRect();
-    const x = ((e.clientX - rect.left) / rect.width)  * BASE_W;
-    const y = ((e.clientY - rect.top)  / rect.height) * BASE_H;
+game.render();
 
-    if (y < 40 && x > BASE_W - 80){
-      console.log('[STATE] click pause hotspot -> paused');
-      game.state='paused';
-      game.renderPause();
-    }
-  });
-
-  // Sécurité: empêcher qu’un clic sur "Jouer" (overlay) se propage au canvas
-  document.addEventListener('click', async (e)=>{
-    if (e.target && e.target.id==='btnPlay' && game.state==='title'){
-      e.preventDefault();
-      e.stopPropagation();
-      await game.audio.init();
-      await new Promise(r=>requestAnimationFrame(r));
-      game.uiStartFromTitle();
-    }
-  }, {capture:true});
-
-  // Kick draw title once
-  game.render();
-  
