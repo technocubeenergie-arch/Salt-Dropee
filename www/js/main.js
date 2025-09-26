@@ -158,6 +158,7 @@ function setupHiDPI(){
 const BASE_W = CONFIG.portraitBase.w;
 const BASE_H = CONFIG.portraitBase.h;
 let SCALE = 1, VIEW_W = BASE_W, VIEW_H = BASE_H;
+let targetX = BASE_W / 2;
 
 function resize(){
   if (!canvas) return;
@@ -174,7 +175,7 @@ function resize(){
 // =====================
 // INPUT
 // =====================
-const input = { left:false, right:false, dash:false, dragging:false, dragX:0 };
+const input = { left:false, right:false, dash:false, dragging:false };
 function onKeyDown(e){
   if (e.code === 'ArrowLeft' || e.code === 'KeyA') input.left = true;
   if (e.code === 'ArrowRight' || e.code === 'KeyD') input.right = true;
@@ -189,14 +190,14 @@ function onKeyUp(e){
   if (e.code === 'Space') input.dash = false;
 }
 function onPointerDown(e){
-  const point = getPrimaryPoint(e);
+  const point = getCanvasPoint(e);
   input.dragging = true;
-  input.dragX = point.clientX;
+  targetX = point.x;
 }
 function onPointerMove(e){
   if (!input.dragging) return;
-  const point = getPrimaryPoint(e);
-  input.dragX = point.clientX;
+  const point = getCanvasPoint(e);
+  targetX = point.x;
 }
 function onPointerUp(){
   input.dragging = false;
@@ -263,17 +264,18 @@ class ParticleSys{
 // ENTITÉS
 // =====================
 class Wallet{
-  constructor(game){ this.g=game; this.level=1; this.x=BASE_W/2; this.y=BASE_H-40; this.w=48; this.h=40; this.vx=0; this.slowTimer=0; this.dashCD=0; this.spriteHCapPx=0; this.impact=0; this.impactDir='vertical'; this.squashTimer=0; }
+  constructor(game){ this.g=game; this.level=1; this.x=BASE_W/2; this.y=BASE_H-40; this.w=48; this.h=40; this.vx=0; this.slowTimer=0; this.dashCD=0; this.spriteHCapPx=0; this.impact=0; this.impactDir='vertical'; this.squashTimer=0; targetX = this.x + this.w / 2; }
   bump(strength=0.35, dir='vertical'){ this.impact = Math.min(1, this.impact + strength); this.impactDir = dir; this.g.fx.ring(this.x+this.w/2, this.y, 0.25); }
-  applyCaps(){ const maxH = Math.floor(BASE_H * CONFIG.maxWalletH); this.spriteHCapPx = maxH; const imgRatio = (walletImg.naturalWidth / walletImg.naturalHeight) || 1; this.h = Math.min(maxH, 60); this.w = this.h * imgRatio * 1.8; this.y = BASE_H - this.h - 60; }
+  applyCaps(){ const maxH = Math.floor(BASE_H * CONFIG.maxWalletH); this.spriteHCapPx = maxH; const imgRatio = (walletImg.naturalWidth / walletImg.naturalHeight) || 1; this.h = Math.min(maxH, 60); this.w = this.h * imgRatio * 1.8; this.y = BASE_H - this.h - 60; targetX = this.x + this.w / 2; }
   evolveByScore(score){ const th=CONFIG.evolveThresholds; let lvl=1; for (let i=0;i<th.length;i++){ if (score>=th[i]) lvl=i+1; } if (lvl!==this.level){ this.level=lvl; this.applyCaps(); this.g.fx.burst(this.x, this.y, '#ffcd75', 12); this.g.audio.up(); this.squashTimer=0.12; } }
-  update(dt){ const sens=this.g.settings.sensitivity||1.0; let targetVX=0; if (input.left) targetVX -= 1; if (input.right) targetVX += 1; if (input.dragging){ const rect = canvas.getBoundingClientRect(); const nx = ((input.dragX - rect.left) / rect.width) * BASE_W; const dx = nx - (this.x+this.w/2); targetVX = clamp(dx*5, -1, 1); }
+  update(dt){ const sens=this.g.settings.sensitivity||1.0; let targetVX=0; if (input.left) targetVX -= 1; if (input.right) targetVX += 1;
     let speed = CONFIG.wallet.speed * (this.slowTimer>0 ? 0.6 : 1.0) * sens;
     if (input.dash && this.dashCD<=0){ this.vx = (targetVX>=0?1:-1) * CONFIG.wallet.dashSpeed; this.dashCD = CONFIG.wallet.dashCD; input.dash=false; this.bump(0.25,'horizontal'); }
     if (this.dashCD>0) this.dashCD -= dt;
     this.impact = Math.max(0, this.impact - 3*dt);
     this.vx = lerp(this.vx, targetVX*speed, 0.2);
     this.x += this.vx*dt;
+    if (input.dragging){ const dx = targetX - (this.x + this.w / 2); if (Math.abs(dx) > 1){ this.x += dx * 0.2; } }
     const overflow=60; this.x = clamp(this.x, -overflow, BASE_W - this.w + overflow);
     if (this.slowTimer>0) this.slowTimer -= dt; if (this.squashTimer>0) this.squashTimer -= dt;
   }
