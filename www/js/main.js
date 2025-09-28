@@ -48,6 +48,9 @@ const X2Img     = new Image(); let x2Ready     = false; X2Img.onload     = ()=> 
 const ShieldImg = new Image(); let shieldReady = false; ShieldImg.onload = ()=> shieldReady = true; ShieldImg.src = 'assets/shield.png';
 const TimeImg   = new Image(); let timeReady   = false; TimeImg.onload   = ()=> timeReady   = true; TimeImg.src   = 'assets/time.png';
 
+const footerImg = new Image();
+footerImg.src = 'assets/footer.png';
+
 // --- Main (2 frames)
 const Hand = { open:new Image(), pinch:new Image(), ready:false };
 Hand.open.src  = 'assets/main_open.png';
@@ -119,10 +122,10 @@ function loadWallet(level = 1) {
 loadWallet(currentLevel);
 
 // Pré-decode (si supporté)
-[GoldImg, SilverImg, BronzeImg, DiamondImg, BombImg,
+ [GoldImg, SilverImg, BronzeImg, DiamondImg, BombImg,
  ShitcoinImg, RugpullImg, FakeADImg, AnvilImg,
  MagnetImg, X2Img, ShieldImg, TimeImg,
- walletImage, Hand.open, Hand.pinch]
+ walletImage, Hand.open, Hand.pinch, footerImg]
   .forEach(img => img?.decode?.().catch(()=>{}));
 
 const VERSION = '1.1.0';
@@ -718,7 +721,36 @@ class Game{
     if (TG){ const sh=document.getElementById('share'); if (sh) addEvent(sh, INPUT.tap, ()=>{ try{ TG.sendData(JSON.stringify({ score:this.score, duration:CONFIG.runSeconds, version:VERSION })); }catch(e){} }); }
   }
   drawBg(g){ const grad=g.createLinearGradient(0,0,0,BASE_H); const presets=[ ['#0f2027','#203a43','#2c5364'], ['#232526','#414345','#6b6e70'], ['#1e3c72','#2a5298','#6fa3ff'], ['#42275a','#734b6d','#b57ea7'], ['#355c7d','#6c5b7b','#c06c84'] ]; const cols=presets[this.bgIndex % presets.length]; grad.addColorStop(0,cols[0]); grad.addColorStop(0.5,cols[1]); grad.addColorStop(1,cols[2]); g.fillStyle=grad; g.fillRect(0,0,BASE_W,BASE_H); }
-  render(){ const sx = this.shake>0? Math.round(rand(-2,2)):0; const sy = this.shake>0? Math.round(rand(-2,2)):0; ctx.save(); ctx.clearRect(0,0,BASE_W,BASE_H); ctx.translate(sx,sy); this.drawBg(ctx); this.arm.draw(ctx); this.wallet.draw(ctx); for (const it of this.items){ if (!it.dead) it.draw(ctx); } this.fx.render(ctx); this.hud.draw(ctx); ctx.restore(); }
+  render(){
+    const sx = this.shake>0? Math.round(rand(-2,2)):0;
+    const sy = this.shake>0? Math.round(rand(-2,2)):0;
+
+    ctx.save();
+    ctx.clearRect(0,0,BASE_W,BASE_H);
+    ctx.translate(sx,sy);
+
+    this.drawBg(ctx);
+    this.arm.draw(ctx);
+    this.wallet.draw(ctx);
+
+    for (const it of this.items){
+      if (!it.dead) it.draw(ctx);
+    }
+
+    this.fx.render(ctx);
+    this.hud.draw(ctx);
+
+    if (footerImg.complete){
+      const walletBottom = this.wallet.y + this.wallet.h;
+      const footerHeight = Math.max(0, BASE_H - walletBottom);
+
+      if (footerHeight > 0){
+        ctx.drawImage(footerImg, 0, walletBottom, BASE_W, footerHeight);
+      }
+    }
+
+    ctx.restore();
+  }
 }
 
 function checkAABB(a,b){ return a.x<b.x+b.w && a.x+a.w>b.x && a.y<b.y+b.h && a.y+a.h>b.y; }
