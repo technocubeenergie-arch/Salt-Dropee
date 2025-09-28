@@ -139,7 +139,6 @@ const CONFIG = {
 const snap = v => Math.round(v);
 const clamp = (v,min,max)=> Math.max(min, Math.min(max,v));
 const rand = (a,b)=> Math.random()*(b-a)+a;
-const easeOutQuad = t => 1 - (1 - t) * (1 - t);
 function choiceWeighted(entries){ const total = entries.reduce((s,e)=>s+e.w,0); let r = Math.random()*total; for (const e of entries){ if ((r-=e.w) <= 0) return e.k; } return entries[entries.length-1].k; }
 
 function computeWalletCenterBounds(wallet){
@@ -408,24 +407,102 @@ function drawItemSprite(g, kind, subtype, x, y, w, h){
 
 class FallingItem{
   constructor(game, kind, subtype, x, y){
-    this.g=game; this.kind=kind; this.subtype=subtype; this.vx=rand(-20,20); this.vy=rand(10,40);
-    const base = CONFIG.itemSize[subtype] ?? 18; const S = CONFIG.items?.scale ?? 1; let w=base*S, h=base*S; this.baseW=w; this.baseH=h;
-    this.spawnScale = (CONFIG.items?.spawnScale != null) ? CONFIG.items.spawnScale : 0.30; this.scale = this.spawnScale;
-    this.px = x + this.baseW/2; this.py = y + this.baseH/2; this.spawnPy=this.py; this.targetPy=this.g.wallet.y - 6;
-    this.rw = snap(this.baseW * this.scale); this.rh = snap(this.baseH * this.scale); this.rx = snap(this.px - this.rw/2); this.ry = snap(this.py - this.rh/2);
-    this.dead=false; this.spin=rand(-3,3); this.magnet=false; this.t=0; this.x=this.rx; this.y=this.ry; this.w=this.rw; this.h=this.rh;
+    this.g = game;
+    this.kind = kind;
+    this.subtype = subtype;
+
+    const base = CONFIG.itemSize[subtype] ?? 18;
+    const scaleMul = CONFIG.items?.scale ?? 1;
+    this.baseW = base * scaleMul;
+    this.baseH = base * scaleMul;
+
+    this.scale = (CONFIG.items?.spawnScale != null) ? CONFIG.items.spawnScale : 0.30;
+    this.centerX = x + this.baseW / 2;
+    this.centerY = y + this.baseH / 2;
+
+    this.alive = true;
+    this._dead = false;
+    this.tween = null;
+    this._ticker = null;
+
+    const targetY = BASE_H - 80;
+    const distance = Math.max(0, targetY - this.centerY);
+    const baseDuration = CONFIG.items?.fallDuration ?? 1.0;
+    const duration = Math.max(0.4, baseDuration + (distance / BASE_H) * 0.3);
+
+    if (gsap && typeof gsap.to === 'function'){
+      this.tween = gsap.to(this, {
+        centerY: targetY,
+        scale: 1,
+        duration,
+        ease: 'power2.in',
+        onComplete: () => { this.dead = true; },
+      });
+
+      if (gsap.ticker){
+        this._ticker = (time, delta) => {
+          if (this._dead){
+            gsap.ticker.remove(this._ticker);
+            return;
+          }
+          if (this.g.effects.magnet>0 && this.kind==='good'){
+            const wallet = this.g.wallet;
+            if (wallet){
+              const walletCenter = wallet.x + wallet.w / 2;
+              const diff = walletCenter - this.centerX;
+              const stepDelta = (typeof delta === 'number' && isFinite(delta)) ? delta : (1/60);
+              const step = clamp(diff * 4 * stepDelta, -180 * stepDelta, 180 * stepDelta);
+              this.centerX += step;
+            }
+          }
+        };
+        gsap.ticker.add(this._ticker);
+      }
+    } else {
+      this.centerY = targetY;
+      this.scale = 1;
+    }
   }
-  baseGravity(){ if (this.kind==='good') return CONFIG.gravity.good; if (this.kind==='bad') return CONFIG.gravity.bad; return CONFIG.gravity.power; }
-  update(dt){
-    this.t += dt;
-    let gAcc = this.baseGravity(); const mul = CONFIG.gravityMul[this.subtype]; if (mul) gAcc *= mul; this.vy += gAcc * dt * (1 + (this.g.timeElapsed/60)*0.2);
-    this.px += this.vx * dt; this.py += this.vy * dt;
-    if (this.g.effects.magnet>0 && this.kind==='good'){ const wx = this.g.wallet.x + this.g.wallet.w/2; const dx = wx - this.px; this.vx += clamp(dx*2, -140, 140)*dt; }
-    const total = Math.max(1, this.targetPy - this.spawnPy); const traveled = clamp(this.py - this.spawnPy, 0, total); let t = traveled / total; t = easeOutQuad(t); this.scale = this.spawnScale + (1 - this.spawnScale) * t;
-    this.rw = snap(this.baseW * this.scale); this.rh = snap(this.baseH * this.scale); this.rx = snap(this.px - this.rw/2); this.ry = snap(this.py - this.rh/2);
-    this.x=this.rx; this.y=this.ry; this.w=this.rw; this.h=this.rh; if (this.ry > BASE_H + 50) this.dead = true;
+
+  get dead(){
+    return this._dead;
   }
-  draw(g){ g.save(); const x=this.rx, y=this.ry, w=this.rw, h=this.rh; drawItemSprite(g, this.kind, this.subtype, x, y, w, h); g.restore(); }
+
+  set dead(value){
+    if (value && !this._dead){
+      if (this.tween) this.tween.kill();
+      if (this._ticker && gsap?.ticker) gsap.ticker.remove(this._ticker);
+      this.alive = false;
+    }
+    this._dead = value;
+  }
+
+  get x(){
+    return snap(this.centerX - (this.baseW * this.scale) / 2);
+  }
+
+  get y(){
+    return snap(this.centerY - (this.baseH * this.scale) / 2);
+  }
+
+  get w(){
+    return snap(this.baseW * this.scale);
+  }
+
+  get h(){
+    return snap(this.baseH * this.scale);
+  }
+
+  draw(g){
+    if (this.dead) return;
+    const x = this.x;
+    const y = this.y;
+    const w = this.w;
+    const h = this.h;
+    g.save();
+    drawItemSprite(g, this.kind, this.subtype, x, y, w, h);
+    g.restore();
+  }
 }
 
 class Spawner{
@@ -467,12 +544,13 @@ class Game{
   loop(){ if (this.state==='playing'){ const now=performance.now(); const dt=Math.min(0.033, (now-this.lastTime)/1000); this.lastTime=now; this.step(dt); this.render(); requestAnimationFrame(()=>this.loop()); } }
   step(dt){
     this.timeElapsed += dt; if (this.timeLeft>0) this.timeLeft = Math.max(0, this.timeLeft - dt); if (this.timeLeft<=0 || this.lives<=0){ this.endGame(); return; }
-    this.arm.update(dt); this.wallet.update(dt); this.spawner.update(dt); for (const it of this.items) it.update(dt);
+    this.arm.update(dt); this.wallet.update(dt); this.spawner.update(dt);
     const w=this.wallet; const cx=CONFIG.collision.walletScaleX, cy=CONFIG.collision.walletScaleY, px=CONFIG.collision.walletPadX, py=CONFIG.collision.walletPadY;
     const wr = { x: w.x + (w.w - w.w*cx)/2 + px, y: w.y + (w.h - w.h*cy)/2 + py, w: w.w*cx, h: w.h*cy };
     for (const it of this.items){ if (it.dead) continue; if (checkAABB(wr, {x:it.x,y:it.y,w:it.w,h:it.h})){ this.onCatch(it); it.dead=true; } }
     this.items = this.items.filter(i=>!i.dead);
     for (const k of ['magnet','x2','freeze']){ if (this.effects[k]>0) this.effects[k]-=dt; if (this.effects[k]<0) this.effects[k]=0; }
+    this.fx.update(dt);
     this.updateBgByScore(); if (this.shake>0) this.shake = Math.max(0, this.shake - dt*6);
   }
   onCatch(it){
@@ -571,7 +649,7 @@ class Game{
     if (TG){ const sh=document.getElementById('share'); if (sh) addEvent(sh, INPUT.tap, ()=>{ try{ TG.sendData(JSON.stringify({ score:this.score, duration:CONFIG.runSeconds, version:VERSION })); }catch(e){} }); }
   }
   drawBg(g){ const grad=g.createLinearGradient(0,0,0,BASE_H); const presets=[ ['#0f2027','#203a43','#2c5364'], ['#232526','#414345','#6b6e70'], ['#1e3c72','#2a5298','#6fa3ff'], ['#42275a','#734b6d','#b57ea7'], ['#355c7d','#6c5b7b','#c06c84'] ]; const cols=presets[this.bgIndex % presets.length]; grad.addColorStop(0,cols[0]); grad.addColorStop(0.5,cols[1]); grad.addColorStop(1,cols[2]); g.fillStyle=grad; g.fillRect(0,0,BASE_W,BASE_H); }
-  render(){ const sx = this.shake>0? Math.round(rand(-2,2)):0; const sy = this.shake>0? Math.round(rand(-2,2)):0; ctx.save(); ctx.clearRect(0,0,BASE_W,BASE_H); ctx.translate(sx,sy); this.drawBg(ctx); this.arm.draw(ctx); this.wallet.draw(ctx); for (const it of this.items) it.draw(ctx); this.fx.update(1/60); this.fx.render(ctx); this.hud.draw(ctx); ctx.restore(); }
+  render(){ const sx = this.shake>0? Math.round(rand(-2,2)):0; const sy = this.shake>0? Math.round(rand(-2,2)):0; ctx.save(); ctx.clearRect(0,0,BASE_W,BASE_H); ctx.translate(sx,sy); this.drawBg(ctx); this.arm.draw(ctx); this.wallet.draw(ctx); for (const it of this.items){ if (!it.dead) it.draw(ctx); } this.fx.render(ctx); this.hud.draw(ctx); ctx.restore(); }
 }
 
 function checkAABB(a,b){ return a.x<b.x+b.w && a.x+a.w>b.x && a.y<b.y+b.h && a.y+a.h>b.y; }
