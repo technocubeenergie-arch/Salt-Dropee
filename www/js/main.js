@@ -4,6 +4,8 @@
 
 // --- Détection d'input & utilitaire cross-platform
 const hasTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+const gsap = window.gsap;
+
 const INPUT = {
   tap: hasTouch ? 'touchstart' : 'click',
   down: hasTouch ? 'touchstart' : 'mousedown',
@@ -89,6 +91,11 @@ const CONFIG = {
 
   wallet: { speed: 500, dashSpeed: 900, dashCD: 2.0 },
 
+  control: {
+    easeDuration: 0.2,
+    easeFunction: 'power2.out',
+  },
+
   score: { bronze:10, silver:25, gold:50, diamond:100, bad:{shitcoin:-20, anvil:-10}, rugpullPct:-0.3 },
   combo: { step: 10, maxMult: 3 },
 
@@ -131,10 +138,41 @@ const CONFIG = {
 // =====================
 const snap = v => Math.round(v);
 const clamp = (v,min,max)=> Math.max(min, Math.min(max,v));
-const lerp = (a,b,t)=> a+(b-a)*t;
 const rand = (a,b)=> Math.random()*(b-a)+a;
 const easeOutQuad = t => 1 - (1 - t) * (1 - t);
 function choiceWeighted(entries){ const total = entries.reduce((s,e)=>s+e.w,0); let r = Math.random()*total; for (const e of entries){ if ((r-=e.w) <= 0) return e.k; } return entries[entries.length-1].k; }
+
+function computeWalletCenterBounds(wallet){
+  const overflow = 60;
+  if (!wallet){
+    return { overflow, minCenter: overflow, maxCenter: BASE_W - overflow };
+  }
+  const halfWidth = wallet.w / 2;
+  return {
+    overflow,
+    minCenter: -overflow + halfWidth,
+    maxCenter: BASE_W - wallet.w + overflow + halfWidth,
+  };
+}
+
+function animateWalletToCenter(wallet, center, duration){
+  if (!wallet) return;
+  const bounds = computeWalletCenterBounds(wallet);
+  const clampedCenter = clamp(center, bounds.minCenter, bounds.maxCenter);
+  targetX = clampedCenter;
+  const destX = clampedCenter - wallet.w / 2;
+  const tweenDuration = (typeof duration === 'number') ? duration : CONFIG.control.easeDuration;
+  if (gsap && typeof gsap.to === 'function'){
+    gsap.to(wallet, {
+      x: destX,
+      duration: tweenDuration,
+      ease: CONFIG.control.easeFunction,
+      overwrite: 'auto',
+    });
+  } else {
+    wallet.x = destX;
+  }
+}
 
 // =====================
 // CANVAS & RENDER SETUP
@@ -177,8 +215,32 @@ function resize(){
 // =====================
 const input = { left:false, right:false, dash:false, dragging:false };
 function onKeyDown(e){
-  if (e.code === 'ArrowLeft' || e.code === 'KeyA') input.left = true;
-  if (e.code === 'ArrowRight' || e.code === 'KeyD') input.right = true;
+  if (e.code === 'ArrowLeft' || e.code === 'KeyA'){
+    input.left = true;
+    if (game && game.wallet){
+      const wallet = game.wallet;
+      const bounds = computeWalletCenterBounds(wallet);
+      const currentCenter = wallet.x + wallet.w / 2;
+      const sens = game.settings?.sensitivity || 1.0;
+      const slowMul = wallet.slowTimer>0 ? 0.6 : 1.0;
+      const step = CONFIG.wallet.speed * 0.5 * slowMul * sens;
+      const desiredCenter = clamp(currentCenter - step, bounds.minCenter, bounds.maxCenter);
+      animateWalletToCenter(wallet, desiredCenter);
+    }
+  }
+  if (e.code === 'ArrowRight' || e.code === 'KeyD'){
+    input.right = true;
+    if (game && game.wallet){
+      const wallet = game.wallet;
+      const bounds = computeWalletCenterBounds(wallet);
+      const currentCenter = wallet.x + wallet.w / 2;
+      const sens = game.settings?.sensitivity || 1.0;
+      const slowMul = wallet.slowTimer>0 ? 0.6 : 1.0;
+      const step = CONFIG.wallet.speed * 0.5 * slowMul * sens;
+      const desiredCenter = clamp(currentCenter + step, bounds.minCenter, bounds.maxCenter);
+      animateWalletToCenter(wallet, desiredCenter);
+    }
+  }
   if (e.code === 'Space') input.dash = true;
   if (e.code === 'Enter'){
     const g = Game.instance; if (g && g.state==='title'){ g.audio.init().then(()=>{ requestAnimationFrame(()=> g.uiStartFromTitle()); }); }
@@ -192,12 +254,12 @@ function onKeyUp(e){
 function onPointerDown(e){
   const point = getCanvasPoint(e);
   input.dragging = true;
-  targetX = point.x;
+  if (game && game.wallet) animateWalletToCenter(game.wallet, point.x);
 }
 function onPointerMove(e){
   if (!input.dragging) return;
   const point = getCanvasPoint(e);
-  targetX = point.x;
+  if (game && game.wallet) animateWalletToCenter(game.wallet, point.x);
 }
 function onPointerUp(){
   input.dragging = false;
@@ -264,20 +326,34 @@ class ParticleSys{
 // ENTITÉS
 // =====================
 class Wallet{
-  constructor(game){ this.g=game; this.level=1; this.x=BASE_W/2; this.y=BASE_H-40; this.w=48; this.h=40; this.vx=0; this.slowTimer=0; this.dashCD=0; this.spriteHCapPx=0; this.impact=0; this.impactDir='vertical'; this.squashTimer=0; targetX = this.x + this.w / 2; }
+  constructor(game){ this.g=game; this.level=1; this.x=BASE_W/2; this.y=BASE_H-40; this.w=48; this.h=40; this.slowTimer=0; this.dashCD=0; this.spriteHCapPx=0; this.impact=0; this.impactDir='vertical'; this.squashTimer=0; targetX = this.x + this.w / 2; }
   bump(strength=0.35, dir='vertical'){ this.impact = Math.min(1, this.impact + strength); this.impactDir = dir; this.g.fx.ring(this.x+this.w/2, this.y, 0.25); }
   applyCaps(){ const maxH = Math.floor(BASE_H * CONFIG.maxWalletH); this.spriteHCapPx = maxH; const imgRatio = (walletImg.naturalWidth / walletImg.naturalHeight) || 1; this.h = Math.min(maxH, 60); this.w = this.h * imgRatio * 1.8; this.y = BASE_H - this.h - 60; targetX = this.x + this.w / 2; }
   evolveByScore(score){ const th=CONFIG.evolveThresholds; let lvl=1; for (let i=0;i<th.length;i++){ if (score>=th[i]) lvl=i+1; } if (lvl!==this.level){ this.level=lvl; this.applyCaps(); this.g.fx.burst(this.x, this.y, '#ffcd75', 12); this.g.audio.up(); this.squashTimer=0.12; } }
-  update(dt){ const sens=this.g.settings.sensitivity||1.0; let targetVX=0; if (input.left) targetVX -= 1; if (input.right) targetVX += 1;
-    let speed = CONFIG.wallet.speed * (this.slowTimer>0 ? 0.6 : 1.0) * sens;
-    if (input.dash && this.dashCD<=0){ this.vx = (targetVX>=0?1:-1) * CONFIG.wallet.dashSpeed; this.dashCD = CONFIG.wallet.dashCD; input.dash=false; this.bump(0.25,'horizontal'); }
-    if (this.dashCD>0) this.dashCD -= dt;
-    this.impact = Math.max(0, this.impact - 3*dt);
-    this.vx = lerp(this.vx, targetVX*speed, 0.2);
-    this.x += this.vx*dt;
-    if (input.dragging){ const dx = targetX - (this.x + this.w / 2); if (Math.abs(dx) > 1){ this.x += dx * 0.2; } }
-    const overflow=60; this.x = clamp(this.x, -overflow, BASE_W - this.w + overflow);
-    if (this.slowTimer>0) this.slowTimer -= dt; if (this.squashTimer>0) this.squashTimer -= dt;
+  update(dt){
+    const sens = this.g.settings.sensitivity || 1.0;
+    const bounds = computeWalletCenterBounds(this);
+    let dir = 0;
+    if (input.left && !input.right) dir = -1;
+    else if (input.right && !input.left) dir = 1;
+
+    if (input.dash && this.dashCD <= 0 && dir !== 0){
+      const effectiveSpeed = CONFIG.wallet.dashSpeed * (this.slowTimer>0 ? 0.6 : 1.0) * sens;
+      const dashDuration = Math.max(0.08, CONFIG.control.easeDuration * 0.5);
+      const dashDistance = dir * effectiveSpeed * dashDuration;
+      const desiredCenter = clamp(this.x + this.w / 2 + dashDistance, bounds.minCenter, bounds.maxCenter);
+      animateWalletToCenter(this, desiredCenter, dashDuration);
+      this.dashCD = CONFIG.wallet.dashCD;
+      input.dash = false;
+      this.bump(0.25, 'horizontal');
+    }
+
+    if (this.dashCD > 0) this.dashCD -= dt;
+    this.impact = Math.max(0, this.impact - 3 * dt);
+
+    this.x = clamp(this.x, -bounds.overflow, BASE_W - this.w + bounds.overflow);
+    if (this.slowTimer>0) this.slowTimer -= dt;
+    if (this.squashTimer>0) this.squashTimer -= dt;
   }
   draw(g){
     const h = Math.min(this.h, this.spriteHCapPx||this.h); const w=this.w; const x=this.x; const y=this.y;
@@ -530,6 +606,7 @@ function startGame(){
   if (hasTouch) addEvent(window, 'touchcancel', onPointerUp);
 
   game = new Game();
+  if (game && game.wallet) targetX = game.wallet.x + game.wallet.w / 2;
 
   addEvent(document, 'visibilitychange', ()=>{ if (document.hidden && game.state==='playing'){ const now = performance.now(); if (game.ignoreVisibilityUntil && now < game.ignoreVisibilityUntil) return; game.state='paused'; game.renderPause(); } });
 
