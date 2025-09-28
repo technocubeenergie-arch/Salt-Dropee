@@ -85,20 +85,7 @@ const CONFIG = {
   spawnRampEverySec: 10,
   spawnRampFactor: 1.15,
 
-  fall: {
-    baseSpeed: 200,   // pixels/sec au départ
-    accelRate: 0.3,   // +30% de vitesse toutes les 30s
-    accelInterval: 30 // intervalle en secondes
-  },
-
-  fallEase: {
-    default: "power2.in",   // easing par défaut
-    bomb: "power3.in",      // bombes → chute plus brutale
-    anvil: "expo.in",       // enclume → chute très lourde
-    diamond: "sine.in",     // diamants → chute plus douce
-    gold: "power1.in",      // or → chute intermédiaire
-    shitcoin: "back.in"     // shitcoin → effet maladroit
-  },
+  fallDuration: 2.5,
 
   wallet: { speed: 500, dashSpeed: 900, dashCD: 2.0 },
 
@@ -223,33 +210,15 @@ function resize(){
 // =====================
 // INPUT
 // =====================
-const input = { left:false, right:false, dash:false, dragging:false };
+const input = { dash:false, dragging:false };
+let leftPressed = false;
+let rightPressed = false;
 function onKeyDown(e){
   if (e.code === 'ArrowLeft' || e.code === 'KeyA'){
-    input.left = true;
-    if (game && game.wallet){
-      const wallet = game.wallet;
-      const bounds = computeWalletCenterBounds(wallet);
-      const currentCenter = wallet.x + wallet.w / 2;
-      const sens = game.settings?.sensitivity || 1.0;
-      const slowMul = wallet.slowTimer>0 ? 0.6 : 1.0;
-      const step = CONFIG.wallet.speed * 0.5 * slowMul * sens;
-      const desiredCenter = clamp(currentCenter - step, bounds.minCenter, bounds.maxCenter);
-      animateWalletToCenter(wallet, desiredCenter);
-    }
+    leftPressed = true;
   }
   if (e.code === 'ArrowRight' || e.code === 'KeyD'){
-    input.right = true;
-    if (game && game.wallet){
-      const wallet = game.wallet;
-      const bounds = computeWalletCenterBounds(wallet);
-      const currentCenter = wallet.x + wallet.w / 2;
-      const sens = game.settings?.sensitivity || 1.0;
-      const slowMul = wallet.slowTimer>0 ? 0.6 : 1.0;
-      const step = CONFIG.wallet.speed * 0.5 * slowMul * sens;
-      const desiredCenter = clamp(currentCenter + step, bounds.minCenter, bounds.maxCenter);
-      animateWalletToCenter(wallet, desiredCenter);
-    }
+    rightPressed = true;
   }
   if (e.code === 'Space') input.dash = true;
   if (e.code === 'Enter'){
@@ -257,8 +226,8 @@ function onKeyDown(e){
   }
 }
 function onKeyUp(e){
-  if (e.code === 'ArrowLeft' || e.code === 'KeyA') input.left = false;
-  if (e.code === 'ArrowRight' || e.code === 'KeyD') input.right = false;
+  if (e.code === 'ArrowLeft' || e.code === 'KeyA') leftPressed = false;
+  if (e.code === 'ArrowRight' || e.code === 'KeyD') rightPressed = false;
   if (e.code === 'Space') input.dash = false;
 }
 function onPointerDown(e){
@@ -344,8 +313,8 @@ class Wallet{
     const sens = this.g.settings.sensitivity || 1.0;
     const bounds = computeWalletCenterBounds(this);
     let dir = 0;
-    if (input.left && !input.right) dir = -1;
-    else if (input.right && !input.left) dir = 1;
+    if (leftPressed && !rightPressed) dir = -1;
+    else if (rightPressed && !leftPressed) dir = 1;
 
     if (input.dash && this.dashCD <= 0 && dir !== 0){
       const effectiveSpeed = CONFIG.wallet.dashSpeed * (this.slowTimer>0 ? 0.6 : 1.0) * sens;
@@ -360,8 +329,12 @@ class Wallet{
 
     if (this.dashCD > 0) this.dashCD -= dt;
     this.impact = Math.max(0, this.impact - 3 * dt);
-
-    this.x = clamp(this.x, -bounds.overflow, BASE_W - this.w + bounds.overflow);
+    const slowMul = this.slowTimer>0 ? 0.6 : 1.0;
+    const moveSpeed = CONFIG.wallet.speed * slowMul * sens;
+    if (leftPressed) this.x -= moveSpeed * dt;
+    if (rightPressed) this.x += moveSpeed * dt;
+    const overflow = 60;
+    this.x = clamp(this.x, -overflow, BASE_W - this.w + overflow);
     if (this.slowTimer>0) this.slowTimer -= dt;
     if (this.squashTimer>0) this.squashTimer -= dt;
   }
@@ -421,48 +394,23 @@ class FallingItem{
     this.g = game;
     this.kind = kind;
     this.subtype = subtype;
-
-    const base = CONFIG.itemSize[subtype] ?? 18;
-    const scaleMul = CONFIG.items?.scale ?? 1;
-    this.baseW = base * scaleMul;
-    this.baseH = base * scaleMul;
-
+    this.x = x;
+    this.y = y;
     this.scale = (CONFIG.items?.spawnScale != null) ? CONFIG.items.spawnScale : 0.30;
-    this._x = x + this.baseW / 2;
-    this._y = y + this.baseH / 2;
-
     this.alive = true;
     this._dead = false;
-    this.tween = null;
+    this._tween = null;
     this._ticker = null;
 
-    const fallConfig = CONFIG.fall || {};
-    const fallEase = CONFIG.fallEase || {};
-
-    const startY = this._y;
     const endY = BASE_H - 80;
-    const distance = Math.max(0, endY - startY);
-
-    const baseSpeed = fallConfig.baseSpeed || 200;
-    let duration = baseSpeed > 0 ? distance / baseSpeed : 0;
-
-    const accelInterval = fallConfig.accelInterval || 0;
-    const accelRate = fallConfig.accelRate || 0;
-    if (accelInterval > 0){
-      const levelFactor = 1 + (this.g.timeElapsed / accelInterval) * accelRate;
-      if (levelFactor > 0) duration /= levelFactor;
-    }
-
-    duration = Math.max(0.25, duration);
-
-    const ease = fallEase[this.subtype] || fallEase.default || 'power2.in';
+    const duration = CONFIG.fallDuration ?? 2.5;
 
     if (gsap && typeof gsap.to === 'function'){
-      this.tween = gsap.to(this, {
-        _y: endY,
+      this._tween = gsap.to(this, {
+        y: endY,
         scale: 1,
         duration,
-        ease,
+        ease: "power2.in",
         onComplete: () => {
           this.dead = true;
         }
@@ -478,17 +426,17 @@ class FallingItem{
             const wallet = this.g.wallet;
             if (wallet){
               const walletCenter = wallet.x + wallet.w / 2;
-              const diff = walletCenter - this._x;
+              const diff = walletCenter - this.x;
               const stepDelta = (typeof delta === 'number' && isFinite(delta)) ? delta : (1/60);
               const step = clamp(diff * 4 * stepDelta, -180 * stepDelta, 180 * stepDelta);
-              this._x += step;
+              this.x += step;
             }
           }
         };
         gsap.ticker.add(this._ticker);
       }
     } else {
-      this._y = endY;
+      this.y = endY;
       this.scale = 1;
     }
   }
@@ -499,38 +447,37 @@ class FallingItem{
 
   set dead(value){
     if (value && !this._dead){
-      if (this.tween) this.tween.kill();
-      if (this._ticker && gsap?.ticker) gsap.ticker.remove(this._ticker);
+      this._dead = true;
       this.alive = false;
+      if (this._tween) this._tween.kill();
+      if (this._ticker && gsap?.ticker) gsap.ticker.remove(this._ticker);
     }
-    this._dead = value;
   }
 
-  get x(){
-    return snap(this._x - (this.baseW * this.scale) / 2);
+  getBaseSize(){
+    const base = CONFIG.itemSize?.[this.subtype] ?? 64;
+    const mul = CONFIG.items?.scale ?? 1;
+    return base * mul;
   }
 
-  get y(){
-    return snap(this._y - (this.baseH * this.scale) / 2);
+  getBounds(){
+    const size = this.getBaseSize() * this.scale;
+    return {
+      x: this.x - size / 2,
+      y: this.y - size / 2,
+      w: size,
+      h: size,
+    };
   }
 
-  get w(){
-    return snap(this.baseW * this.scale);
-  }
-
-  get h(){
-    return snap(this.baseH * this.scale);
+  getCenter(){
+    return { x: this.x, y: this.y };
   }
 
   draw(g){
-    if (this.dead) return;
-    const x = this.x;
-    const y = this.y;
-    const w = this.w;
-    const h = this.h;
-    g.save();
-    drawItemSprite(g, this.kind, this.subtype, x, y, w, h);
-    g.restore();
+    if (!this.alive) return;
+    const bounds = this.getBounds();
+    drawItemSprite(g, this.kind, this.subtype, bounds.x, bounds.y, bounds.w, bounds.h);
   }
 }
 
@@ -576,7 +523,14 @@ class Game{
     this.arm.update(dt); this.wallet.update(dt); this.spawner.update(dt);
     const w=this.wallet; const cx=CONFIG.collision.walletScaleX, cy=CONFIG.collision.walletScaleY, px=CONFIG.collision.walletPadX, py=CONFIG.collision.walletPadY;
     const wr = { x: w.x + (w.w - w.w*cx)/2 + px, y: w.y + (w.h - w.h*cy)/2 + py, w: w.w*cx, h: w.h*cy };
-    for (const it of this.items){ if (it.dead) continue; if (checkAABB(wr, {x:it.x,y:it.y,w:it.w,h:it.h})){ this.onCatch(it); it.dead=true; } }
+    for (const it of this.items){
+      if (it.dead) continue;
+      const hitbox = it.getBounds();
+      if (checkAABB(wr, hitbox)){
+        this.onCatch(it);
+        it.dead = true;
+      }
+    }
     this.items = this.items.filter(i=>!i.dead);
     for (const k of ['magnet','x2','freeze']){ if (this.effects[k]>0) this.effects[k]-=dt; if (this.effects[k]<0) this.effects[k]=0; }
     this.fx.update(dt);
@@ -584,15 +538,16 @@ class Game{
   }
   onCatch(it){
     const firstCatch = !this.didFirstCatch;
+    const { x: itemX, y: itemY } = it.getCenter();
     if (it.kind==='good'){
       this.wallet.bump(0.35, 'vertical');
-      let pts = CONFIG.score[it.subtype] || 0; if (this.effects.freeze>0){ this.fx.burst(it.x,it.y,'#88a',4); this.audio.bad(); this.didFirstCatch=true; return; }
+      let pts = CONFIG.score[it.subtype] || 0; if (this.effects.freeze>0){ this.fx.burst(itemX,itemY,'#88a',4); this.audio.bad(); this.didFirstCatch=true; return; }
       if (this.effects.x2>0) pts *= 2; this.comboStreak += 1; if (this.comboStreak % CONFIG.combo.step === 0){ this.comboMult = Math.min(CONFIG.combo.maxMult, this.comboMult+1); }
       this.maxCombo = Math.max(this.maxCombo, this.comboStreak); pts = Math.floor(pts * this.comboMult); this.score += pts;
-      this.fx.burst(it.x,it.y,'#a7f070',6); this.audio.good(); if (this.settings.haptics && !firstCatch) try{ navigator.vibrate && navigator.vibrate(8); }catch(e){}
+      this.fx.burst(itemX,itemY,'#a7f070',6); this.audio.good(); if (this.settings.haptics && !firstCatch) try{ navigator.vibrate && navigator.vibrate(8); }catch(e){}
     } else if (it.kind==='bad'){
       if (it.subtype==='bomb') this.wallet.bump(0.65,'vertical'); else if (it.subtype==='anvil') this.wallet.bump(0.55,'vertical'); else this.wallet.bump(0.40,'vertical');
-      if (this.effects.shield>0){ this.effects.shield=0; this.fx.burst(it.x,it.y,'#66a6ff',8); this.audio.pow(); this.didFirstCatch=true; return; }
+      if (this.effects.shield>0){ this.effects.shield=0; this.fx.burst(itemX,itemY,'#66a6ff',8); this.audio.pow(); this.didFirstCatch=true; return; }
       this.comboStreak=0; this.comboMult=1;
       if (it.subtype==='bomb'){ this.lives -= 1; this.shake = 0.8; this.audio.bad(); if (this.settings.haptics && !firstCatch) try{ navigator.vibrate && navigator.vibrate(40); }catch(e){} }
       else if (it.subtype==='shitcoin'){ this.score += CONFIG.score.bad.shitcoin; this.audio.bad(); }
@@ -605,7 +560,7 @@ class Game{
       else if (it.subtype==='x2'){ this.effects.x2 = CONFIG.powerups.x2; this.audio.pow(); }
       else if (it.subtype==='shield'){ this.effects.shield = 1; this.audio.pow(); }
       else if (it.subtype==='timeShard'){ this.timeLeft = Math.min(CONFIG.runSeconds, this.timeLeft + 5); this.audio.pow(); }
-      this.fx.burst(it.x,it.y,'#ffcd75',10);
+      this.fx.burst(itemX,itemY,'#ffcd75',10);
     }
     this.didFirstCatch=true;
   }
