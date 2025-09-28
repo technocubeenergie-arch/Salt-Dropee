@@ -133,7 +133,7 @@ const VERSION = '1.1.0';
 const CONFIG = {
   portraitBase: { w: 360, h: 640 }, // 9:16
   maxTopActorH: 0.20,                // main ≤20%
-  maxWalletH:  0.20,                 // wallet ≤20%
+  maxWalletH:  0.25,                 // wallet ≤20%
 
   runSeconds: 75,
   lives: 3,
@@ -142,7 +142,7 @@ const CONFIG = {
   spawnRampEverySec: 10,
   spawnRampFactor: 1.15,
 
-  fallDuration: 2.5,
+  fallDuration: 3,
 
   wallet: { speed: 500, dashSpeed: 900, dashCD: 2.0,  bottomOffset: 400 },
 
