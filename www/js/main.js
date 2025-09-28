@@ -144,7 +144,7 @@ const CONFIG = {
 
   fallDuration: 2.5,
 
-  wallet: { speed: 500, dashSpeed: 900, dashCD: 2.0,  bottomOffset: 150 },
+  wallet: { speed: 500, dashSpeed: 900, dashCD: 2.0,  bottomOffset: 220 },
 
   control: {
     easeDuration: 0.2,
