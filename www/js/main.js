@@ -48,6 +48,12 @@ const X2Img     = new Image(); let x2Ready     = false; X2Img.onload     = ()=> 
 const ShieldImg = new Image(); let shieldReady = false; ShieldImg.onload = ()=> shieldReady = true; ShieldImg.src = 'assets/shield.png';
 const TimeImg   = new Image(); let timeReady   = false; TimeImg.onload   = ()=> timeReady   = true; TimeImg.src   = 'assets/time.png';
 
+const BonusIcons = {
+  magnet: MagnetImg,
+  x2: X2Img,
+  shield: ShieldImg,
+};
+
 const footerImg = new Image();
 footerImg.src = 'assets/footer.png';
 
@@ -578,8 +584,10 @@ class Spawner{
   }
 }
 
-class HUD{ constructor(game){ this.g=game; } draw(g){ const P=this.g.palette; g.save(); const topCap = Math.floor(BASE_H * CONFIG.maxTopActorH); const BAR_H=28; const barY=topCap+2; g.fillStyle=P[0]; g.fillRect(0,barY,BASE_W,BAR_H); g.fillStyle=P[4]; g.font='12px monospace'; g.textBaseline='top'; const ty=barY+10; const s=`SCORE ${this.g.score|0}`; const t=`TIME ${(Math.max(0,this.g.timeLeft)).toFixed(0)}s`; const v=`LIVES ${'♥'.repeat(this.g.lives)}`; const c=`COMBO x${this.g.comboMult.toFixed(1)} (${this.g.comboStreak|0})`; g.fillText(s,6,ty); g.fillText(v,100,ty); g.fillText(t,300,ty); g.fillText(c,190,ty); let ex=6, ey=barY+BAR_H+4; const iconSize=10; const icon=(label,active,timer)=>{ if (!active) return; g.fillStyle=P[5]; g.fillRect(ex,ey,iconSize,iconSize); g.fillStyle=P[0]; g.fillText(label, ex+iconSize+4, ey-1); g.fillStyle=P[4]; g.fillText((timer>0?timer.toFixed(0)+'s':'1x'), ex+iconSize+42, ey-1); ey += iconSize+4; };
-  icon('MAG', this.g.effects.magnet>0, this.g.effects.magnet); icon('x2', this.g.effects.x2>0, this.g.effects.x2); icon('SHD', this.g.effects.shield>0, 1); if (this.g.effects.freeze>0){ g.fillStyle=P[2]; g.fillRect(ex,ey,iconSize,iconSize); g.fillStyle=P[4]; g.fillText('FRZ', ex+iconSize+4, ey-1); g.fillText(this.g.effects.freeze.toFixed(0)+'s', ex+iconSize+40, ey-1); }
+class HUD{ constructor(game){ this.g=game; } draw(g){ const P=this.g.palette; g.save(); const topCap = Math.floor(BASE_H * CONFIG.maxTopActorH); const BAR_H=28; const barY=topCap+2; g.fillStyle=P[0]; g.fillRect(0,barY,BASE_W,BAR_H); g.fillStyle=P[4]; g.font='12px monospace'; g.textBaseline='top'; const ty=barY+10; const s=`SCORE ${this.g.score|0}`; const t=`TIME ${(Math.max(0,this.g.timeLeft)).toFixed(0)}s`; const v=`LIVES ${'♥'.repeat(this.g.lives)}`; const c=`COMBO x${this.g.comboMult.toFixed(1)} (${this.g.comboStreak|0})`; g.fillText(s,6,ty); g.fillText(v,100,ty); g.fillText(t,300,ty); g.fillText(c,190,ty); let ex=6, ey=barY+BAR_H+4; const iconSize=16; const drawBonus=(icon,timer)=>{ if (!icon || timer<=0) return; if (icon.complete) g.drawImage(icon,ex,ey,iconSize,iconSize); g.fillStyle=P[4]; g.font='12px monospace'; g.textBaseline='top'; g.fillText(`${Math.ceil(timer)}s`, ex+iconSize+4, ey+1); ey += iconSize+4; };
+  drawBonus(BonusIcons.magnet, this.g.effects.magnet);
+  drawBonus(BonusIcons.x2, this.g.effects.x2);
+  if (this.g.effects.shield>0) drawBonus(BonusIcons.shield, 1);
   g.restore(); } }
 
 // =====================
