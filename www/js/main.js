@@ -85,9 +85,20 @@ const CONFIG = {
   spawnRampEverySec: 10,
   spawnRampFactor: 1.15,
 
-  gravity: { good: 220, bad: 260, power: 200 }, // px/s² de base
-  // multiplicateurs par sous-type (ancre gameplay)
-  gravityMul: { anvil:1.35, bomb:1.15, diamond:1.08 },
+  fall: {
+    baseSpeed: 200,   // pixels/sec au départ
+    accelRate: 0.3,   // +30% de vitesse toutes les 30s
+    accelInterval: 30 // intervalle en secondes
+  },
+
+  fallEase: {
+    default: "power2.in",   // easing par défaut
+    bomb: "power3.in",      // bombes → chute plus brutale
+    anvil: "expo.in",       // enclume → chute très lourde
+    diamond: "sine.in",     // diamants → chute plus douce
+    gold: "power1.in",      // or → chute intermédiaire
+    shitcoin: "back.in"     // shitcoin → effet maladroit
+  },
 
   wallet: { speed: 500, dashSpeed: 900, dashCD: 2.0 },
 
@@ -417,26 +428,44 @@ class FallingItem{
     this.baseH = base * scaleMul;
 
     this.scale = (CONFIG.items?.spawnScale != null) ? CONFIG.items.spawnScale : 0.30;
-    this.centerX = x + this.baseW / 2;
-    this.centerY = y + this.baseH / 2;
+    this._x = x + this.baseW / 2;
+    this._y = y + this.baseH / 2;
 
     this.alive = true;
     this._dead = false;
     this.tween = null;
     this._ticker = null;
 
-    const targetY = BASE_H - 80;
-    const distance = Math.max(0, targetY - this.centerY);
-    const baseDuration = CONFIG.items?.fallDuration ?? 1.0;
-    const duration = Math.max(0.4, baseDuration + (distance / BASE_H) * 0.3);
+    const fallConfig = CONFIG.fall || {};
+    const fallEase = CONFIG.fallEase || {};
+
+    const startY = this._y;
+    const endY = BASE_H - 80;
+    const distance = Math.max(0, endY - startY);
+
+    const baseSpeed = fallConfig.baseSpeed || 200;
+    let duration = baseSpeed > 0 ? distance / baseSpeed : 0;
+
+    const accelInterval = fallConfig.accelInterval || 0;
+    const accelRate = fallConfig.accelRate || 0;
+    if (accelInterval > 0){
+      const levelFactor = 1 + (this.g.timeElapsed / accelInterval) * accelRate;
+      if (levelFactor > 0) duration /= levelFactor;
+    }
+
+    duration = Math.max(0.25, duration);
+
+    const ease = fallEase[this.subtype] || fallEase.default || 'power2.in';
 
     if (gsap && typeof gsap.to === 'function'){
       this.tween = gsap.to(this, {
-        centerY: targetY,
+        _y: endY,
         scale: 1,
         duration,
-        ease: 'power2.in',
-        onComplete: () => { this.dead = true; },
+        ease,
+        onComplete: () => {
+          this.dead = true;
+        }
       });
 
       if (gsap.ticker){
@@ -449,17 +478,17 @@ class FallingItem{
             const wallet = this.g.wallet;
             if (wallet){
               const walletCenter = wallet.x + wallet.w / 2;
-              const diff = walletCenter - this.centerX;
+              const diff = walletCenter - this._x;
               const stepDelta = (typeof delta === 'number' && isFinite(delta)) ? delta : (1/60);
               const step = clamp(diff * 4 * stepDelta, -180 * stepDelta, 180 * stepDelta);
-              this.centerX += step;
+              this._x += step;
             }
           }
         };
         gsap.ticker.add(this._ticker);
       }
     } else {
-      this.centerY = targetY;
+      this._y = endY;
       this.scale = 1;
     }
   }
@@ -478,11 +507,11 @@ class FallingItem{
   }
 
   get x(){
-    return snap(this.centerX - (this.baseW * this.scale) / 2);
+    return snap(this._x - (this.baseW * this.scale) / 2);
   }
 
   get y(){
-    return snap(this.centerY - (this.baseH * this.scale) / 2);
+    return snap(this._y - (this.baseH * this.scale) / 2);
   }
 
   get w(){
