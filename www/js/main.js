@@ -76,16 +76,8 @@ const wallets = [
 ];
 
 let currentLevel = 1;
-const walletImage = new Image();
-let walletReady = false;
+let walletImage = null;
 let currentWalletSrc = '';
-
-walletImage.onload = () => {
-  walletReady = true;
-  if (game?.wallet) {
-    game.wallet.applyCaps();
-  }
-};
 
 function loadWallet(level = 1) {
   const previousLevel = currentLevel;
@@ -96,18 +88,19 @@ function loadWallet(level = 1) {
   const nextSrc = wallets[targetLevel - 1];
   const shouldReload = currentWalletSrc !== nextSrc;
 
-  if (shouldReload){
-    walletReady = false;
+  if (shouldReload) {
     currentWalletSrc = nextSrc;
-    walletImage.src = nextSrc;
-    if (walletImage.complete && walletImage.naturalWidth > 0){
-      walletReady = true;
+    const img = new Image();
+    img.onload = () => {
+      walletImage = img;
       if (game?.wallet) {
         game.wallet.applyCaps();
       }
+    };
+    img.src = nextSrc;
+    if (img.complete && img.naturalWidth > 0) {
+      img.onload();
     }
-  } else if (walletImage.complete && walletImage.naturalWidth > 0){
-    walletReady = true;
   }
 
   if (game?.wallet && (shouldReload || previousLevel !== targetLevel)) {
@@ -153,7 +146,7 @@ const CONFIG = {
 
   fallDuration: 3,
 
-  wallet: { speed: 500, dashSpeed: 900, dashCD: 2.0,  bottomOffset: 100 },
+  wallet: { speed: 500, dashSpeed: 900, dashCD: 2.0,  bottomOffset: 120, width: 180 },
 
   control: {
     easeDuration: 0.2,
@@ -378,7 +371,25 @@ class ParticleSys{
 class Wallet{
   constructor(game){ this.g=game; this.level=1; this.x=BASE_W/2; this.y=BASE_H-40; this.w=48; this.h=40; this.slowTimer=0; this.dashCD=0; this.spriteHCapPx=0; this.impact=0; this.impactDir='vertical'; this.squashTimer=0; this.visualScale=1; targetX = this.x + this.w / 2; }
   bump(strength=0.35, dir='vertical'){ this.impact = Math.min(1, this.impact + strength); this.impactDir = dir; this.g.fx.ring(this.x+this.w/2, this.y, 0.25); }
-  applyCaps(){ const maxH = Math.floor(BASE_H * CONFIG.maxWalletH); this.spriteHCapPx = maxH; const imgRatio = (walletImage.naturalWidth / walletImage.naturalHeight) || 1; this.h = Math.min(maxH, 60); this.w = this.h * imgRatio * 1.8; this.y = BASE_H - this.h - CONFIG.wallet.bottomOffset; targetX = this.x + this.w / 2; }
+  applyCaps(){
+    const maxH = Math.floor(BASE_H * CONFIG.maxWalletH);
+    this.spriteHCapPx = maxH;
+    const baseWidth = CONFIG.wallet?.width ?? this.w;
+    const ratio = (walletImage && walletImage.naturalWidth > 0)
+      ? (walletImage.naturalHeight / walletImage.naturalWidth)
+      : 1;
+    let targetWidth = baseWidth || 0;
+    let targetHeight = targetWidth * ratio;
+    if (maxH > 0 && targetHeight > maxH) {
+      const clampScale = maxH / targetHeight;
+      targetHeight = maxH;
+      targetWidth *= clampScale;
+    }
+    this.w = targetWidth;
+    this.h = targetHeight;
+    this.y = BASE_H - this.h - CONFIG.wallet.bottomOffset;
+    targetX = this.x + this.w / 2;
+  }
   evolveByScore(score){ const th=CONFIG.evolveThresholds; let lvl=1; for (let i=0;i<th.length;i++){ if (score>=th[i]) lvl=i+1; } if (lvl!==this.level){ this.level=lvl; loadWallet(lvl); this.applyCaps(); this.g.fx.burst(this.x, this.y, '#ffcd75', 12); this.g.audio.up(); this.squashTimer=0.12; } }
   update(dt){
     const sens = this.g.settings.sensitivity || 1.0;
@@ -410,16 +421,45 @@ class Wallet{
     if (this.squashTimer>0) this.squashTimer -= dt;
   }
   draw(g){
-    const h = Math.min(this.h, this.spriteHCapPx||this.h); const w=this.w; const x=this.x; const y=this.y;
-    let sx=1, sy=1; if (this.impactDir==='vertical'){ sx = 1 + 0.18*this.impact; sy = 1 - 0.28*this.impact; } else { sx = 1 + 0.25*this.impact; sy = 1 - 0.12*this.impact; }
-    g.save(); const cx = Math.round(x + w/2), cy = Math.round(y + h/2); g.translate(cx,cy); g.scale(sx * this.visualScale, sy * this.visualScale); g.translate(-cx,-cy);
-    g.shadowColor = 'rgba(0,0,0,0.25)'; g.shadowBlur = 6; g.shadowOffsetY = 2;
-    if (walletReady && walletImage.complete && walletImage.naturalWidth > 0){
-      g.drawImage(walletImage, Math.round(x), Math.round(y), w, h);
-    } else {
-      g.fillStyle = '#f0f0f0';
-      g.fillRect(Math.round(x), Math.round(y), w, h);
+    if (!walletImage || !walletImage.complete) return;
+
+    const aspectRatio = (walletImage.naturalWidth > 0)
+      ? walletImage.naturalHeight / walletImage.naturalWidth
+      : 1;
+    let drawWidth = CONFIG.wallet?.width ?? this.w;
+    let drawHeight = drawWidth * aspectRatio;
+    const maxH = this.spriteHCapPx || drawHeight;
+    if (drawHeight > maxH) {
+      const clampScale = maxH / drawHeight;
+      drawHeight = maxH;
+      drawWidth *= clampScale;
     }
+
+    const x = this.x;
+    const y = this.y;
+    let sx = 1;
+    let sy = 1;
+    if (this.impactDir === 'vertical') {
+      sx = 1 + 0.18 * this.impact;
+      sy = 1 - 0.28 * this.impact;
+    } else {
+      sx = 1 + 0.25 * this.impact;
+      sy = 1 - 0.12 * this.impact;
+    }
+
+    g.save();
+    const cx = Math.round(x + drawWidth / 2);
+    const cy = Math.round(y + drawHeight / 2);
+    g.translate(cx, cy);
+    g.scale(sx * (this.visualScale || 1), sy * (this.visualScale || 1));
+    g.translate(-cx, -cy);
+
+    g.shadowColor = 'rgba(0,0,0,0.25)';
+    g.shadowBlur = 6;
+    g.shadowOffsetY = 2;
+
+    g.drawImage(walletImage, x, y, drawWidth, drawHeight);
+
     g.restore();
   }
 }
