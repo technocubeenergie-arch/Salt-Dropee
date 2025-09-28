@@ -400,7 +400,7 @@ class FallingItem{
     this.alive = true;
     this._dead = false;
     this._tween = null;
-    this._ticker = null;
+    this._attracted = false;
 
     const endY = BASE_H - 80;
     const duration = CONFIG.fallDuration ?? 2.5;
@@ -415,29 +415,40 @@ class FallingItem{
           this.dead = true;
         }
       });
-
-      if (gsap.ticker){
-        this._ticker = (time, delta) => {
-          if (this._dead){
-            gsap.ticker.remove(this._ticker);
-            return;
-          }
-          if (this.g.effects.magnet>0 && this.kind==='good'){
-            const wallet = this.g.wallet;
-            if (wallet){
-              const walletCenter = wallet.x + wallet.w / 2;
-              const diff = walletCenter - this.x;
-              const stepDelta = (typeof delta === 'number' && isFinite(delta)) ? delta : (1/60);
-              const step = clamp(diff * 4 * stepDelta, -180 * stepDelta, 180 * stepDelta);
-              this.x += step;
-            }
-          }
-        };
-        gsap.ticker.add(this._ticker);
-      }
     } else {
       this.y = endY;
       this.scale = 1;
+    }
+  }
+
+  attractToWalletDiagonal(){
+    if (this.dead || this._attracted) return;
+    const wallet = this.g?.wallet;
+    if (!wallet) return;
+    const walletCenterX = wallet.x + wallet.w / 2;
+    const walletCenterY = wallet.y;
+
+    if (this._tween && typeof this._tween.kill === 'function'){
+      this._tween.kill();
+    }
+
+    this._attracted = true;
+
+    if (gsap && typeof gsap.to === 'function'){
+      this._tween = gsap.to(this, {
+        x: walletCenterX,
+        y: walletCenterY,
+        duration: 0.6,
+        ease: "power2.out",
+        overwrite: "auto",
+        onComplete: () => {
+          this.dead = true;
+        }
+      });
+    } else {
+      this.x = walletCenterX;
+      this.y = walletCenterY;
+      this.dead = true;
     }
   }
 
@@ -450,7 +461,6 @@ class FallingItem{
       this._dead = true;
       this.alive = false;
       if (this._tween) this._tween.kill();
-      if (this._ticker && gsap?.ticker) gsap.ticker.remove(this._ticker);
     }
   }
 
@@ -525,6 +535,9 @@ class Game{
     const wr = { x: w.x + (w.w - w.w*cx)/2 + px, y: w.y + (w.h - w.h*cy)/2 + py, w: w.w*cx, h: w.h*cy };
     for (const it of this.items){
       if (it.dead) continue;
+      if (this.effects.magnet>0 && it.kind==='good'){
+        it.attractToWalletDiagonal();
+      }
       const hitbox = it.getBounds();
       if (checkAABB(wr, hitbox)){
         this.onCatch(it);
