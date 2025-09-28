@@ -144,7 +144,7 @@ const CONFIG = {
 
   fallDuration: 2.5,
 
-  wallet: { speed: 500, dashSpeed: 900, dashCD: 2.0 },
+  wallet: { speed: 500, dashSpeed: 900, dashCD: 2.0,  bottomOffset: 120 },
 
   control: {
     easeDuration: 0.2,
@@ -369,7 +369,7 @@ class ParticleSys{
 class Wallet{
   constructor(game){ this.g=game; this.level=1; this.x=BASE_W/2; this.y=BASE_H-40; this.w=48; this.h=40; this.slowTimer=0; this.dashCD=0; this.spriteHCapPx=0; this.impact=0; this.impactDir='vertical'; this.squashTimer=0; this.visualScale=1; targetX = this.x + this.w / 2; }
   bump(strength=0.35, dir='vertical'){ this.impact = Math.min(1, this.impact + strength); this.impactDir = dir; this.g.fx.ring(this.x+this.w/2, this.y, 0.25); }
-  applyCaps(){ const maxH = Math.floor(BASE_H * CONFIG.maxWalletH); this.spriteHCapPx = maxH; const imgRatio = (walletImage.naturalWidth / walletImage.naturalHeight) || 1; this.h = Math.min(maxH, 60); this.w = this.h * imgRatio * 1.8; this.y = BASE_H - this.h - 60; targetX = this.x + this.w / 2; }
+  applyCaps(){ const maxH = Math.floor(BASE_H * CONFIG.maxWalletH); this.spriteHCapPx = maxH; const imgRatio = (walletImage.naturalWidth / walletImage.naturalHeight) || 1; this.h = Math.min(maxH, 60); this.w = this.h * imgRatio * 1.8; this.y = BASE_H - this.h - CONFIG.wallet.bottomOffset; targetX = this.x + this.w / 2; }
   evolveByScore(score){ const th=CONFIG.evolveThresholds; let lvl=1; for (let i=0;i<th.length;i++){ if (score>=th[i]) lvl=i+1; } if (lvl!==this.level){ this.level=lvl; loadWallet(lvl); this.applyCaps(); this.g.fx.burst(this.x, this.y, '#ffcd75', 12); this.g.audio.up(); this.squashTimer=0.12; } }
   update(dt){
     const sens = this.g.settings.sensitivity || 1.0;
