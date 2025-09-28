@@ -94,6 +94,11 @@ const CONFIG = {
     easeFunction: 'power2.out',
   },
 
+  magnet: {
+    duration: 1.2,
+    ease: 'sine.out',
+  },
+
   score: { bronze:10, silver:25, gold:50, diamond:100, bad:{shitcoin:-20, anvil:-10}, rugpullPct:-0.3 },
   combo: { step: 10, maxMult: 3 },
 
@@ -400,7 +405,7 @@ class FallingItem{
     this.alive = true;
     this._dead = false;
     this._tween = null;
-    this._attracted = false;
+    this.magnetized = false;
 
     const endY = BASE_H - 80;
     const duration = CONFIG.fallDuration ?? 2.5;
@@ -422,9 +427,13 @@ class FallingItem{
   }
 
   attractToWalletDiagonal(){
-    if (this.dead || this._attracted) return;
+    if (!this.alive || this.magnetized) return;
+
     const wallet = this.g?.wallet;
     if (!wallet) return;
+
+    this.magnetized = true;
+
     const walletCenterX = wallet.x + wallet.w / 2;
     const walletCenterY = wallet.y;
 
@@ -432,22 +441,22 @@ class FallingItem{
       this._tween.kill();
     }
 
-    this._attracted = true;
-
     if (gsap && typeof gsap.to === 'function'){
       this._tween = gsap.to(this, {
         x: walletCenterX,
         y: walletCenterY,
-        duration: 0.6,
-        ease: "power2.out",
+        duration: CONFIG.magnet.duration,
+        ease: CONFIG.magnet.ease,
         overwrite: "auto",
         onComplete: () => {
+          this.alive = false;
           this.dead = true;
         }
       });
     } else {
       this.x = walletCenterX;
       this.y = walletCenterY;
+      this.alive = false;
       this.dead = true;
     }
   }
@@ -534,8 +543,9 @@ class Game{
     const w=this.wallet; const cx=CONFIG.collision.walletScaleX, cy=CONFIG.collision.walletScaleY, px=CONFIG.collision.walletPadX, py=CONFIG.collision.walletPadY;
     const wr = { x: w.x + (w.w - w.w*cx)/2 + px, y: w.y + (w.h - w.h*cy)/2 + py, w: w.w*cx, h: w.h*cy };
     for (const it of this.items){
-      if (it.dead) continue;
-      if (this.effects.magnet>0 && it.kind==='good'){
+      if (!it.alive) continue;
+
+      if (this.effects.magnet>0 && it.kind==='good' && !it.magnetized){
         it.attractToWalletDiagonal();
       }
       const hitbox = it.getBounds();
@@ -544,7 +554,7 @@ class Game{
         it.dead = true;
       }
     }
-    this.items = this.items.filter(i=>!i.dead);
+    this.items = this.items.filter(i=>i.alive);
     for (const k of ['magnet','x2','freeze']){ if (this.effects[k]>0) this.effects[k]-=dt; if (this.effects[k]<0) this.effects[k]=0; }
     this.fx.update(dt);
     this.updateBgByScore(); if (this.shake>0) this.shake = Math.max(0, this.shake - dt*6);
