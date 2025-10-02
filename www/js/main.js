@@ -158,6 +158,7 @@ const CONFIG = {
     ease: 'power2.in',
     scaleStart: 0.3,
     scaleEnd: 1.0,
+    trailFactor: 0.2,
   },
 
   score: { bronze:10, silver:25, gold:50, diamond:100, bad:{shitcoin:-20, anvil:-10}, rugpullPct:-0.3 },
@@ -551,58 +552,76 @@ class FallingItem{
 
     if (this._tween && typeof this._tween.kill === 'function'){
       this._tween.kill();
-      this._tween = null;
     }
+    this._tween = null;
 
-    const scaleStart = CONFIG?.magnet?.scaleStart ?? 0.3;
-    const scaleEnd = CONFIG?.magnet?.scaleEnd ?? 1.0;
-    const duration = CONFIG?.magnet?.duration ?? 1.2;
-    const ease = CONFIG?.magnet?.ease ?? 'power2.in';
-
-    const walletCenterX = () => wallet.x + wallet.w / 2;
-    const walletCenterY = () => wallet.y + wallet.h / 2;
-
-    const lerp = (a, b, t) => a + (b - a) * t;
-
-    const applyCatch = () => {
-      this.x = walletCenterX();
-      this.y = walletCenterY();
-      this.scale = scaleEnd;
-      this.dead = true;
-      this._tween = null;
-      this.g.onCatch(this);
-    };
+    const magnetCfg = CONFIG?.magnet ?? {};
+    const scaleStart = magnetCfg.scaleStart ?? 0.3;
+    const scaleEnd = magnetCfg.scaleEnd ?? 1.0;
+    const duration = magnetCfg.duration ?? 1.2;
+    const ease = magnetCfg.ease ?? 'power2.in';
+    const trailFactor = magnetCfg.trailFactor ?? 0.2;
 
     this.scale = Math.max(this.scale ?? scaleStart, scaleStart);
 
+    const computeWalletRect = () => {
+      const w = this.g?.wallet;
+      if (!w) return null;
+      const cx = CONFIG.collision.walletScaleX;
+      const cy = CONFIG.collision.walletScaleY;
+      const px = CONFIG.collision.walletPadX;
+      const py = CONFIG.collision.walletPadY;
+      return {
+        x: w.x + (w.w - w.w * cx) / 2 + px,
+        y: w.y + (w.h - w.h * cy) / 2 + py,
+        w: w.w * cx,
+        h: w.h * cy,
+      };
+    };
+
+    const captureImmediately = () => {
+      const rect = computeWalletRect();
+      if (rect){
+        this.x = rect.x + rect.w / 2;
+        this.y = rect.y + rect.h / 2;
+      }
+      this.scale = scaleEnd;
+      this.dead = true;
+      this.g.onCatch(this);
+      this._tween = null;
+    };
+
     if (!(gsap && typeof gsap.to === 'function')){
-      applyCatch();
+      captureImmediately();
       return;
     }
 
-    const state = { progress: 0 };
-    let lastProgress = 0;
-
-    this._tween = gsap.to(state, {
-      progress: 1,
+    this._tween = gsap.to({}, {
       duration,
       ease,
+      repeat: -1,
       onUpdate: () => {
-        const currentProgress = state.progress;
-        const delta = currentProgress - lastProgress;
-        lastProgress = currentProgress;
-        if (delta <= 0) return;
+        if (!this.alive || this.dead) return;
+        const rect = computeWalletRect();
+        if (!rect) return;
 
-        const wx = walletCenterX();
-        const wy = walletCenterY();
+        const targetX = rect.x + rect.w / 2;
+        const targetY = rect.y + rect.h / 2;
 
-        this.x = lerp(this.x, wx, delta);
-        this.y = lerp(this.y, wy, delta);
-        this.scale = lerp(this.scale, scaleEnd, delta);
+        this.x += (targetX - this.x) * trailFactor;
+        this.y += (targetY - this.y) * trailFactor;
+        this.scale += (scaleEnd - this.scale) * 0.1;
+
+        if (this.scale > scaleEnd) this.scale = scaleEnd;
+
+        const bounds = this.getBounds();
+        if (checkAABB(rect, bounds)){
+          this.dead = true;
+          if (this._tween) this._tween.kill();
+          this._tween = null;
+          this.g.onCatch(this);
+        }
       },
-      onComplete: () => {
-        applyCatch();
-      }
     });
   }
 
