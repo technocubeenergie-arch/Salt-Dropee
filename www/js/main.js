@@ -512,7 +512,9 @@ class FallingItem{
     this.subtype = subtype;
     this.x = x;
     this.y = y;
-    this.scale = (CONFIG.items?.spawnScale != null) ? CONFIG.items.spawnScale : 0.30;
+    this.spawnScale = (CONFIG.items?.spawnScale != null) ? CONFIG.items.spawnScale : 0.30;
+    this.maxScale = 1;
+    this.scale = this.spawnScale;
     this.alive = true;
     this._dead = false;
     this._tween = null;
@@ -552,6 +554,11 @@ class FallingItem{
       this._tween.kill();
     }
 
+    const updateScale = () => {
+      this.updateScaleFromVerticalPosition();
+    };
+    updateScale();
+
     if (gsap && typeof gsap.to === 'function'){
       this._tween = gsap.to(this, {
         x: walletCenterX,
@@ -559,7 +566,9 @@ class FallingItem{
         duration: CONFIG.magnet.duration,
         ease: CONFIG.magnet.ease,
         overwrite: "auto",
+        onUpdate: updateScale,
         onComplete: () => {
+          this.scale = this.maxScale;
           this.alive = false;
           this.dead = true;
         }
@@ -567,9 +576,18 @@ class FallingItem{
     } else {
       this.x = walletCenterX;
       this.y = walletCenterY;
+      this.scale = this.maxScale;
       this.alive = false;
       this.dead = true;
     }
+  }
+
+  updateScaleFromVerticalPosition(){
+    const progress = clamp(this.y / BASE_H, 0, 1);
+    const startScale = this.spawnScale ?? 0.3;
+    const endScale = this.maxScale ?? 1;
+    this.scale = startScale + (endScale - startScale) * progress;
+    if (this.scale > endScale) this.scale = endScale;
   }
 
   get dead(){
