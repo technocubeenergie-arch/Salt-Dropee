@@ -156,7 +156,7 @@ const CONFIG = {
   magnet: {
     duration: 0.8,
     ease: 'power2.inOut',
-    trailFactor: 0.01,
+    trailFactor: 0.05,
   },
 
   score: { bronze:10, silver:25, gold:50, diamond:100, bad:{shitcoin:-20, anvil:-10}, rugpullPct:-0.3 },
