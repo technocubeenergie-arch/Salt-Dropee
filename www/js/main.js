@@ -558,7 +558,7 @@ class FallingItem{
       this._tween = gsap.to(this, {
         x: walletCenterX,
         y: walletCenterY,
-        scale: 1.0,
+        scale: 0.9,
         duration: 0.8,
         ease: "power2.inOut",
         overwrite: "auto",
