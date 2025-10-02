@@ -154,9 +154,10 @@ const CONFIG = {
   },
 
   magnet: {
-    duration: 0.8,
-    ease: 'power2.inOut',
-    trailFactor: 0.03,
+    duration: 1.2,
+    ease: 'power2.in',
+    scaleStart: 0.3,
+    scaleEnd: 1.0,
   },
 
   score: { bronze:10, silver:25, gold:50, diamond:100, bad:{shitcoin:-20, anvil:-10}, rugpullPct:-0.3 },
@@ -553,40 +554,54 @@ class FallingItem{
       this._tween = null;
     }
 
-    if (!(gsap && typeof gsap.to === 'function')){
-      const walletCenterX = wallet.x + wallet.w / 2;
-      const walletCenterY = wallet.y + wallet.h / 2;
-      this.x = walletCenterX;
-      this.y = walletCenterY;
-      this.scale = 1.0;
+    const scaleStart = CONFIG?.magnet?.scaleStart ?? 0.3;
+    const scaleEnd = CONFIG?.magnet?.scaleEnd ?? 1.0;
+    const duration = CONFIG?.magnet?.duration ?? 1.2;
+    const ease = CONFIG?.magnet?.ease ?? 'power2.in';
+
+    const walletCenterX = () => wallet.x + wallet.w / 2;
+    const walletCenterY = () => wallet.y + wallet.h / 2;
+
+    const lerp = (a, b, t) => a + (b - a) * t;
+
+    const applyCatch = () => {
+      this.x = walletCenterX();
+      this.y = walletCenterY();
+      this.scale = scaleEnd;
       this.dead = true;
       this._tween = null;
       this.g.onCatch(this);
+    };
+
+    this.scale = Math.max(this.scale ?? scaleStart, scaleStart);
+
+    if (!(gsap && typeof gsap.to === 'function')){
+      applyCatch();
       return;
     }
 
-    const trailFactor = CONFIG?.magnet?.trailFactor ?? 0.2;
+    const state = { progress: 0 };
+    let lastProgress = 0;
 
-    this._tween = gsap.to(this, {
-      duration: CONFIG.magnet.duration,
-      ease: CONFIG.magnet.ease,
-      repeat: -1,
+    this._tween = gsap.to(state, {
+      progress: 1,
+      duration,
+      ease,
       onUpdate: () => {
-        const walletCenterX = wallet.x + wallet.w / 2;
-        const walletCenterY = wallet.y + wallet.h / 2;
+        const currentProgress = state.progress;
+        const delta = currentProgress - lastProgress;
+        lastProgress = currentProgress;
+        if (delta <= 0) return;
 
-        this.x += (walletCenterX - this.x) * trailFactor;
-        this.y += (walletCenterY - this.y) * trailFactor;
+        const wx = walletCenterX();
+        const wy = walletCenterY();
 
-        this.scale += (1.0 - this.scale) * 0.1;
-
-        const dx = walletCenterX - this.x;
-        const dy = walletCenterY - this.y;
-        if (Math.sqrt(dx * dx + dy * dy) < 5){
-          this.dead = true;
-          this._tween = null;
-          this.g.onCatch(this);
-        }
+        this.x = lerp(this.x, wx, delta);
+        this.y = lerp(this.y, wy, delta);
+        this.scale = lerp(this.scale, scaleEnd, delta);
+      },
+      onComplete: () => {
+        applyCatch();
       }
     });
   }
