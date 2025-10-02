@@ -539,8 +539,8 @@ class FallingItem{
     }
   }
 
-  attractToWalletDiagonal(){
-    if (!this.alive || this.magnetized) return;
+  magnetTweenToWallet(){
+    if (this.magnetized) return;
 
     const wallet = this.g?.wallet;
     if (!wallet) return;
@@ -548,37 +548,33 @@ class FallingItem{
     this.magnetized = true;
 
     const walletCenterX = wallet.x + wallet.w / 2;
-    const walletCenterY = wallet.y;
+    const walletCenterY = wallet.y + wallet.h / 2;
 
     if (this._tween && typeof this._tween.kill === 'function'){
       this._tween.kill();
     }
 
-    const updateScale = () => {
-      this.updateScaleFromVerticalPosition();
-    };
-    updateScale();
-
     if (gsap && typeof gsap.to === 'function'){
       this._tween = gsap.to(this, {
         x: walletCenterX,
         y: walletCenterY,
-        duration: CONFIG.magnet.duration,
-        ease: CONFIG.magnet.ease,
+        scale: 1.0,
+        duration: 0.8,
+        ease: "power2.inOut",
         overwrite: "auto",
-        onUpdate: updateScale,
         onComplete: () => {
-          this.scale = this.maxScale;
-          this.alive = false;
           this.dead = true;
+          this._tween = null;
+          this.g.onCatch(this);
         }
       });
     } else {
       this.x = walletCenterX;
       this.y = walletCenterY;
-      this.scale = this.maxScale;
-      this.alive = false;
+      this.scale = 1.0;
       this.dead = true;
+      this._tween = null;
+      this.g.onCatch(this);
     }
   }
 
@@ -674,11 +670,12 @@ class Game{
     const w=this.wallet; const cx=CONFIG.collision.walletScaleX, cy=CONFIG.collision.walletScaleY, px=CONFIG.collision.walletPadX, py=CONFIG.collision.walletPadY;
     const wr = { x: w.x + (w.w - w.w*cx)/2 + px, y: w.y + (w.h - w.h*cy)/2 + py, w: w.w*cx, h: w.h*cy };
     for (const it of this.items){
-      if (!it.alive) continue;
+      if (!it.alive || it.dead) continue;
 
       if (this.effects.magnet>0 && it.kind==='good' && !it.magnetized){
-        it.attractToWalletDiagonal();
+        it.magnetTweenToWallet();
       }
+      if (it.magnetized) continue;
       const hitbox = it.getBounds();
       if (checkAABB(wr, hitbox)){
         this.onCatch(it);
