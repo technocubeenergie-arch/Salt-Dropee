@@ -156,7 +156,7 @@ const CONFIG = {
   magnet: {
     duration: 1.2,
     ease: 'power2.in',
-    horizontalStrength: 4.0,
+    horizontalStrength: 8.0,
     scaleStart: 0.3,
     scaleEnd: 1.0,
     trailFactor: 0.02,
