@@ -158,7 +158,7 @@ const CONFIG = {
     ease: 'power2.in',
     scaleStart: 0.3,
     scaleEnd: 1.0,
-    trailFactor: 0.005,
+    trailFactor: 0.01,
   },
 
   score: { bronze:10, silver:25, gold:50, diamond:100, bad:{shitcoin:-20, anvil:-10}, rugpullPct:-0.3 },
