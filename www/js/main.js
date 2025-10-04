@@ -159,7 +159,7 @@ const CONFIG = {
     horizontalStrength: 12.0,
     scaleStart: 0.3,
     scaleEnd: 1.0,
-    trailFactor: 0.3,
+    trailFactor: 1,
   },
 
   score: { bronze:10, silver:25, gold:50, diamond:100, bad:{shitcoin:-20, anvil:-10}, rugpullPct:-0.3 },
@@ -176,7 +176,7 @@ const CONFIG = {
     walletScaleX: 0.30,
     walletScaleY: 1.00,
     walletPadX: 0,
-    walletPadY: 95
+    walletPadY: 90
   },
 
   // Taille & animation des items
