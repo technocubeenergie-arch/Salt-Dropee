@@ -156,10 +156,10 @@ const CONFIG = {
   magnet: {
     duration: 1.2,
     ease: 'power2.in',
-    horizontalStrength: 8.0,
+    horizontalStrength: 11.0,
     scaleStart: 0.3,
     scaleEnd: 1.0,
-    trailFactor: 0.02,
+    trailFactor: 0.08,
   },
 
   score: { bronze:10, silver:25, gold:50, diamond:100, bad:{shitcoin:-20, anvil:-10}, rugpullPct:-0.3 },
@@ -176,7 +176,7 @@ const CONFIG = {
     walletScaleX: 0.30,
     walletScaleY: 1.00,
     walletPadX: 0,
-    walletPadY: 35
+    walletPadY: 5
   },
 
   // Taille & animation des items
