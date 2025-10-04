@@ -156,6 +156,7 @@ const CONFIG = {
   magnet: {
     duration: 1.2,
     ease: 'power2.in',
+    horizontalStrength: 4.0,
     scaleStart: 0.3,
     scaleEnd: 1.0,
     trailFactor: 0.02,
@@ -521,7 +522,7 @@ class FallingItem{
     this.alive = true;
     this._dead = false;
     this._tween = null;
-    this.magnetized = false;
+    this.vx = 0;
 
     const endY = BASE_H - 80;
     const duration = CONFIG.fallDuration ?? 2.5;
@@ -542,87 +543,32 @@ class FallingItem{
     }
   }
 
-  magnetTweenToWallet(){
-    if (this.magnetized) return;
+  update(dt){
+    if (!this.alive || this.dead) return;
 
-    const wallet = this.g?.wallet;
-    if (!wallet) return;
+    const damping = Math.exp(-8 * dt);
+    this.vx *= damping;
+    if (Math.abs(this.vx) < 0.01) this.vx = 0;
 
-    this.magnetized = true;
-
-    if (this._tween && typeof this._tween.kill === 'function'){
-      this._tween.kill();
-    }
-    this._tween = null;
-
-    const magnetCfg = CONFIG?.magnet ?? {};
-    const scaleStart = magnetCfg.scaleStart ?? 0.3;
-    const scaleEnd = magnetCfg.scaleEnd ?? 1.0;
-    const duration = magnetCfg.duration ?? 1.2;
-    const ease = magnetCfg.ease ?? 'power2.in';
-    const trailFactor = magnetCfg.trailFactor ?? 0.2;
-
-    this.scale = Math.max(this.scale ?? scaleStart, scaleStart);
-
-    const computeWalletRect = () => {
-      const w = this.g?.wallet;
-      if (!w) return null;
-      const cx = CONFIG.collision.walletScaleX;
-      const cy = CONFIG.collision.walletScaleY;
-      const px = CONFIG.collision.walletPadX;
-      const py = CONFIG.collision.walletPadY;
-      return {
-        x: w.x + (w.w - w.w * cx) / 2 + px,
-        y: w.y + (w.h - w.h * cy) / 2 + py,
-        w: w.w * cx,
-        h: w.h * cy,
-      };
-    };
-
-    const captureImmediately = () => {
-      const rect = computeWalletRect();
-      if (rect){
-        this.x = rect.x + rect.w / 2;
-        this.y = rect.y + rect.h / 2;
+    if (this.kind === 'good' && this.g?.effects?.magnet > 0){
+      const wallet = this.g?.wallet;
+      if (wallet){
+        const walletCenter = wallet.x + wallet.w / 2;
+        const dx = walletCenter - this.x;
+        const strength = CONFIG?.magnet?.horizontalStrength ?? 4;
+        this.vx += dx * strength * dt;
       }
-      this.scale = scaleEnd;
-      this.dead = true;
-      this.g.onCatch(this);
-      this._tween = null;
-    };
-
-    if (!(gsap && typeof gsap.to === 'function')){
-      captureImmediately();
-      return;
     }
 
-    this._tween = gsap.to({}, {
-      duration,
-      ease,
-      repeat: -1,
-      onUpdate: () => {
-        if (!this.alive || this.dead) return;
-        const rect = computeWalletRect();
-        if (!rect) return;
-
-        const targetX = rect.x + rect.w / 2;
-        const targetY = rect.y + rect.h / 2;
-
-        this.x += (targetX - this.x) * trailFactor;
-        this.y += (targetY - this.y) * trailFactor;
-        this.scale += (scaleEnd - this.scale) * 0.1;
-
-        if (this.scale > scaleEnd) this.scale = scaleEnd;
-
-        const bounds = this.getBounds();
-        if (checkAABB(rect, bounds)){
-          this.dead = true;
-          if (this._tween) this._tween.kill();
-          this._tween = null;
-          this.g.onCatch(this);
-        }
-      },
-    });
+    if (this.vx){
+      const maxSpeed = 600;
+      this.vx = clamp(this.vx, -maxSpeed, maxSpeed);
+      this.x += this.vx * dt;
+      const halfSize = (this.getBaseSize() * this.scale) / 2;
+      const minX = halfSize;
+      const maxX = BASE_W - halfSize;
+      this.x = clamp(this.x, minX, maxX);
+    }
   }
 
   updateScaleFromVerticalPosition(){
@@ -719,10 +665,9 @@ class Game{
     for (const it of this.items){
       if (!it.alive || it.dead) continue;
 
-      if (this.effects.magnet>0 && it.kind==='good' && !it.magnetized){
-        it.magnetTweenToWallet();
+      if (typeof it.update === 'function'){
+        it.update(dt);
       }
-      if (it.magnetized) continue;
       const hitbox = it.getBounds();
       if (checkAABB(wr, hitbox)){
         this.onCatch(it);
