@@ -226,198 +226,309 @@ const CONFIG = {
   }
 };
 
-const FX_RUNTIME = {
-  positives: [],
-  negatives: [],
-  texts: [],
-  magnet: null,
-  shield: null,
-};
-
-const FX_HANDLES = {
-  magnet: null,
-  shield: null,
-};
-
-function removeFromArray(arr, item) {
-  const idx = arr.indexOf(item);
-  if (idx !== -1) arr.splice(idx, 1);
-}
-
-function clearFxRuntime() {
-  stopMagnetFx();
-  stopShieldFx();
-  if (gsap) {
-    FX_RUNTIME.positives.forEach(state => gsap.killTweensOf(state));
-    FX_RUNTIME.negatives.forEach(state => gsap.killTweensOf(state));
-    FX_RUNTIME.texts.forEach(state => gsap.killTweensOf(state));
-    if (FX_RUNTIME.magnet) gsap.killTweensOf(FX_RUNTIME.magnet);
-    if (FX_RUNTIME.shield) gsap.killTweensOf(FX_RUNTIME.shield);
+class FxManager {
+  constructor(game) {
+    this.g = game;
+    this.effects = [];
+    this.active = {};
   }
-  FX_RUNTIME.positives.length = 0;
-  FX_RUNTIME.negatives.length = 0;
-  FX_RUNTIME.texts.length = 0;
-  FX_RUNTIME.magnet = null;
-  FX_RUNTIME.shield = null;
-  FX_HANDLES.magnet = null;
-  FX_HANDLES.shield = null;
+
+  add(effect) {
+    if (!effect) return null;
+    this.effects.push(effect);
+    return effect;
+  }
+
+  update(dt) {
+    for (const fx of this.effects) {
+      if (fx.dead) continue;
+      if (typeof fx.update === "function") {
+        fx.update(dt);
+      }
+    }
+    this.effects = this.effects.filter(fx => !fx.dead);
+  }
+
+  render(ctx) {
+    if (!ctx) return;
+    ctx.save();
+    for (const fx of this.effects) {
+      fx.draw?.(ctx);
+    }
+    ctx.restore();
+  }
+
+  clear(type) {
+    const activeEffect = this.active[type];
+    if (!activeEffect) return;
+    if (typeof activeEffect.kill === "function") {
+      activeEffect.kill();
+    } else if (activeEffect.tween?.kill) {
+      activeEffect.tween.kill();
+    }
+    this.effects = this.effects.filter(fx => fx !== activeEffect);
+    delete this.active[type];
+  }
+
+  clearAll() {
+    for (const fx of this.effects) {
+      if (typeof fx.kill === "function") {
+        fx.kill();
+      } else if (fx.tween?.kill) {
+        fx.tween.kill();
+      }
+      fx.dead = true;
+    }
+    this.effects.length = 0;
+    for (const key of Object.keys(this.active)) {
+      const activeEffect = this.active[key];
+      if (typeof activeEffect?.kill === "function") {
+        activeEffect.kill();
+      } else if (activeEffect?.tween?.kill) {
+        activeEffect.tween.kill();
+      }
+    }
+    this.active = {};
+  }
 }
 
-function fxPositiveImpact(x, y) {
-  if (!gsap) return null;
-  const state = { x, y, scale: 0.1, opacity: 1 };
-  FX_RUNTIME.positives.push(state);
-  const cleanup = () => removeFromArray(FX_RUNTIME.positives, state);
-  return gsap.to(state, {
-    scale: 1.5,
-    opacity: 0,
-    duration: CONFIG.fx.positive.duration,
-    ease: "power1.out",
-    onComplete: cleanup,
-    onInterrupt: cleanup,
-  });
+class FxPositiveImpact {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.scale = 0.1;
+    this.opacity = 1;
+    this.dead = false;
+
+    if (gsap?.to) {
+      this.tween = gsap.to(this, {
+        scale: 1.5,
+        opacity: 0,
+        duration: CONFIG.fx.positive.duration,
+        ease: "power1.out",
+        onComplete: () => this.kill(),
+        onInterrupt: () => this.kill(),
+      });
+    } else {
+      this.scale = 1.5;
+      this.opacity = 0;
+      this.dead = true;
+    }
+  }
+
+  kill() {
+    if (this.dead) return;
+    this.dead = true;
+    const tween = this.tween;
+    this.tween = null;
+    tween?.kill?.();
+  }
+
+  draw(ctx) {
+    if (this.dead) return;
+    ctx.save();
+    ctx.globalAlpha = this.opacity;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, CONFIG.fx.positive.radius * this.scale, 0, Math.PI * 2);
+    ctx.fillStyle = CONFIG.fx.positive.color;
+    ctx.fill();
+    ctx.restore();
+  }
 }
 
-function fxNegativeImpact(x, y) {
-  if (!gsap) return null;
-  const state = { x, y, opacity: 1 };
-  FX_RUNTIME.negatives.push(state);
-  const cleanup = () => removeFromArray(FX_RUNTIME.negatives, state);
-  return gsap.to(state, {
-    opacity: 0,
-    duration: CONFIG.fx.negative.duration,
-    ease: "power1.out",
-    onComplete: cleanup,
-    onInterrupt: cleanup,
-  });
+class FxNegativeImpact {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.opacity = 1;
+    this.dead = false;
+
+    if (gsap?.to) {
+      this.tween = gsap.to(this, {
+        opacity: 0,
+        duration: CONFIG.fx.negative.duration,
+        ease: "power1.out",
+        onComplete: () => this.kill(),
+        onInterrupt: () => this.kill(),
+      });
+    } else {
+      this.opacity = 0;
+      this.dead = true;
+    }
+  }
+
+  kill() {
+    if (this.dead) return;
+    this.dead = true;
+    const tween = this.tween;
+    this.tween = null;
+    tween?.kill?.();
+  }
+
+  draw(ctx) {
+    if (this.dead) return;
+    ctx.save();
+    ctx.globalAlpha = this.opacity;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, CONFIG.fx.negative.radius, 0, Math.PI * 2);
+    ctx.fillStyle = CONFIG.fx.negative.color;
+    ctx.fill();
+    ctx.restore();
+  }
 }
 
-function fxMagnetActive(wallet) {
-  if (!gsap || !wallet) return null;
-  const ring = { wallet, scale: 0.5, opacity: 1 };
-  FX_RUNTIME.magnet = ring;
-  const cleanup = () => {
-    if (FX_RUNTIME.magnet === ring) FX_RUNTIME.magnet = null;
+class FxX2 {
+  constructor(wallet) {
+    this.x = wallet.x + wallet.w / 2;
+    this.y = wallet.y - 10;
+    this.scale = 0.5;
+    this.opacity = 1;
+    this.dead = false;
+
+    if (gsap?.to) {
+      this.tween = gsap.to(this, {
+        scale: 1.2,
+        opacity: 0,
+        duration: CONFIG.fx.x2.duration,
+        ease: "back.out(2)",
+        onComplete: () => this.kill(),
+        onInterrupt: () => this.kill(),
+      });
+    } else {
+      this.scale = 1.2;
+      this.opacity = 0;
+      this.dead = true;
+    }
+  }
+
+  kill() {
+    if (this.dead) return;
+    this.dead = true;
+    const tween = this.tween;
+    this.tween = null;
+    tween?.kill?.();
+  }
+
+  draw(ctx) {
+    if (this.dead) return;
+    ctx.save();
+    ctx.globalAlpha = this.opacity;
+    ctx.fillStyle = CONFIG.fx.x2.color;
+    ctx.font = `${CONFIG.fx.x2.fontSize * this.scale}px monospace`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillText("×2", this.x, this.y);
+    ctx.restore();
+  }
+}
+
+function fxMagnetActive(wallet, fxManager) {
+  if (!wallet || !fxManager) return;
+
+  fxManager.clear("magnet");
+
+  const ring = { scale: 0.5, opacity: 1 };
+  const effect = {
+    type: "magnet",
+    wallet,
+    ring,
+    dead: false,
+    tween: null,
+    kill() {
+      if (effect.dead) return;
+      effect.dead = true;
+      const tween = effect.tween;
+      effect.tween = null;
+      tween?.kill?.();
+    },
+    draw(ctx) {
+      if (effect.dead) return;
+      ctx.save();
+      ctx.globalAlpha = ring.opacity;
+      ctx.beginPath();
+      ctx.arc(
+        wallet.x + wallet.w / 2,
+        wallet.y + wallet.h / 2,
+        CONFIG.fx.magnet.radius * ring.scale,
+        0,
+        Math.PI * 2
+      );
+      ctx.strokeStyle = CONFIG.fx.magnet.color;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.restore();
+    }
   };
-  const tween = gsap.to(ring, {
-    scale: 2,
-    opacity: 0,
-    duration: CONFIG.fx.magnet.duration,
-    ease: "sine.out",
-    repeat: -1,
-    onRepeat: () => { ring.opacity = 1; },
-    onComplete: cleanup,
-    onInterrupt: cleanup,
-  });
-  FX_HANDLES.magnet = { tween, cleanup, state: ring };
-  return FX_HANDLES.magnet;
+
+  if (gsap?.to) {
+    effect.tween = gsap.to(ring, {
+      scale: 2,
+      opacity: 0,
+      duration: CONFIG.fx.magnet.duration,
+      ease: "sine.out",
+      repeat: -1,
+      onRepeat: () => {
+        ring.opacity = 1;
+        ring.scale = 0.5;
+      }
+    });
+  }
+
+  fxManager.active.magnet = effect;
+  fxManager.add(effect);
 }
 
-function stopMagnetFx() {
-  const handle = FX_HANDLES.magnet;
-  if (!handle) return;
-  handle.cleanup?.();
-  handle.tween?.kill?.();
-  if (handle.state) gsap?.killTweensOf(handle.state);
-  FX_HANDLES.magnet = null;
-}
+function fxShieldActive(wallet, fxManager) {
+  if (!wallet || !fxManager) return;
 
-function fxShieldActive(wallet) {
-  if (!gsap || !wallet) return null;
-  const aura = { wallet, scale: 1, opacity: 0.4 };
-  FX_RUNTIME.shield = aura;
-  const cleanup = () => {
-    if (FX_RUNTIME.shield === aura) FX_RUNTIME.shield = null;
+  fxManager.clear("shield");
+
+  const aura = { scale: 1, opacity: 0.4 };
+  const effect = {
+    type: "shield",
+    wallet,
+    aura,
+    dead: false,
+    tween: null,
+    kill() {
+      if (effect.dead) return;
+      effect.dead = true;
+      const tween = effect.tween;
+      effect.tween = null;
+      tween?.kill?.();
+    },
+    draw(ctx) {
+      if (effect.dead) return;
+      ctx.save();
+      ctx.globalAlpha = aura.opacity;
+      ctx.beginPath();
+      ctx.arc(
+        wallet.x + wallet.w / 2,
+        wallet.y + wallet.h / 2,
+        (wallet.w / 2) * aura.scale + CONFIG.fx.shield.radiusOffset,
+        0,
+        Math.PI * 2
+      );
+      ctx.strokeStyle = CONFIG.fx.shield.color;
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      ctx.restore();
+    }
   };
-  const tween = gsap.to(aura, {
-    scale: 1.2,
-    opacity: 0.2,
-    yoyo: true,
-    repeat: -1,
-    duration: CONFIG.fx.shield.duration,
-    ease: "sine.inOut",
-    onComplete: cleanup,
-    onInterrupt: cleanup,
-  });
-  FX_HANDLES.shield = { tween, cleanup, state: aura };
-  return FX_HANDLES.shield;
-}
 
-function stopShieldFx() {
-  const handle = FX_HANDLES.shield;
-  if (!handle) return;
-  handle.cleanup?.();
-  handle.tween?.kill?.();
-  if (handle.state) gsap?.killTweensOf(handle.state);
-  FX_HANDLES.shield = null;
-}
+  if (gsap?.to) {
+    effect.tween = gsap.to(aura, {
+      scale: 1.2,
+      opacity: 0.2,
+      yoyo: true,
+      repeat: -1,
+      duration: CONFIG.fx.shield.duration,
+      ease: "sine.inOut"
+    });
+  }
 
-function fxX2Active(wallet) {
-  if (!gsap || !wallet) return null;
-  const fx = { wallet, scale: 0.5, opacity: 1 };
-  FX_RUNTIME.texts.push(fx);
-  const cleanup = () => removeFromArray(FX_RUNTIME.texts, fx);
-  return gsap.to(fx, {
-    scale: 1.2,
-    opacity: 0,
-    duration: CONFIG.fx.x2.duration,
-    ease: "back.out(2)",
-    onComplete: cleanup,
-    onInterrupt: cleanup,
-  });
-}
-
-function renderFxLayers(g) {
-  if (!g) return;
-  g.save();
-  for (const state of FX_RUNTIME.positives) {
-    g.globalAlpha = state.opacity;
-    g.beginPath();
-    g.arc(state.x, state.y, CONFIG.fx.positive.radius * state.scale, 0, Math.PI * 2);
-    g.fillStyle = CONFIG.fx.positive.color;
-    g.fill();
-  }
-  for (const state of FX_RUNTIME.negatives) {
-    g.globalAlpha = state.opacity;
-    g.beginPath();
-    g.arc(state.x, state.y, CONFIG.fx.negative.radius, 0, Math.PI * 2);
-    g.fillStyle = CONFIG.fx.negative.color;
-    g.fill();
-  }
-  if (FX_RUNTIME.magnet && FX_RUNTIME.magnet.wallet) {
-    const { wallet, opacity, scale } = FX_RUNTIME.magnet;
-    g.globalAlpha = opacity;
-    g.beginPath();
-    g.arc(wallet.x + wallet.w / 2, wallet.y + wallet.h / 2, CONFIG.fx.magnet.radius * scale, 0, Math.PI * 2);
-    g.strokeStyle = CONFIG.fx.magnet.color;
-    g.lineWidth = 2;
-    g.stroke();
-  }
-  if (FX_RUNTIME.shield && FX_RUNTIME.shield.wallet) {
-    const { wallet, opacity, scale } = FX_RUNTIME.shield;
-    g.globalAlpha = opacity;
-    g.beginPath();
-    g.arc(
-      wallet.x + wallet.w / 2,
-      wallet.y + wallet.h / 2,
-      (wallet.w / 2) * scale + CONFIG.fx.shield.radiusOffset,
-      0,
-      Math.PI * 2
-    );
-    g.strokeStyle = CONFIG.fx.shield.color;
-    g.lineWidth = 3;
-    g.stroke();
-  }
-  for (const state of FX_RUNTIME.texts) {
-    if (!state.wallet) continue;
-    g.globalAlpha = state.opacity;
-    g.fillStyle = CONFIG.fx.x2.color;
-    g.font = `${CONFIG.fx.x2.fontSize * state.scale}px monospace`;
-    g.textAlign = "center";
-    g.textBaseline = "alphabetic";
-    g.fillText("×2", state.wallet.x + state.wallet.w / 2, state.wallet.y - 10);
-  }
-  g.restore();
+  fxManager.active.shield = effect;
+  fxManager.add(effect);
 }
 
 // =====================
@@ -849,14 +960,15 @@ class Game{
   static instance=null;
   constructor(){ Game.instance=this; this.reset({ showTitle:true }); }
   reset({showTitle=true}={}){
-    clearFxRuntime();
+    if (this.fx) this.fx.clearAll();
     this.settings = loadSettings(); document.documentElement.classList.toggle('contrast-high', !!this.settings.contrast);
     this.palette = CONFIG.palette.slice(); if (this.settings.contrast){ this.palette = ['#000','#444','#ff0044','#ffaa00','#ffffff','#00ffea','#00ff66','#66a6ff']; }
     const u=new URLSearchParams(location.search); const seed=u.get('seed'); this.random = seed? (function(seed){ let t=seed>>>0; return function(){ t += 0x6D2B79F5; let r = Math.imul(t ^ t >>> 15, 1 | t); r ^= r + Math.imul(r ^ r >>> 7, 61 | r); return ((r ^ r >>> 14) >>> 0) / 4294967296; };})(parseInt(seed)||1) : Math.random;
     this.state='title'; this.audio=new AudioSys(); this.audio.setEnabled(!!this.settings.sound);
     this.timeLeft=CONFIG.runSeconds; this.timeElapsed=0; this.lives=CONFIG.lives; this.score=0; this.comboStreak=0; this.comboMult=1; this.maxCombo=0; this.levelReached=1;
     this.arm=new Arm(this); this.arm.applyCaps(); this.wallet=new Wallet(this); this.wallet.applyCaps(); loadWallet(1); this.hud=new HUD(this); this.spawner=new Spawner(this);
-    this.items=[]; this.effects={magnet:0,x2:0,shield:0,freeze:0}; this.shake=0; this.bgIndex=0; this.didFirstCatch=false; this.updateBgByScore();
+    this.items=[]; this.effects={magnet:0,x2:0,shield:0,freeze:0}; this.fx = new FxManager(this);
+    this.shake=0; this.bgIndex=0; this.didFirstCatch=false; this.updateBgByScore();
     if (showTitle) this.renderTitle(); else this.render();
   }
   diffMult(){ return Math.pow(CONFIG.spawnRampFactor, Math.floor(this.timeElapsed/CONFIG.spawnRampEverySec)); }
@@ -882,8 +994,8 @@ class Game{
     }
     this.items = this.items.filter(i=>i.alive);
     for (const k of ['magnet','x2','freeze']){ if (this.effects[k]>0) this.effects[k]-=dt; if (this.effects[k]<0) this.effects[k]=0; }
-    if (this.effects.magnet <= 0) stopMagnetFx();
-    if (this.effects.shield <= 0) stopShieldFx();
+    if (this.effects.magnet <= 0) this.fx?.clear('magnet');
+    if (this.effects.shield <= 0) this.fx?.clear('shield');
     this.updateBgByScore(); if (this.shake>0) this.shake = Math.max(0, this.shake - dt*6);
   }
   onCatch(it){
@@ -891,14 +1003,14 @@ class Game{
     const { x: itemX, y: itemY } = it.getCenter();
     if (it.kind==='good'){
       this.wallet.bump(0.35, 'vertical');
-      let pts = CONFIG.score[it.subtype] || 0; if (this.effects.freeze>0){ fxNegativeImpact(itemX,itemY); this.audio.bad(); this.didFirstCatch=true; return; }
+      let pts = CONFIG.score[it.subtype] || 0; if (this.effects.freeze>0){ this.fx.add(new FxNegativeImpact(itemX,itemY)); this.audio.bad(); this.didFirstCatch=true; return; }
       if (this.effects.x2>0) pts *= 2; this.comboStreak += 1; if (this.comboStreak % CONFIG.combo.step === 0){ this.comboMult = Math.min(CONFIG.combo.maxMult, this.comboMult+1); }
       this.maxCombo = Math.max(this.maxCombo, this.comboStreak); pts = Math.floor(pts * this.comboMult); this.score += pts;
-      fxPositiveImpact(itemX,itemY); this.audio.good(); if (this.settings.haptics && !firstCatch) try{ navigator.vibrate && navigator.vibrate(8); }catch(e){}
+      this.fx.add(new FxPositiveImpact(itemX,itemY)); this.audio.good(); if (this.settings.haptics && !firstCatch) try{ navigator.vibrate && navigator.vibrate(8); }catch(e){}
     } else if (it.kind==='bad'){
       if (it.subtype==='bomb') this.wallet.bump(0.65,'vertical'); else if (it.subtype==='anvil') this.wallet.bump(0.55,'vertical'); else this.wallet.bump(0.40,'vertical');
-      fxNegativeImpact(itemX,itemY);
-      if (this.effects.shield>0){ this.effects.shield=0; stopShieldFx(); this.audio.pow(); this.didFirstCatch=true; return; }
+      this.fx.add(new FxNegativeImpact(itemX,itemY));
+      if (this.effects.shield>0){ this.effects.shield=0; this.fx.clear('shield'); this.audio.pow(); this.didFirstCatch=true; return; }
       this.comboStreak=0; this.comboMult=1;
       if (it.subtype==='bomb'){ this.lives -= 1; this.shake = 0.8; this.audio.bad(); if (this.settings.haptics && !firstCatch) try{ navigator.vibrate && navigator.vibrate(40); }catch(e){} }
       else if (it.subtype==='shitcoin'){ this.score += CONFIG.score.bad.shitcoin; this.audio.bad(); }
@@ -907,15 +1019,15 @@ class Game{
       else if (it.subtype==='fakeAirdrop'){ this.effects.freeze = 3.0; this.audio.bad(); }
     } else if (it.kind==='power'){
       this.wallet.bump(0.25,'horizontal');
-      if (it.subtype==='magnet'){ this.effects.magnet = CONFIG.powerups.magnet; stopMagnetFx(); fxMagnetActive(this.wallet); this.audio.pow(); }
-      else if (it.subtype==='x2'){ this.effects.x2 = CONFIG.powerups.x2; fxX2Active(this.wallet); this.audio.pow(); }
-      else if (it.subtype==='shield'){ this.effects.shield = 1; stopShieldFx(); fxShieldActive(this.wallet); this.audio.pow(); }
+      if (it.subtype==='magnet'){ this.effects.magnet = CONFIG.powerups.magnet; fxMagnetActive(this.wallet, this.fx); this.audio.pow(); }
+      else if (it.subtype==='x2'){ this.effects.x2 = CONFIG.powerups.x2; this.fx.add(new FxX2(this.wallet)); this.audio.pow(); }
+      else if (it.subtype==='shield'){ this.effects.shield = 1; fxShieldActive(this.wallet, this.fx); this.audio.pow(); }
       else if (it.subtype==='timeShard'){ this.timeLeft = Math.min(CONFIG.runSeconds, this.timeLeft + 5); this.audio.pow(); }
-      fxPositiveImpact(itemX,itemY);
+      this.fx.add(new FxPositiveImpact(itemX,itemY));
     }
     this.didFirstCatch=true;
   }
-  endGame(){ stopMagnetFx(); stopShieldFx(); this.state='over'; this.render(); try{ const best=parseInt(localStorage.getItem(LS.bestScore)||'0',10); if (this.score>best) localStorage.setItem(LS.bestScore, String(this.score)); const bestC=parseInt(localStorage.getItem(LS.bestCombo)||'0',10); if (this.maxCombo>bestC) localStorage.setItem(LS.bestCombo, String(this.maxCombo)); const runs=JSON.parse(localStorage.getItem(LS.runs)||'[]'); runs.unshift({ ts:Date.now(), score:this.score, combo:this.maxCombo, lvl:this.levelReached }); while (runs.length>20) runs.pop(); localStorage.setItem(LS.runs, JSON.stringify(runs)); }catch(e){}
+  endGame(){ this.fx?.clearAll(); this.state='over'; this.render(); try{ const best=parseInt(localStorage.getItem(LS.bestScore)||'0',10); if (this.score>best) localStorage.setItem(LS.bestScore, String(this.score)); const bestC=parseInt(localStorage.getItem(LS.bestCombo)||'0',10); if (this.maxCombo>bestC) localStorage.setItem(LS.bestCombo, String(this.maxCombo)); const runs=JSON.parse(localStorage.getItem(LS.runs)||'[]'); runs.unshift({ ts:Date.now(), score:this.score, combo:this.maxCombo, lvl:this.levelReached }); while (runs.length>20) runs.pop(); localStorage.setItem(LS.runs, JSON.stringify(runs)); }catch(e){}
     this.renderGameOver(); if (TG){ try{ TG.sendData(JSON.stringify({ score:this.score, duration:CONFIG.runSeconds, version:VERSION })); }catch(e){} }
   }
   uiStartFromTitle(){ if (this.state==='title'){ overlay.innerHTML=''; this.start(); } }
@@ -1000,7 +1112,10 @@ class Game{
       if (!it.dead) it.draw(ctx);
     }
 
-    renderFxLayers(ctx);
+    if (this.fx){
+      this.fx.update(1/60);
+      this.fx.render(ctx);
+    }
     this.hud.draw(ctx);
 
     if (footerImg.complete){
