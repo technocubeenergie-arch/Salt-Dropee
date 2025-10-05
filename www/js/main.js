@@ -46,6 +46,7 @@ const AnvilImg    = new Image(); let anvilReady    = false; AnvilImg.onload    =
 const MagnetImg = new Image(); let magnetReady = false; MagnetImg.onload = ()=> magnetReady = true; MagnetImg.src = 'assets/magnet.png';
 const X2Img     = new Image(); let x2Ready     = false; X2Img.onload     = ()=> x2Ready     = true; X2Img.src     = 'assets/x2.png';
 const ShieldImg = new Image(); let shieldReady = false; ShieldImg.onload = ()=> shieldReady = true; ShieldImg.src = 'assets/shield.png';
+const shieldIconImage = new Image(); shieldIconImage.src = 'assets/shield.png';
 const TimeImg   = new Image(); let timeReady   = false; TimeImg.onload   = ()=> timeReady   = true; TimeImg.src   = 'assets/time.png';
 
 const BonusIcons = {
@@ -64,6 +65,18 @@ let shield = {
   active: false,
   _effect: null
 };
+
+let hudShieldScale = 1;
+if (typeof window !== "undefined") {
+  window.hudShieldScale = hudShieldScale;
+}
+
+function setHudShieldScale(value) {
+  hudShieldScale = value;
+  if (typeof window !== "undefined") {
+    window.hudShieldScale = value;
+  }
+}
 
 function playSound(type) {
   const audio = game?.audio;
@@ -186,6 +199,28 @@ function collectShield() {
         overwrite: "auto"
       }
     );
+  }
+
+  setHudShieldScale(0.7);
+  if (gsap?.to && typeof window !== "undefined") {
+    gsap.to(window, {
+      duration: 0.3,
+      hudShieldScale: 1,
+      ease: "back.out(2)",
+      overwrite: "auto",
+      onUpdate: () => {
+        if (typeof window !== "undefined" && typeof window.hudShieldScale === "number") {
+          hudShieldScale = window.hudShieldScale;
+        }
+      },
+      onComplete: () => {
+        if (typeof window !== "undefined" && typeof window.hudShieldScale === "number") {
+          setHudShieldScale(window.hudShieldScale);
+        }
+      }
+    });
+  } else {
+    setHudShieldScale(1);
   }
 
   updateShieldHUD();
@@ -380,6 +415,7 @@ function resetShieldState(options = {}) {
     shield.active = false;
   }
   shield._effect = null;
+  setHudShieldScale(1);
   updateShieldHUD();
 }
 
@@ -1285,32 +1321,38 @@ class HUD{
     };
     drawBonus(BonusIcons.magnet, activeBonuses.magnet);
     drawBonus(BonusIcons.x2, activeBonuses.x2);
-
-    if (shield.active && shield.count > 0) {
-      const icon = BonusIcons.shield;
-      const size = 20;
-      const iconX = 6;
-      const iconY = BASE_H - 60;
+    const drawShieldIcon = (count) => {
+      if (count <= 0) return;
+      const iconX = ex;
+      const iconY = ey;
+      const size = 48;
+      const scale = typeof hudShieldScale === "number" ? hudShieldScale : 1;
 
       g.save();
-      if (shield.count === 1) {
-        g.globalAlpha = 0.5 + Math.sin(performance.now() / 150) * 0.5;
+      g.translate(iconX + size / 2, iconY + size / 2);
+      g.scale(scale, scale);
+      g.translate(-iconX - size / 2, -iconY - size / 2);
+      if (count === 1) {
+        g.globalAlpha = 0.6 + 0.4 * Math.sin(performance.now() / 150);
       }
-      if (icon && icon.complete) {
-        g.drawImage(icon, iconX, iconY, size, size);
+      if (shieldIconImage.complete) {
+        g.drawImage(shieldIconImage, iconX, iconY, size, size);
       } else {
         g.fillStyle = "rgba(100,200,255,0.6)";
         g.fillRect(iconX, iconY, size, size);
       }
+      g.font = "bold 20px sans-serif";
+      g.fillStyle = "#00BFFF";
+      g.textAlign = "left";
+      g.textBaseline = "middle";
+      g.fillText(`x${count}`, iconX + size + 12, iconY + size / 2);
       g.restore();
 
-      g.save();
-      g.fillStyle = "#fff";
-      g.font = "14px monospace";
-      g.textAlign = "left";
-      g.textBaseline = "top";
-      g.fillText(`x${shield.count}`, iconX + size + 6, iconY + 4);
-      g.restore();
+      ey += size + 10;
+    };
+
+    if (shield.count > 0) {
+      drawShieldIcon(shield.count);
     }
 
     g.restore();
