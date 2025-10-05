@@ -45,6 +45,8 @@ const AnvilImg    = new Image(); let anvilReady    = false; AnvilImg.onload    =
 
 const MagnetImg = new Image(); let magnetReady = false; MagnetImg.onload = ()=> magnetReady = true; MagnetImg.src = 'assets/magnet.png';
 const X2Img     = new Image(); let x2Ready     = false; X2Img.onload     = ()=> x2Ready     = true; X2Img.src     = 'assets/x2.png';
+const x2Image = new Image();
+x2Image.src = 'assets/x2.png';
 const ShieldImg = new Image(); let shieldReady = false; ShieldImg.onload = ()=> shieldReady = true; ShieldImg.src = 'assets/shield.png';
 const shieldIconImage = new Image(); shieldIconImage.src = 'assets/shield.png';
 const TimeImg   = new Image(); let timeReady   = false; TimeImg.onload   = ()=> timeReady   = true; TimeImg.src   = 'assets/time.png';
@@ -98,10 +100,74 @@ function startBonusEffect(type) {
       playSound("magnet");
       break;
     case "x2":
-      fx.add(new FxX2(walletRef));
+      showX2Animation();
       playSound("x2");
       break;
   }
+}
+
+function showX2Animation() {
+  if (!x2Image.complete) return;
+
+  const walletRef = game?.wallet;
+  const fxManager = game?.fx;
+  if (!walletRef || !fxManager || !gsap?.to) return;
+
+  const x = walletRef.x + walletRef.w / 2;
+  const y = walletRef.y - 60;
+  const baseSize = 80;
+
+  const anim = { scale: 0.5, opacity: 1 };
+
+  const effect = {
+    type: "x2",
+    dead: false,
+    tween: null,
+    fadeTween: null,
+    update() {},
+    draw(ctx) {
+      if (effect.dead) return;
+      ctx.save();
+      ctx.globalAlpha = anim.opacity;
+      const size = baseSize * anim.scale;
+      ctx.drawImage(
+        x2Image,
+        x - size / 2,
+        y - size / 2,
+        size,
+        size
+      );
+      ctx.restore();
+    },
+    finish() {
+      if (effect.dead) return;
+      effect.dead = true;
+      effect.tween?.kill?.();
+      effect.fadeTween?.kill?.();
+    },
+    kill() {
+      effect.finish();
+    }
+  };
+
+  fxManager.add(effect);
+
+  effect.tween = gsap.to(anim, {
+    scale: 1.3,
+    duration: 0.4,
+    ease: "back.out(2)",
+    onComplete: () => {
+      effect.fadeTween = gsap.to(anim, {
+        scale: 1,
+        opacity: 0,
+        duration: 0.3,
+        ease: "power1.inOut",
+        onComplete: () => {
+          effect.finish();
+        }
+      });
+    }
+  });
 }
 
 function stopBonusEffect(type) {
@@ -723,56 +789,6 @@ class FxNegativeImpact {
     ctx.arc(this.x, this.y, CONFIG.fx.negative.radius, 0, Math.PI * 2);
     ctx.fillStyle = CONFIG.fx.negative.color;
     ctx.fill();
-    ctx.restore();
-  }
-}
-
-class FxX2 {
-  constructor(wallet) {
-    this.x = wallet.x + wallet.w / 2;
-    this.y = wallet.y - 10;
-    this.scale = 0.5;
-    this.opacity = 1;
-    this.dead = false;
-    this.tween = null;
-
-    if (gsap?.to) {
-      this.tween = gsap.to(this, {
-        scale: 1.2,
-        opacity: 0,
-        duration: CONFIG.fx.x2.duration,
-        ease: "back.out(2)",
-        onComplete: () => this.finish(),
-        onInterrupt: () => this.finish(),
-      });
-    } else {
-      this.scale = 1.2;
-      this.opacity = 0;
-      this.dead = true;
-    }
-  }
-
-  finish() {
-    if (this.dead) return;
-    this.dead = true;
-    const tween = this.tween;
-    this.tween = null;
-    tween?.kill?.();
-  }
-
-  kill() {
-    this.finish();
-  }
-
-  draw(ctx) {
-    if (this.dead) return;
-    ctx.save();
-    ctx.globalAlpha = this.opacity;
-    ctx.fillStyle = CONFIG.fx.x2.color;
-    ctx.font = `${CONFIG.fx.x2.fontSize * this.scale}px monospace`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "alphabetic";
-    ctx.fillText("×2", this.x, this.y);
     ctx.restore();
   }
 }
