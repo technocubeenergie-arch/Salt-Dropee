@@ -239,6 +239,14 @@ class FxManager {
     return effect;
   }
 
+  // --- Méthode rétro-compatible ---
+  burst(x, y, color = "gold", radius = 20) {
+    const fx = new FxPositiveImpact(x, y);
+    if (color) CONFIG.fx.positive.color = color;
+    if (radius) CONFIG.fx.positive.radius = radius;
+    this.add(fx);
+  }
+
   update(dt) {
     for (const fx of this.effects) {
       if (fx.dead) continue;
