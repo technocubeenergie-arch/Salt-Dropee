@@ -54,6 +54,103 @@ const BonusIcons = {
   shield: ShieldImg,
 };
 
+let activeBonuses = {
+  magnet: { active: false, timeLeft: 0 },
+  x2: { active: false, timeLeft: 0 },
+  shield: { active: false, timeLeft: 0 }
+};
+
+function playSound(type) {
+  const audio = game?.audio;
+  if (!audio) return;
+  switch (type) {
+    case "magnet":
+    case "x2":
+    case "shield":
+      audio.pow();
+      break;
+    default:
+      break;
+  }
+}
+
+function startBonusEffect(type) {
+  const walletRef = game?.wallet;
+  const fx = game?.fx;
+  if (!walletRef || !fx) return;
+
+  switch (type) {
+    case "magnet":
+      fxMagnetActive(walletRef, fx);
+      playSound("magnet");
+      break;
+    case "x2":
+      fx.add(new FxX2(walletRef));
+      playSound("x2");
+      break;
+    case "shield":
+      fxShieldActive(walletRef, fx);
+      playSound("shield");
+      break;
+  }
+}
+
+function stopBonusEffect(type) {
+  const fx = game?.fx;
+  if (!fx) return;
+
+  switch (type) {
+    case "magnet":
+      fx.clear("magnet");
+      break;
+    case "x2":
+      break;
+    case "shield":
+      fx.clear("shield");
+      break;
+  }
+}
+
+function activateBonus(type, duration) {
+  const bonus = activeBonuses[type];
+  if (!bonus) return;
+
+  const extra = Math.max(0, Number(duration) || 0);
+  if (bonus.active) {
+    bonus.timeLeft += extra;
+    if (extra > 0) {
+      playSound(type);
+    }
+  } else if (extra > 0) {
+    bonus.active = true;
+    bonus.timeLeft = extra;
+    startBonusEffect(type);
+  }
+}
+
+function updateActiveBonuses(dt) {
+  for (const type in activeBonuses) {
+    const bonus = activeBonuses[type];
+    if (!bonus.active) continue;
+    bonus.timeLeft -= dt;
+    if (bonus.timeLeft <= 0) {
+      bonus.active = false;
+      bonus.timeLeft = 0;
+      stopBonusEffect(type);
+    }
+  }
+}
+
+function resetActiveBonuses() {
+  for (const type in activeBonuses) {
+    if (activeBonuses[type].active) {
+      stopBonusEffect(type);
+    }
+    activeBonuses[type].active = false;
+    activeBonuses[type].timeLeft = 0;
+  }
+}
+
 const footerImg = new Image();
 footerImg.src = 'assets/footer.png';
 
@@ -167,7 +264,7 @@ const CONFIG = {
 
   evolveThresholds: [0,150,400,800,1400],
 
-  powerups: { magnet:3, x2:5, shield:0, timeShard:0 },
+  powerups: { magnet:3, x2:5, shield:6, timeShard:0 },
 
   rarity: { bronze:0.45, silver:0.30, gold:0.20, diamond:0.05 },
   badWeights: { bomb:0.35, shitcoin:0.25, anvil:0.20, rugpull:0.10, fakeAirdrop:0.10 },
@@ -301,12 +398,13 @@ class FxManager {
 }
 
 class FxPositiveImpact {
-  constructor(x, y) {
+  constructor(x, y, color) {
     this.x = x;
     this.y = y;
     this.scale = 0.1;
     this.opacity = 1;
     this.dead = false;
+    this.color = color || CONFIG.fx.positive.color;
 
     this.tween = null;
 
@@ -344,7 +442,7 @@ class FxPositiveImpact {
     ctx.globalAlpha = this.opacity;
     ctx.beginPath();
     ctx.arc(this.x, this.y, CONFIG.fx.positive.radius * this.scale, 0, Math.PI * 2);
-    ctx.fillStyle = CONFIG.fx.positive.color;
+    ctx.fillStyle = this.color;
     ctx.fill();
     ctx.restore();
   }
@@ -891,7 +989,7 @@ class FallingItem{
     this.vx *= damping;
     if (Math.abs(this.vx) < 0.01) this.vx = 0;
 
-    if (this.kind === 'good' && this.g?.effects?.magnet > 0){
+    if (this.kind === 'good' && activeBonuses.magnet?.active){
       const wallet = this.g?.wallet;
       if (wallet){
         const walletCenter = wallet.x + wallet.w / 2;
@@ -972,11 +1070,46 @@ class Spawner{
   }
 }
 
-class HUD{ constructor(game){ this.g=game; } draw(g){ const P=this.g.palette; g.save(); const topCap = Math.floor(BASE_H * CONFIG.maxTopActorH); const BAR_H=28; const barY=topCap+2; g.fillStyle=P[0]; g.fillRect(0,barY,BASE_W,BAR_H); g.fillStyle=P[4]; g.font='12px monospace'; g.textBaseline='top'; const ty=barY+10; const s=`SCORE ${this.g.score|0}`; const t=`TIME ${(Math.max(0,this.g.timeLeft)).toFixed(0)}s`; const v=`LIVES ${'♥'.repeat(this.g.lives)}`; const c=`COMBO x${this.g.comboMult.toFixed(1)} (${this.g.comboStreak|0})`; g.fillText(s,6,ty); g.fillText(v,100,ty); g.fillText(t,300,ty); g.fillText(c,190,ty); let ex=6, ey=barY+BAR_H+4; const iconSize=16; const drawBonus=(icon,timer)=>{ if (!icon || timer<=0) return; if (icon.complete) g.drawImage(icon,ex,ey,iconSize,iconSize); g.fillStyle=P[4]; g.font='12px monospace'; g.textBaseline='top'; g.fillText(`${Math.ceil(timer)}s`, ex+iconSize+4, ey+1); ey += iconSize+4; };
-  drawBonus(BonusIcons.magnet, this.g.effects.magnet);
-  drawBonus(BonusIcons.x2, this.g.effects.x2);
-  if (this.g.effects.shield>0) drawBonus(BonusIcons.shield, 1);
-  g.restore(); } }
+class HUD{
+  constructor(game){ this.g=game; }
+  draw(g){
+    const P=this.g.palette;
+    g.save();
+    const topCap = Math.floor(BASE_H * CONFIG.maxTopActorH);
+    const BAR_H=28;
+    const barY=topCap+2;
+    g.fillStyle=P[0];
+    g.fillRect(0,barY,BASE_W,BAR_H);
+    g.fillStyle=P[4];
+    g.font='12px monospace';
+    g.textBaseline='top';
+    const ty=barY+10;
+    const s=`SCORE ${this.g.score|0}`;
+    const t=`TIME ${(Math.max(0,this.g.timeLeft)).toFixed(0)}s`;
+    const v=`LIVES ${'♥'.repeat(this.g.lives)}`;
+    const c=`COMBO x${this.g.comboMult.toFixed(1)} (${this.g.comboStreak|0})`;
+    g.fillText(s,6,ty);
+    g.fillText(v,100,ty);
+    g.fillText(t,300,ty);
+    g.fillText(c,190,ty);
+    let ex=6, ey=barY+BAR_H+4;
+    const iconSize=16;
+    const drawBonus=(icon,bonus)=>{
+      if (!icon || !bonus?.active) return;
+      const timer=Math.max(0, bonus.timeLeft);
+      if (icon.complete) g.drawImage(icon,ex,ey,iconSize,iconSize);
+      g.fillStyle=P[4];
+      g.font='12px monospace';
+      g.textBaseline='top';
+      g.fillText(`${Math.ceil(timer)}s`, ex+iconSize+4, ey+1);
+      ey += iconSize+4;
+    };
+    drawBonus(BonusIcons.magnet, activeBonuses.magnet);
+    drawBonus(BonusIcons.x2, activeBonuses.x2);
+    drawBonus(BonusIcons.shield, activeBonuses.shield);
+    g.restore();
+  }
+}
 
 // =====================
 // GAME
@@ -987,13 +1120,14 @@ class Game{
   reset({showTitle=true}={}){
     window.__saltDroppeeLoopStarted = false;
     if (this.fx) this.fx.clearAll();
+    resetActiveBonuses();
     this.settings = loadSettings(); document.documentElement.classList.toggle('contrast-high', !!this.settings.contrast);
     this.palette = CONFIG.palette.slice(); if (this.settings.contrast){ this.palette = ['#000','#444','#ff0044','#ffaa00','#ffffff','#00ffea','#00ff66','#66a6ff']; }
     const u=new URLSearchParams(location.search); const seed=u.get('seed'); this.random = seed? (function(seed){ let t=seed>>>0; return function(){ t += 0x6D2B79F5; let r = Math.imul(t ^ t >>> 15, 1 | t); r ^= r + Math.imul(r ^ r >>> 7, 61 | r); return ((r ^ r >>> 14) >>> 0) / 4294967296; };})(parseInt(seed)||1) : Math.random;
     this.state='title'; this.audio=new AudioSys(); this.audio.setEnabled(!!this.settings.sound);
     this.timeLeft=CONFIG.runSeconds; this.timeElapsed=0; this.lives=CONFIG.lives; this.score=0; this.comboStreak=0; this.comboMult=1; this.maxCombo=0; this.levelReached=1;
     this.arm=new Arm(this); this.arm.applyCaps(); this.wallet=new Wallet(this); this.wallet.applyCaps(); loadWallet(1); this.hud=new HUD(this); this.spawner=new Spawner(this);
-    this.items=[]; this.effects={magnet:0,x2:0,shield:0,freeze:0}; this.fx = new FxManager(this);
+    this.items=[]; this.effects={freeze:0}; this.fx = new FxManager(this);
     this.shake=0; this.bgIndex=0; this.didFirstCatch=false; this.updateBgByScore();
     if (showTitle) this.renderTitle(); else this.render();
   }
@@ -1050,6 +1184,14 @@ class Game{
 
       const hitbox = it.getBounds();
       if (checkAABB(WR, hitbox)){
+        if (it.kind === 'bad' && it.subtype === 'bomb' && activeBonuses.shield?.active){
+          const walletCenterX = this.wallet.x + this.wallet.w / 2;
+          const walletTop = this.wallet.y;
+          this.fx.add(new FxPositiveImpact(walletCenterX, walletTop, 'lightblue'));
+          if (gsap?.killTweensOf) gsap.killTweensOf(it);
+          it.dead = true;
+          continue;
+        }
         this.onCatch(it);
         it.dead = true;
         if (gsap?.killTweensOf) gsap.killTweensOf(it);
@@ -1063,9 +1205,11 @@ class Game{
       }
     }
     this.items = remaining;
-    for (const k of ['magnet','x2','freeze']){ if (this.effects[k]>0) this.effects[k]-=dt; if (this.effects[k]<0) this.effects[k]=0; }
-    if (this.effects.magnet <= 0) this.fx?.clear('magnet');
-    if (this.effects.shield <= 0) this.fx?.clear('shield');
+    updateActiveBonuses(dt);
+    if (this.effects.freeze>0){
+      this.effects.freeze -= dt;
+      if (this.effects.freeze<0) this.effects.freeze = 0;
+    }
     this.updateBgByScore(); if (this.shake>0) this.shake = Math.max(0, this.shake - dt*6);
   }
   onCatch(it){
@@ -1074,13 +1218,12 @@ class Game{
     if (it.kind==='good'){
       this.wallet.bump(0.35, 'vertical');
       let pts = CONFIG.score[it.subtype] || 0; if (this.effects.freeze>0){ this.fx.add(new FxNegativeImpact(itemX,itemY)); this.audio.bad(); this.didFirstCatch=true; return; }
-      if (this.effects.x2>0) pts *= 2; this.comboStreak += 1; if (this.comboStreak % CONFIG.combo.step === 0){ this.comboMult = Math.min(CONFIG.combo.maxMult, this.comboMult+1); }
+      if (activeBonuses.x2?.active) pts *= 2; this.comboStreak += 1; if (this.comboStreak % CONFIG.combo.step === 0){ this.comboMult = Math.min(CONFIG.combo.maxMult, this.comboMult+1); }
       this.maxCombo = Math.max(this.maxCombo, this.comboStreak); pts = Math.floor(pts * this.comboMult); this.score += pts;
       this.fx.add(new FxPositiveImpact(itemX,itemY)); this.audio.good(); if (this.settings.haptics && !firstCatch) try{ navigator.vibrate && navigator.vibrate(8); }catch(e){}
     } else if (it.kind==='bad'){
       if (it.subtype==='bomb') this.wallet.bump(0.65,'vertical'); else if (it.subtype==='anvil') this.wallet.bump(0.55,'vertical'); else this.wallet.bump(0.40,'vertical');
       this.fx.add(new FxNegativeImpact(itemX,itemY));
-      if (this.effects.shield>0){ this.effects.shield=0; this.fx.clear('shield'); this.audio.pow(); this.didFirstCatch=true; return; }
       this.comboStreak=0; this.comboMult=1;
       if (it.subtype==='bomb'){ this.lives -= 1; this.shake = 0.8; this.audio.bad(); if (this.settings.haptics && !firstCatch) try{ navigator.vibrate && navigator.vibrate(40); }catch(e){} }
       else if (it.subtype==='shitcoin'){ this.score += CONFIG.score.bad.shitcoin; this.audio.bad(); }
@@ -1089,15 +1232,15 @@ class Game{
       else if (it.subtype==='fakeAirdrop'){ this.effects.freeze = 3.0; this.audio.bad(); }
     } else if (it.kind==='power'){
       this.wallet.bump(0.25,'horizontal');
-      if (it.subtype==='magnet'){ this.effects.magnet = CONFIG.powerups.magnet; fxMagnetActive(this.wallet, this.fx); this.audio.pow(); }
-      else if (it.subtype==='x2'){ this.effects.x2 = CONFIG.powerups.x2; this.fx.add(new FxX2(this.wallet)); this.audio.pow(); }
-      else if (it.subtype==='shield'){ this.effects.shield = 1; fxShieldActive(this.wallet, this.fx); this.audio.pow(); }
+      if (it.subtype==='magnet'){ activateBonus('magnet', CONFIG.powerups.magnet); }
+      else if (it.subtype==='x2'){ activateBonus('x2', CONFIG.powerups.x2); }
+      else if (it.subtype==='shield'){ activateBonus('shield', CONFIG.powerups.shield); }
       else if (it.subtype==='timeShard'){ this.timeLeft = Math.min(CONFIG.runSeconds, this.timeLeft + 5); this.audio.pow(); }
       this.fx.add(new FxPositiveImpact(itemX,itemY));
     }
     this.didFirstCatch=true;
   }
-  endGame(){ this.fx?.clearAll(); this.state='over'; this.render(); try{ const best=parseInt(localStorage.getItem(LS.bestScore)||'0',10); if (this.score>best) localStorage.setItem(LS.bestScore, String(this.score)); const bestC=parseInt(localStorage.getItem(LS.bestCombo)||'0',10); if (this.maxCombo>bestC) localStorage.setItem(LS.bestCombo, String(this.maxCombo)); const runs=JSON.parse(localStorage.getItem(LS.runs)||'[]'); runs.unshift({ ts:Date.now(), score:this.score, combo:this.maxCombo, lvl:this.levelReached }); while (runs.length>20) runs.pop(); localStorage.setItem(LS.runs, JSON.stringify(runs)); }catch(e){}
+  endGame(){ this.fx?.clearAll(); resetActiveBonuses(); this.state='over'; this.render(); try{ const best=parseInt(localStorage.getItem(LS.bestScore)||'0',10); if (this.score>best) localStorage.setItem(LS.bestScore, String(this.score)); const bestC=parseInt(localStorage.getItem(LS.bestCombo)||'0',10); if (this.maxCombo>bestC) localStorage.setItem(LS.bestCombo, String(this.maxCombo)); const runs=JSON.parse(localStorage.getItem(LS.runs)||'[]'); runs.unshift({ ts:Date.now(), score:this.score, combo:this.maxCombo, lvl:this.levelReached }); while (runs.length>20) runs.pop(); localStorage.setItem(LS.runs, JSON.stringify(runs)); }catch(e){}
     this.renderGameOver(); if (TG){ try{ TG.sendData(JSON.stringify({ score:this.score, duration:CONFIG.runSeconds, version:VERSION })); }catch(e){} }
   }
   uiStartFromTitle(){ if (this.state==='title'){ overlay.innerHTML=''; this.start(); } }
