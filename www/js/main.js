@@ -618,6 +618,7 @@ const BASE_W = CONFIG.portraitBase.w;
 const BASE_H = CONFIG.portraitBase.h;
 let SCALE = 1, VIEW_W = BASE_W, VIEW_H = BASE_H;
 let targetX = BASE_W / 2;
+const WR = { x: 0, y: 0, w: 0, h: 0 };
 
 function resize(){
   if (!canvas) return;
@@ -984,6 +985,7 @@ class Game{
   static instance=null;
   constructor(){ Game.instance=this; this.reset({ showTitle:true }); }
   reset({showTitle=true}={}){
+    window.__saltDroppeeLoopStarted = false;
     if (this.fx) this.fx.clearAll();
     this.settings = loadSettings(); document.documentElement.classList.toggle('contrast-high', !!this.settings.contrast);
     this.palette = CONFIG.palette.slice(); if (this.settings.contrast){ this.palette = ['#000','#444','#ff0044','#ffaa00','#ffffff','#00ffea','#00ff66','#66a6ff']; }
@@ -998,25 +1000,69 @@ class Game{
   diffMult(){ return Math.pow(CONFIG.spawnRampFactor, Math.floor(this.timeElapsed/CONFIG.spawnRampEverySec)); }
   updateBgByScore(){ const th=CONFIG.evolveThresholds; let idx=0; for (let i=0;i<th.length;i++){ if (this.score>=th[i]) idx=i; } if (idx!==this.bgIndex){ this.bgIndex=idx; this.wallet.evolveByScore(this.score); this.levelReached = Math.max(this.levelReached, this.wallet.level); } }
   start(){ this.state='playing'; this.lastTime=performance.now(); this.ignoreClicksUntil=this.lastTime+500; this.ignoreVisibilityUntil=this.lastTime+1000; this.loop(); }
-  loop(){ if (this.state==='playing'){ const now=performance.now(); const dt=Math.min(0.033, (now-this.lastTime)/1000); this.lastTime=now; this.step(dt); this.render(); requestAnimationFrame(()=>this.loop()); } }
+  loop(){
+    if (this.state!=='playing'){
+      window.__saltDroppeeLoopStarted = false;
+      return;
+    }
+    if (window.__saltDroppeeLoopStarted) return;
+    window.__saltDroppeeLoopStarted = true;
+
+    const now=performance.now();
+    const dt=Math.min(0.033, (now-this.lastTime)/1000);
+    this.lastTime=now;
+    this.step(dt);
+    this.render();
+
+    if (this.state!=='playing'){
+      window.__saltDroppeeLoopStarted = false;
+      return;
+    }
+
+    requestAnimationFrame(()=>{
+      window.__saltDroppeeLoopStarted = false;
+      this.loop();
+    });
+  }
   step(dt){
     this.timeElapsed += dt; if (this.timeLeft>0) this.timeLeft = Math.max(0, this.timeLeft - dt); if (this.timeLeft<=0 || this.lives<=0){ this.endGame(); return; }
     this.arm.update(dt); this.wallet.update(dt); this.spawner.update(dt);
     const w=this.wallet; const cx=CONFIG.collision.walletScaleX, cy=CONFIG.collision.walletScaleY, px=CONFIG.collision.walletPadX, py=CONFIG.collision.walletPadY;
-    const wr = { x: w.x + (w.w - w.w*cx)/2 + px, y: w.y + (w.h - w.h*cy)/2 + py, w: w.w*cx, h: w.h*cy };
+    WR.x = w.x + (w.w - w.w*cx)/2 + px;
+    WR.y = w.y + (w.h - w.h*cy)/2 + py;
+    WR.w = w.w*cx;
+    WR.h = w.h*cy;
+
+    const remaining = [];
     for (const it of this.items){
-      if (!it.alive || it.dead) continue;
+      if (!it.alive || it.dead){
+        if (gsap?.killTweensOf) gsap.killTweensOf(it);
+        continue;
+      }
 
       if (typeof it.update === 'function'){
         it.update(dt);
       }
+      if (it.dead || !it.alive){
+        if (gsap?.killTweensOf) gsap.killTweensOf(it);
+        continue;
+      }
+
       const hitbox = it.getBounds();
-      if (checkAABB(wr, hitbox)){
+      if (checkAABB(WR, hitbox)){
         this.onCatch(it);
         it.dead = true;
+        if (gsap?.killTweensOf) gsap.killTweensOf(it);
+        continue;
+      }
+
+      if (it.alive && !it.dead){
+        remaining.push(it);
+      } else if (gsap?.killTweensOf){
+        gsap.killTweensOf(it);
       }
     }
-    this.items = this.items.filter(i=>i.alive);
+    this.items = remaining;
     for (const k of ['magnet','x2','freeze']){ if (this.effects[k]>0) this.effects[k]-=dt; if (this.effects[k]<0) this.effects[k]=0; }
     if (this.effects.magnet <= 0) this.fx?.clear('magnet');
     if (this.effects.shield <= 0) this.fx?.clear('shield');
