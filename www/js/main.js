@@ -251,11 +251,11 @@ class FxManager {
 
   render(ctx) {
     if (!ctx) return;
-    ctx.save();
     for (const fx of this.effects) {
-      fx.draw?.(ctx);
+      if (!fx.dead && typeof fx.draw === "function") {
+        fx.draw(ctx);
+      }
     }
-    ctx.restore();
   }
 
   clear(type) {
@@ -300,14 +300,16 @@ class FxPositiveImpact {
     this.opacity = 1;
     this.dead = false;
 
+    this.tween = null;
+
     if (gsap?.to) {
       this.tween = gsap.to(this, {
         scale: 1.5,
         opacity: 0,
         duration: CONFIG.fx.positive.duration,
         ease: "power1.out",
-        onComplete: () => this.kill(),
-        onInterrupt: () => this.kill(),
+        onComplete: () => this.finish(),
+        onInterrupt: () => this.finish(),
       });
     } else {
       this.scale = 1.5;
@@ -316,12 +318,16 @@ class FxPositiveImpact {
     }
   }
 
-  kill() {
+  finish() {
     if (this.dead) return;
     this.dead = true;
     const tween = this.tween;
     this.tween = null;
     tween?.kill?.();
+  }
+
+  kill() {
+    this.finish();
   }
 
   draw(ctx) {
@@ -342,14 +348,15 @@ class FxNegativeImpact {
     this.y = y;
     this.opacity = 1;
     this.dead = false;
+    this.tween = null;
 
     if (gsap?.to) {
       this.tween = gsap.to(this, {
         opacity: 0,
         duration: CONFIG.fx.negative.duration,
         ease: "power1.out",
-        onComplete: () => this.kill(),
-        onInterrupt: () => this.kill(),
+        onComplete: () => this.finish(),
+        onInterrupt: () => this.finish(),
       });
     } else {
       this.opacity = 0;
@@ -357,12 +364,16 @@ class FxNegativeImpact {
     }
   }
 
-  kill() {
+  finish() {
     if (this.dead) return;
     this.dead = true;
     const tween = this.tween;
     this.tween = null;
     tween?.kill?.();
+  }
+
+  kill() {
+    this.finish();
   }
 
   draw(ctx) {
@@ -384,6 +395,7 @@ class FxX2 {
     this.scale = 0.5;
     this.opacity = 1;
     this.dead = false;
+    this.tween = null;
 
     if (gsap?.to) {
       this.tween = gsap.to(this, {
@@ -391,8 +403,8 @@ class FxX2 {
         opacity: 0,
         duration: CONFIG.fx.x2.duration,
         ease: "back.out(2)",
-        onComplete: () => this.kill(),
-        onInterrupt: () => this.kill(),
+        onComplete: () => this.finish(),
+        onInterrupt: () => this.finish(),
       });
     } else {
       this.scale = 1.2;
@@ -401,12 +413,16 @@ class FxX2 {
     }
   }
 
-  kill() {
+  finish() {
     if (this.dead) return;
     this.dead = true;
     const tween = this.tween;
     this.tween = null;
     tween?.kill?.();
+  }
+
+  kill() {
+    this.finish();
   }
 
   draw(ctx) {
