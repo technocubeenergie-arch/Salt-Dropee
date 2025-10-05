@@ -66,18 +66,6 @@ let shield = {
   _effect: null
 };
 
-let hudShieldScale = 1;
-if (typeof window !== "undefined") {
-  window.hudShieldScale = hudShieldScale;
-}
-
-function setHudShieldScale(value) {
-  hudShieldScale = value;
-  if (typeof window !== "undefined") {
-    window.hudShieldScale = value;
-  }
-}
-
 function playSound(type) {
   const audio = game?.audio;
   if (!audio) return;
@@ -199,28 +187,6 @@ function collectShield() {
         overwrite: "auto"
       }
     );
-  }
-
-  setHudShieldScale(0.7);
-  if (gsap?.to && typeof window !== "undefined") {
-    gsap.to(window, {
-      duration: 0.3,
-      hudShieldScale: 1,
-      ease: "back.out(2)",
-      overwrite: "auto",
-      onUpdate: () => {
-        if (typeof window !== "undefined" && typeof window.hudShieldScale === "number") {
-          hudShieldScale = window.hudShieldScale;
-        }
-      },
-      onComplete: () => {
-        if (typeof window !== "undefined" && typeof window.hudShieldScale === "number") {
-          setHudShieldScale(window.hudShieldScale);
-        }
-      }
-    });
-  } else {
-    setHudShieldScale(1);
   }
 
   updateShieldHUD();
@@ -415,7 +381,6 @@ function resetShieldState(options = {}) {
     shield.active = false;
   }
   shield._effect = null;
-  setHudShieldScale(1);
   updateShieldHUD();
 }
 
@@ -1307,50 +1272,48 @@ class HUD{
     g.fillText(v,100,ty);
     g.fillText(t,300,ty);
     g.fillText(c,190,ty);
-    let ex=6, ey=barY+BAR_H+4;
-    const iconSize=16;
-    const drawBonus=(icon,bonus)=>{
-      if (!icon || !bonus?.active) return;
-      const timer=Math.max(0, bonus.timeLeft);
-      if (icon.complete) g.drawImage(icon,ex,ey,iconSize,iconSize);
-      g.fillStyle=P[4];
+    const bonusX=6;
+    let bonusY=barY+BAR_H+4;
+    const iconSize=32;
+    const iconSpacing=8;
+
+    const drawBonusIcon=(type,timeLeft)=>{
+      const icon=BonusIcons[type];
+      if (!icon) return;
+      const timer=Math.max(0, timeLeft);
+      if (icon.complete) {
+        g.drawImage(icon,bonusX,bonusY,iconSize,iconSize);
+      }
+      g.fillStyle='#fff';
       g.font='12px monospace';
       g.textBaseline='top';
-      g.fillText(`${Math.ceil(timer)}s`, ex+iconSize+4, ey+1);
-      ey += iconSize+4;
-    };
-    drawBonus(BonusIcons.magnet, activeBonuses.magnet);
-    drawBonus(BonusIcons.x2, activeBonuses.x2);
-    const drawShieldIcon = (count) => {
-      if (count <= 0) return;
-      const iconX = ex;
-      const iconY = ey;
-      const size = 48;
-      const scale = typeof hudShieldScale === "number" ? hudShieldScale : 1;
-
-      g.save();
-      g.translate(iconX + size / 2, iconY + size / 2);
-      g.scale(scale, scale);
-      g.translate(-iconX - size / 2, -iconY - size / 2);
-      if (count === 1) {
-        g.globalAlpha = 0.6 + 0.4 * Math.sin(performance.now() / 150);
-      }
-      if (shieldIconImage.complete) {
-        g.drawImage(shieldIconImage, iconX, iconY, size, size);
-      } else {
-        g.fillStyle = "rgba(100,200,255,0.6)";
-        g.fillRect(iconX, iconY, size, size);
-      }
-      g.font = "bold 20px sans-serif";
-      g.fillStyle = "#00BFFF";
-      g.textAlign = "left";
-      g.textBaseline = "middle";
-      g.fillText(`x${count}`, iconX + size + 12, iconY + size / 2);
-      g.restore();
-
-      ey += size + 10;
+      g.fillText(`${Math.ceil(timer)}s`, bonusX+iconSize+6, bonusY+8);
+      bonusY += iconSize + iconSpacing;
     };
 
+    // --- HUD des bonus temporaires ---
+    for (const type in activeBonuses) {
+      const bonus=activeBonuses[type];
+      if (bonus.active) {
+        drawBonusIcon(type, bonus.timeLeft);
+      }
+    }
+
+    const drawShieldIcon=(count)=>{
+      if (!shieldIconImage.complete) return;
+      const size=iconSize;
+      const bx=bonusX;
+      const by=bonusY;
+
+      g.drawImage(shieldIconImage,bx,by,size,size);
+      g.fillStyle='#fff';
+      g.font='12px monospace';
+      g.textBaseline='top';
+      g.fillText(`x${count}`, bx+size+6, by+8);
+      bonusY += size + iconSpacing;
+    };
+
+    // --- HUD du bouclier cumulatif ---
     if (shield.count > 0) {
       drawShieldIcon(shield.count);
     }
