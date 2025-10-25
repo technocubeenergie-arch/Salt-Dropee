@@ -68,27 +68,6 @@ let shield = {
   _effect: null
 };
 
-function playSound(type) {
-  const audio = game?.audio;
-  if (!audio) return;
-  switch (type) {
-    case "magnet":
-    case "x2":
-    case "shield_collect":
-    case "shield_absorb":
-      audio.pow();
-      break;
-    case "shield_on":
-      audio.up();
-      break;
-    case "shield_off":
-      audio.pow();
-      break;
-    default:
-      break;
-  }
-}
-
 function startBonusEffect(type) {
   const walletRef = game?.wallet;
   const fx = game?.fx;
@@ -97,11 +76,14 @@ function startBonusEffect(type) {
   switch (type) {
     case "magnet":
       fxMagnetActive(walletRef, fx);
-      playSound("magnet");
+      if (typeof requestAnimationFrame === "function") {
+        requestAnimationFrame(() => playSound("magnetat"));
+      } else {
+        playSound("magnetat");
+      }
       break;
     case "x2":
       showX2Animation();
-      playSound("x2");
       break;
   }
 }
@@ -177,6 +159,7 @@ function stopBonusEffect(type) {
   switch (type) {
     case "magnet":
       fx.clear("magnet");
+      playSound("off");
       break;
     case "x2":
       break;
@@ -196,11 +179,12 @@ function activateBonus(type, duration) {
   if (bonus.active) {
     bonus.timeLeft += extra;
     if (extra > 0) {
-      playSound(type);
+      playSound("bonusok");
     }
   } else if (extra > 0) {
     bonus.active = true;
     bonus.timeLeft = extra;
+    playSound("bonusok");
     startBonusEffect(type);
   }
 }
@@ -235,8 +219,17 @@ function updateShieldHUD() {
 }
 
 function collectShield() {
+  const wasActive = shield.count > 0;
   shield.count += 1;
-  playSound("shield_collect");
+  playSound("bonusok");
+
+  if (!wasActive) {
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(() => playSound("forcefield"));
+    } else {
+      playSound("forcefield");
+    }
+  }
 
   if (!shield.active) {
     shield.active = true;
@@ -318,7 +311,6 @@ function startShieldEffect() {
   shield._effect = effect;
   shield.active = true;
 
-  playSound("shield_on");
 }
 
 function stopShieldEffect(options = {}) {
@@ -337,11 +329,13 @@ function stopShieldEffect(options = {}) {
     shield._effect = null;
   }
 
-  if (silent) {
-    return;
+  if (!silent) {
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(() => playSound("off"));
+    } else {
+      playSound("off");
+    }
   }
-
-  playSound("shield_off");
 
   if (!walletRef || !fxManager) return;
 
@@ -421,7 +415,7 @@ function handleNegativeCollision(gameInstance, obj) {
     fxManager.add(new FxPositiveImpact(impactX, impactY, "lightblue"));
   }
 
-  playSound("shield_absorb");
+  playSound("zap");
 
   updateShieldHUD();
 
@@ -941,7 +935,11 @@ function onKeyDown(e){
   }
   if (e.code === 'Space') input.dash = true;
   if (e.code === 'Enter'){
-    const g = Game.instance; if (g && g.state==='title'){ g.audio.init().then(()=>{ requestAnimationFrame(()=> g.uiStartFromTitle()); }); }
+    const g = Game.instance;
+    if (g && g.state==='title'){
+      playSound("click");
+      requestAnimationFrame(()=> g.uiStartFromTitle());
+    }
   }
 }
 function onKeyUp(e){
@@ -974,37 +972,6 @@ function loadSettings(){ try{ return { ...DefaultSettings, ...(JSON.parse(localS
 function saveSettings(s){ try{ localStorage.setItem(LS.settings, JSON.stringify(s)); }catch(e){} }
 
 // =====================
-// AUDIO — beeps sans freeze
-// =====================
-class AudioSys {
-  constructor(){ this.ctx=null; this.master=null; this.enabled=true; this.buffers={}; this.ready=false; }
-  ensure(){ if (this.ctx) return; const AC = window.AudioContext || window.webkitAudioContext; this.ctx = new AC(); this.master = this.ctx.createGain(); this.master.gain.value = this.enabled ? 0.9 : 0.0; this.master.connect(this.ctx.destination); }
-  setEnabled(v){ this.enabled = !!v; if (this.master) this.master.gain.value = this.enabled ? 0.9 : 0.0; }
-  _makeBeep({freq=660, ms=80, type='square', fade=0.004}){
-    const sr = this.ctx.sampleRate; const len = Math.max(1, Math.floor(sr * (ms/1000))); const buf = this.ctx.createBuffer(1, len, sr); const data = buf.getChannelData(0);
-    let phase=0; const dp = 2*Math.PI*freq/sr;
-    for (let i=0;i<len;i++){
-      let s;
-      if (type==='square') s = Math.sign(Math.sin(phase))*0.25; else if (type==='triangle') s = (2/Math.PI)*Math.asin(Math.sin(phase))*0.25; else s = Math.sin(phase)*0.25;
-      const t=i/len; const env = Math.min(1, Math.min(t/fade, (1-t)/fade)); data[i] = s * env; phase += dp;
-    }
-    return buf;
-  }
-  async init(){
-    this.ensure(); await this.ctx.resume().catch(()=>{}); if (this.ready) return;
-    this.buffers.good = this._makeBeep({freq:660,  ms:80,  type:'square'});
-    this.buffers.bad  = this._makeBeep({freq:140,  ms:120, type:'square'});
-    this.buffers.pow  = this._makeBeep({freq:880,  ms:90,  type:'triangle'});
-    this.buffers.up   = this._makeBeep({freq:520,  ms:80,  type:'square'});
-    const g = this.ctx.createGain(); g.gain.value = 0.00001; g.connect(this.master);
-    ['good','bad','pow','up'].forEach(k=>{ const s = this.ctx.createBufferSource(); s.buffer = this.buffers[k]; s.connect(g); s.start(); });
-    this.ready = true;
-  }
-  _play(name){ if (!this.enabled || !this.ready) return; const s = this.ctx.createBufferSource(); s.buffer = this.buffers[name]; s.connect(this.master); s.start(); }
-  good(){ this._play('good'); } bad(){ this._play('bad'); } pow(){ this._play('pow'); } up(){ this._play('up'); }
-}
-
-// =====================
 // ENTITÉS
 // =====================
 class Wallet{
@@ -1029,7 +996,7 @@ class Wallet{
     this.y = BASE_H - this.h - CONFIG.wallet.bottomOffset;
     targetX = this.x + this.w / 2;
   }
-  evolveByScore(score){ const th=CONFIG.evolveThresholds; let lvl=1; for (let i=0;i<th.length;i++){ if (score>=th[i]) lvl=i+1; } if (lvl!==this.level){ this.level=lvl; loadWallet(lvl); this.applyCaps(); this.g.fx.burst(this.x, this.y, '#ffcd75', 12); this.g.audio.up(); this.squashTimer=0.12; } }
+  evolveByScore(score){ const th=CONFIG.evolveThresholds; let lvl=1; for (let i=0;i<th.length;i++){ if (score>=th[i]) lvl=i+1; } if (lvl!==this.level){ this.level=lvl; loadWallet(lvl); this.applyCaps(); this.g.fx.burst(this.x, this.y, '#ffcd75', 12); playSound("bonusok"); this.squashTimer=0.12; } }
   update(dt){
     const sens = this.g.settings.sensitivity || 1.0;
     const bounds = computeWalletCenterBounds(this);
@@ -1352,7 +1319,10 @@ class Game{
     this.settings = loadSettings(); document.documentElement.classList.toggle('contrast-high', !!this.settings.contrast);
     this.palette = CONFIG.palette.slice(); if (this.settings.contrast){ this.palette = ['#000','#444','#ff0044','#ffaa00','#ffffff','#00ffea','#00ff66','#66a6ff']; }
     const u=new URLSearchParams(location.search); const seed=u.get('seed'); this.random = seed? (function(seed){ let t=seed>>>0; return function(){ t += 0x6D2B79F5; let r = Math.imul(t ^ t >>> 15, 1 | t); r ^= r + Math.imul(r ^ r >>> 7, 61 | r); return ((r ^ r >>> 14) >>> 0) / 4294967296; };})(parseInt(seed)||1) : Math.random;
-    this.state='title'; this.audio=new AudioSys(); this.audio.setEnabled(!!this.settings.sound);
+    this.state='title';
+    if (typeof setSoundEnabled === "function") {
+      setSoundEnabled(!!this.settings.sound);
+    }
     this.timeLeft=CONFIG.runSeconds; this.timeElapsed=0; this.lives=CONFIG.lives; this.score=0; this.comboStreak=0; this.comboMult=1; this.maxCombo=0; this.levelReached=1;
     this.arm=new Arm(this); this.arm.applyCaps(); this.wallet=new Wallet(this); this.wallet.applyCaps(); loadWallet(1); this.hud=new HUD(this); this.spawner=new Spawner(this);
     this.items=[]; this.effects={freeze:0}; this.fx = new FxManager(this);
@@ -1437,28 +1407,43 @@ class Game{
     const { x: itemX, y: itemY } = it.getCenter();
     if (it.kind==='good'){
       this.wallet.bump(0.35, 'vertical');
-      let pts = CONFIG.score[it.subtype] || 0; if (this.effects.freeze>0){ this.fx.add(new FxNegativeImpact(itemX,itemY)); this.audio.bad(); this.didFirstCatch=true; return; }
-      if (activeBonuses.x2?.active) pts *= 2; this.comboStreak += 1; if (this.comboStreak % CONFIG.combo.step === 0){ this.comboMult = Math.min(CONFIG.combo.maxMult, this.comboMult+1); }
-      this.maxCombo = Math.max(this.maxCombo, this.comboStreak); pts = Math.floor(pts * this.comboMult); this.score += pts;
-      this.fx.add(new FxPositiveImpact(itemX,itemY)); this.audio.good(); if (this.settings.haptics && !firstCatch) try{ navigator.vibrate && navigator.vibrate(8); }catch(e){}
+      let pts = CONFIG.score[it.subtype] || 0;
+      if (this.effects.freeze>0){
+        this.fx.add(new FxNegativeImpact(itemX,itemY));
+        playSound("wrong");
+        this.didFirstCatch=true;
+        return;
+      }
+      if (activeBonuses.x2?.active) pts *= 2;
+      this.comboStreak += 1;
+      if (this.comboStreak % CONFIG.combo.step === 0){
+        this.comboMult = Math.min(CONFIG.combo.maxMult, this.comboMult+1);
+      }
+      this.maxCombo = Math.max(this.maxCombo, this.comboStreak);
+      pts = Math.floor(pts * this.comboMult);
+      this.score += pts;
+      playSound("coin");
+      this.fx.add(new FxPositiveImpact(itemX,itemY));
+      if (this.settings.haptics && !firstCatch) try{ navigator.vibrate && navigator.vibrate(8); }catch(e){}
     } else if (it.kind==='bad'){
       const absorbed = handleNegativeCollision(this, it);
       if (!absorbed) {
+        playSound("wrong");
         if (it.subtype==='bomb') this.wallet.bump(0.65,'vertical'); else if (it.subtype==='anvil') this.wallet.bump(0.55,'vertical'); else this.wallet.bump(0.40,'vertical');
         this.fx.add(new FxNegativeImpact(itemX,itemY));
         this.comboStreak=0; this.comboMult=1;
-        if (it.subtype==='bomb'){ this.lives -= 1; this.shake = 0.8; this.audio.bad(); if (this.settings.haptics && !firstCatch) try{ navigator.vibrate && navigator.vibrate(40); }catch(e){} }
-        else if (it.subtype==='shitcoin'){ this.score += CONFIG.score.bad.shitcoin; this.audio.bad(); }
-        else if (it.subtype==='anvil'){ this.score += CONFIG.score.bad.anvil; this.wallet.slowTimer = 2.0; this.audio.bad(); }
-        else if (it.subtype==='rugpull'){ const delta = Math.floor(this.score * CONFIG.score.rugpullPct); this.score = Math.max(0, this.score + delta); this.audio.bad(); }
-        else if (it.subtype==='fakeAirdrop'){ this.effects.freeze = 3.0; this.audio.bad(); }
+        if (it.subtype==='bomb'){ this.lives -= 1; this.shake = 0.8; if (this.settings.haptics && !firstCatch) try{ navigator.vibrate && navigator.vibrate(40); }catch(e){} }
+        else if (it.subtype==='shitcoin'){ this.score += CONFIG.score.bad.shitcoin; }
+        else if (it.subtype==='anvil'){ this.score += CONFIG.score.bad.anvil; this.wallet.slowTimer = 2.0; }
+        else if (it.subtype==='rugpull'){ const delta = Math.floor(this.score * CONFIG.score.rugpullPct); this.score = Math.max(0, this.score + delta); }
+        else if (it.subtype==='fakeAirdrop'){ this.effects.freeze = 3.0; }
       }
     } else if (it.kind==='power'){
       this.wallet.bump(0.25,'horizontal');
       if (it.subtype==='magnet'){ activateBonus('magnet', CONFIG.powerups.magnet); }
       else if (it.subtype==='x2'){ activateBonus('x2', CONFIG.powerups.x2); }
       else if (it.subtype==='shield'){ activateBonus('shield', CONFIG.powerups.shield); }
-      else if (it.subtype==='timeShard'){ this.timeLeft = Math.min(CONFIG.runSeconds, this.timeLeft + 5); this.audio.pow(); }
+      else if (it.subtype==='timeShard'){ this.timeLeft = Math.min(CONFIG.runSeconds, this.timeLeft + 5); playSound("bonusok"); }
       this.fx.add(new FxPositiveImpact(itemX,itemY));
     }
     this.didFirstCatch=true;
@@ -1478,10 +1463,12 @@ class Game{
           <button id="btnLB">Leaderboard local</button>
         </div>
       </div>`;
-    addEvent(document.getElementById('btnSettings'), INPUT.tap, ()=> this.renderSettings());
-    addEvent(document.getElementById('btnLB'), INPUT.tap, ()=> this.renderLeaderboard());
+    addEvent(document.getElementById('btnSettings'), INPUT.tap, ()=>{ playSound("click"); this.renderSettings(); });
+    addEvent(document.getElementById('btnLB'), INPUT.tap, ()=>{ playSound("click"); this.renderLeaderboard(); });
     addEvent(document.getElementById('btnPlay'), INPUT.tap, async (e)=>{
-      e.preventDefault(); e.stopPropagation(); await this.audio.init(); await new Promise(r=>requestAnimationFrame(r));
+      e.preventDefault(); e.stopPropagation();
+      playSound("click");
+      await new Promise(r=>requestAnimationFrame(r));
       try{ const prev=ctx.imageSmoothingEnabled; ctx.imageSmoothingEnabled=false; const imgs=[walletImage, GoldImg, SilverImg, BronzeImg, DiamondImg, BombImg, Hand.open, Hand.pinch]; for (const im of imgs){ if (im && im.naturalWidth) ctx.drawImage(im,0,0,1,1); } ctx.save(); ctx.shadowColor='rgba(0,0,0,0.15)'; ctx.shadowBlur=4; ctx.shadowOffsetY=1; ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(4,4,2,0,Math.PI*2); ctx.fill(); ctx.restore(); ctx.imageSmoothingEnabled=prev; ctx.clearRect(0,0,8,8); }catch(_){ }
       this.uiStartFromTitle();
     }, { passive:false });
@@ -1495,11 +1482,11 @@ class Game{
       <p>Sensibilité: <input type="range" id="sens" min="0.5" max="1.5" step="0.05" value="${s.sensitivity}"></p>
       <div class="btnrow"><button id="back">Retour</button></div>
     </div>`;
-    addEvent(document.getElementById('sound'), 'change', e=>{ this.settings.sound = e.target.checked; saveSettings(this.settings); this.audio.setEnabled(this.settings.sound); });
-    addEvent(document.getElementById('contrast'), 'change', e=>{ this.settings.contrast = e.target.checked; saveSettings(this.settings); this.reset(); });
-    addEvent(document.getElementById('haptics'), 'change', e=>{ this.settings.haptics = e.target.checked; saveSettings(this.settings); });
+    addEvent(document.getElementById('sound'), 'change', e=>{ playSound("click"); this.settings.sound = e.target.checked; saveSettings(this.settings); if (typeof setSoundEnabled === "function") { setSoundEnabled(this.settings.sound); } });
+    addEvent(document.getElementById('contrast'), 'change', e=>{ playSound("click"); this.settings.contrast = e.target.checked; saveSettings(this.settings); this.reset(); });
+    addEvent(document.getElementById('haptics'), 'change', e=>{ playSound("click"); this.settings.haptics = e.target.checked; saveSettings(this.settings); });
     addEvent(document.getElementById('sens'), 'input', e=>{ this.settings.sensitivity = parseFloat(e.target.value); saveSettings(this.settings); });
-    addEvent(document.getElementById('back'), INPUT.tap, ()=> this.renderTitle());
+    addEvent(document.getElementById('back'), INPUT.tap, ()=>{ playSound("click"); this.renderTitle(); });
   }
   renderLeaderboard(){ let runs=[]; try{ runs = JSON.parse(localStorage.getItem(LS.runs)||'[]'); }catch(e){}
     const best = parseInt(localStorage.getItem(LS.bestScore)||'0',10);
@@ -1513,9 +1500,9 @@ class Game{
       </div>
       <div class="btnrow"><button id="back">Retour</button></div>
     </div>`;
-    addEvent(document.getElementById('back'), INPUT.tap, ()=> this.renderTitle());
+    addEvent(document.getElementById('back'), INPUT.tap, ()=>{ playSound("click"); this.renderTitle(); });
   }
-  renderPause(){ overlay.innerHTML = `<div class="panel"><h1>Pause</h1><div class="btnrow"><button id="resume">Reprendre</button><button id="quit">Menu</button></div></div>`; addEvent(document.getElementById('resume'), INPUT.tap, ()=>{ overlay.innerHTML=''; this.state='playing'; this.lastTime=performance.now(); this.loop(); }); addEvent(document.getElementById('quit'), INPUT.tap, ()=>{ this.reset(); }); }
+  renderPause(){ overlay.innerHTML = `<div class="panel"><h1>Pause</h1><div class="btnrow"><button id="resume">Reprendre</button><button id="quit">Menu</button></div></div>`; addEvent(document.getElementById('resume'), INPUT.tap, ()=>{ playSound("click"); overlay.innerHTML=''; this.state='playing'; this.lastTime=performance.now(); this.loop(); }); addEvent(document.getElementById('quit'), INPUT.tap, ()=>{ playSound("click"); this.reset(); }); }
   renderGameOver(){ const best=parseInt(localStorage.getItem(LS.bestScore)||'0',10); overlay.innerHTML = `
     <div class="panel">
       <h1>Fin de partie</h1>
@@ -1527,9 +1514,9 @@ class Game{
         ${TG? '<button id="share">Partager</button>': ''}
       </div>
     </div>`;
-    addEvent(document.getElementById('again'), INPUT.tap, async ()=>{ overlay.innerHTML=''; this.reset({showTitle:false}); await this.audio.init(); await new Promise(r=>requestAnimationFrame(r)); this.start(); }, { passive:false });
-    addEvent(document.getElementById('menu'), INPUT.tap, ()=>{ this.reset({showTitle:true}); });
-    if (TG){ const sh=document.getElementById('share'); if (sh) addEvent(sh, INPUT.tap, ()=>{ try{ TG.sendData(JSON.stringify({ score:this.score, duration:CONFIG.runSeconds, version:VERSION })); }catch(e){} }); }
+    addEvent(document.getElementById('again'), INPUT.tap, async ()=>{ playSound("click"); overlay.innerHTML=''; this.reset({showTitle:false}); await new Promise(r=>requestAnimationFrame(r)); this.start(); }, { passive:false });
+    addEvent(document.getElementById('menu'), INPUT.tap, ()=>{ playSound("click"); this.reset({showTitle:true}); });
+    if (TG){ const sh=document.getElementById('share'); if (sh) addEvent(sh, INPUT.tap, ()=>{ playSound("click"); try{ TG.sendData(JSON.stringify({ score:this.score, duration:CONFIG.runSeconds, version:VERSION })); }catch(e){} }); }
   }
   drawBg(g){ const grad=g.createLinearGradient(0,0,0,BASE_H); const presets=[ ['#0f2027','#203a43','#2c5364'], ['#232526','#414345','#6b6e70'], ['#1e3c72','#2a5298','#6fa3ff'], ['#42275a','#734b6d','#b57ea7'], ['#355c7d','#6c5b7b','#c06c84'] ]; const cols=presets[this.bgIndex % presets.length]; grad.addColorStop(0,cols[0]); grad.addColorStop(0.5,cols[1]); grad.addColorStop(1,cols[2]); g.fillStyle=grad; g.fillRect(0,0,BASE_W,BASE_H); }
   render(){
@@ -1589,6 +1576,10 @@ function startGame(){
 
   window.__saltDroppeeStarted = true;
 
+  if (typeof unlockAudioOnce === "function") {
+    unlockAudioOnce();
+  }
+
   resize();
   addEvent(window, 'resize', resize);
   addEvent(window, 'keydown', onKeyDown);
@@ -1603,9 +1594,7 @@ function startGame(){
 
   addEvent(document, 'visibilitychange', ()=>{ if (document.hidden && game.state==='playing'){ const now = performance.now(); if (game.ignoreVisibilityUntil && now < game.ignoreVisibilityUntil) return; game.state='paused'; game.renderPause(); } });
 
-  addEvent(canvas, INPUT.tap, (e)=>{ if (game.state!=='playing') return; const now=performance.now(); if (game.ignoreClicksUntil && now < game.ignoreClicksUntil) return; const pt=getCanvasPoint(e); if (pt.y<40 && pt.x>BASE_W-80){ game.state='paused'; game.renderPause(); } });
-
-  addEvent(document, INPUT.tap, async (e)=>{ if (e.target && e.target.id==='btnPlay' && game.state==='title'){ e.preventDefault(); e.stopPropagation(); await game.audio.init(); await new Promise(r=>requestAnimationFrame(r)); game.uiStartFromTitle(); } }, { capture:true, passive:false });
+  addEvent(canvas, INPUT.tap, (e)=>{ if (game.state!=='playing') return; const now=performance.now(); if (game.ignoreClicksUntil && now < game.ignoreClicksUntil) return; const pt=getCanvasPoint(e); if (pt.y<40 && pt.x>BASE_W-80){ playSound("click"); game.state='paused'; game.renderPause(); } });
 
   game.render();
 }
