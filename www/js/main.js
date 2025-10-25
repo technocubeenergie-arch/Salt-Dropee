@@ -57,6 +57,15 @@ const BonusIcons = {
   shield: ShieldImg,
 };
 
+// Types négatifs du projet
+const NEGATIVE_TYPES = new Set([
+  "bomb",
+  "shitcoin",
+  "rugpull",
+  "fakeAirdrop",
+  "anvil"
+]);
+
 let activeBonuses = {
   magnet: { active: false, timeLeft: 0 },
   x2: { active: false, timeLeft: 0 }
@@ -67,6 +76,8 @@ let shield = {
   active: false,
   _effect: null
 };
+
+let shieldConsumedThisFrame = false;
 
 function startBonusEffect(type) {
   const walletRef = game?.wallet;
@@ -200,6 +211,10 @@ function updateActiveBonuses(dt) {
       stopBonusEffect(type);
     }
   }
+}
+
+function beginFrame() {
+  shieldConsumedThisFrame = false;
 }
 
 function resetActiveBonuses() {
@@ -386,48 +401,191 @@ function stopShieldEffect(options = {}) {
   fxManager.add(fadeEffect);
 }
 
-function handleNegativeCollision(gameInstance, obj) {
-  if (!shield.active || shield.count <= 0) {
-    return false;
+function removeItem(item) {
+  if (!item) return;
+  if ("dead" in item) {
+    try {
+      item.dead = true;
+    } catch (_) {
+      item.alive = false;
+    }
+  } else {
+    item.alive = false;
+  }
+  if (gsap?.killTweensOf) {
+    gsap.killTweensOf(item);
+  }
+}
+
+function applyNegativeEffect(item, gameInstance, firstCatch) {
+  if (!item || !gameInstance) return;
+
+  const { x: itemX, y: itemY } = item.getCenter();
+  const subtype = item.subtype;
+
+  if (gameInstance.wallet) {
+    if (subtype === "bomb") {
+      gameInstance.wallet.bump(0.65, "vertical");
+    } else if (subtype === "anvil") {
+      gameInstance.wallet.bump(0.55, "vertical");
+    } else {
+      gameInstance.wallet.bump(0.40, "vertical");
+    }
   }
 
-  shield.count = Math.max(0, shield.count - 1);
+  if (gameInstance.fx) {
+    gameInstance.fx.add(new FxNegativeImpact(itemX, itemY));
+  }
+
+  gameInstance.comboStreak = 0;
+  gameInstance.comboMult = 1;
+
+  if (subtype === "bomb") {
+    gameInstance.lives -= 1;
+    gameInstance.shake = 0.8;
+    if (gameInstance.settings?.haptics && !firstCatch) {
+      try {
+        navigator.vibrate && navigator.vibrate(40);
+      } catch (_) {}
+    }
+  } else if (subtype === "shitcoin") {
+    gameInstance.score += CONFIG.score.bad.shitcoin;
+  } else if (subtype === "anvil") {
+    gameInstance.score += CONFIG.score.bad.anvil;
+    if (gameInstance.wallet) {
+      gameInstance.wallet.slowTimer = 2.0;
+    }
+  } else if (subtype === "rugpull") {
+    const delta = Math.floor(gameInstance.score * CONFIG.score.rugpullPct);
+    gameInstance.score = Math.max(0, gameInstance.score + delta);
+  } else if (subtype === "fakeAirdrop") {
+    gameInstance.effects.freeze = 3.0;
+  }
+}
+
+function resolvePositiveCollision(item, gameInstance, firstCatch) {
+  if (!item || !gameInstance) {
+    removeItem(item);
+    return;
+  }
+
+  const { x: itemX, y: itemY } = item.getCenter();
+
+  if (item.kind === "good") {
+    gameInstance.wallet?.bump(0.35, "vertical");
+
+    if (gameInstance.effects.freeze > 0) {
+      gameInstance.fx?.add(new FxNegativeImpact(itemX, itemY));
+      playSound("wrong");
+      removeItem(item);
+      return;
+    }
+
+    let pts = CONFIG.score[item.subtype] || 0;
+    if (activeBonuses.x2?.active) pts *= 2;
+
+    gameInstance.comboStreak += 1;
+    if (gameInstance.comboStreak % CONFIG.combo.step === 0) {
+      gameInstance.comboMult = Math.min(CONFIG.combo.maxMult, gameInstance.comboMult + 1);
+    }
+    gameInstance.maxCombo = Math.max(gameInstance.maxCombo, gameInstance.comboStreak);
+    pts = Math.floor(pts * gameInstance.comboMult);
+    gameInstance.score += pts;
+
+    playSound("coin");
+    gameInstance.fx?.add(new FxPositiveImpact(itemX, itemY));
+
+    if (gameInstance.settings?.haptics && !firstCatch) {
+      try {
+        navigator.vibrate && navigator.vibrate(8);
+      } catch (_) {}
+    }
+  } else if (item.kind === "power") {
+    gameInstance.wallet?.bump(0.25, "horizontal");
+
+    if (item.subtype === "magnet") {
+      activateBonus("magnet", CONFIG.powerups.magnet);
+    } else if (item.subtype === "x2") {
+      activateBonus("x2", CONFIG.powerups.x2);
+    } else if (item.subtype === "shield") {
+      activateBonus("shield", CONFIG.powerups.shield);
+    } else if (item.subtype === "timeShard") {
+      gameInstance.timeLeft = Math.min(CONFIG.runSeconds, gameInstance.timeLeft + 5);
+      playSound("bonusok");
+    }
+
+    gameInstance.fx?.add(new FxPositiveImpact(itemX, itemY));
+  }
+
+  removeItem(item);
+}
+
+// Consume shield charge first (once per frame), then early-return; otherwise apply negative effect.
+function resolveNegativeCollision(item, gameInstance, firstCatch) {
+  if (!item) return;
 
   const walletRef = gameInstance?.wallet ?? game?.wallet;
   const fxManager = gameInstance?.fx ?? game?.fx;
+  const shieldActiveThisFrame = shield.count > 0 || shieldConsumedThisFrame;
 
-  if (walletRef && gsap?.fromTo) {
-    gsap.fromTo(
-      walletRef,
-      { visualScale: 1.15 },
-      {
-        visualScale: 1,
-        duration: 0.25,
-        ease: "back.out(2)",
-        overwrite: "auto"
+  if (shieldActiveThisFrame) {
+    if (!shieldConsumedThisFrame && shield.count > 0) {
+      shield.count = Math.max(0, shield.count - 1);
+      shieldConsumedThisFrame = true;
+      shield.active = shield.count > 0;
+      updateShieldHUD();
+      if (shield.count === 0) {
+        stopShieldEffect();
       }
-    );
+    }
+
+    if (walletRef && gsap?.fromTo) {
+      gsap.fromTo(
+        walletRef,
+        { visualScale: 1.15 },
+        {
+          visualScale: 1,
+          duration: 0.25,
+          ease: "back.out(2)",
+          overwrite: "auto"
+        }
+      );
+    }
+
+    if (walletRef && fxManager) {
+      const impactX = walletRef.x + walletRef.w / 2;
+      const impactY = walletRef.y;
+      fxManager.add(new FxPositiveImpact(impactX, impactY, "lightblue"));
+    }
+
+    playSound("zap");
+    removeItem(item);
+    return;
   }
 
-  if (walletRef && fxManager) {
-    const impactX = walletRef.x + walletRef.w / 2;
-    const impactY = walletRef.y;
-    fxManager.add(new FxPositiveImpact(impactX, impactY, "lightblue"));
+  playSound("wrong");
+  applyNegativeEffect(item, gameInstance, firstCatch);
+  removeItem(item);
+}
+
+function handleCollision(item) {
+  if (!item || !item.alive) return;
+
+  const gameInstance = item.g ?? game;
+  if (!gameInstance) {
+    removeItem(item);
+    return;
   }
 
-  playSound("zap");
+  const firstCatch = !gameInstance.didFirstCatch;
 
-  updateShieldHUD();
-
-  if (shield.count > 0) {
-    shield.active = true;
-  }
-  if (shield.count === 0) {
-    shield.active = false;
-    stopShieldEffect();
+  if (item.isNegative) {
+    resolveNegativeCollision(item, gameInstance, firstCatch);
+  } else {
+    resolvePositiveCollision(item, gameInstance, firstCatch);
   }
 
-  return true;
+  gameInstance.didFirstCatch = true;
 }
 
 function resetShieldState(options = {}) {
@@ -441,6 +599,7 @@ function resetShieldState(options = {}) {
     shield.active = false;
   }
   shield._effect = null;
+  shieldConsumedThisFrame = false;
   updateShieldHUD();
 }
 
@@ -1116,6 +1275,7 @@ class FallingItem{
     this.g = game;
     this.kind = kind;
     this.subtype = subtype;
+    this.type = subtype;
     this.x = x;
     this.y = y;
     this.spawnScale = (CONFIG.items?.spawnScale != null) ? CONFIG.items.spawnScale : 0.30;
@@ -1125,6 +1285,7 @@ class FallingItem{
     this._dead = false;
     this._tween = null;
     this.vx = 0;
+    this.isNegative = NEGATIVE_TYPES.has(subtype);
 
     const endY = BASE_H - 80;
     const duration = CONFIG.fallDuration ?? 2.5;
@@ -1220,6 +1381,15 @@ class FallingItem{
   }
 }
 
+function spawnItem(gameInstance, kind, subtype, x, y, extra = {}) {
+  if (!gameInstance) return null;
+  const item = new FallingItem(gameInstance, kind, subtype, x, y);
+  item.isNegative = NEGATIVE_TYPES.has(subtype);
+  Object.assign(item, extra);
+  gameInstance.items.push(item);
+  return item;
+}
+
 class Spawner{
   constructor(game){ this.g=game; this.acc=0; }
   update(dt){ const diff=this.g.diffMult(); this.acc += dt * (CONFIG.baseSpawnPerSec * diff); while (this.acc >= 1){ this.spawnOne(); this.acc -= 1; } }
@@ -1227,9 +1397,9 @@ class Spawner{
     const x = this.g.arm.spawnX(); const y = this.g.arm.spawnY();
     let pGood=0.7, pBad=0.2, pPow=0.1; if (this.g.timeElapsed>30){ pGood=0.6; pBad=0.3; pPow=0.1; }
     const r=Math.random();
-    if (r < pGood){ const rar = CONFIG.rarity; const sub = choiceWeighted([{k:'bronze',w:rar.bronze},{k:'silver',w:rar.silver},{k:'gold',w:rar.gold},{k:'diamond',w:rar.diamond}]); this.g.items.push(new FallingItem(this.g,'good',sub,x,y)); }
-    else if (r < pGood + pBad){ const bw = CONFIG.badWeights; const sub = choiceWeighted([{k:'bomb',w:bw.bomb*(this.g.timeElapsed>30?1.2:1)},{k:'shitcoin',w:bw.shitcoin},{k:'anvil',w:bw.anvil},{k:'rugpull',w:bw.rugpull},{k:'fakeAirdrop',w:bw.fakeAirdrop}]); this.g.items.push(new FallingItem(this.g,'bad',sub,x,y)); }
-    else { const pu = choiceWeighted([{k:'magnet',w:1},{k:'x2',w:1},{k:'shield',w:1},{k:'timeShard',w:1}]); this.g.items.push(new FallingItem(this.g,'power',pu,x,y)); }
+    if (r < pGood){ const rar = CONFIG.rarity; const sub = choiceWeighted([{k:'bronze',w:rar.bronze},{k:'silver',w:rar.silver},{k:'gold',w:rar.gold},{k:'diamond',w:rar.diamond}]); spawnItem(this.g,'good',sub,x,y); }
+    else if (r < pGood + pBad){ const bw = CONFIG.badWeights; const sub = choiceWeighted([{k:'bomb',w:bw.bomb*(this.g.timeElapsed>30?1.2:1)},{k:'shitcoin',w:bw.shitcoin},{k:'anvil',w:bw.anvil},{k:'rugpull',w:bw.rugpull},{k:'fakeAirdrop',w:bw.fakeAirdrop}]); spawnItem(this.g,'bad',sub,x,y); }
+    else { const pu = choiceWeighted([{k:'magnet',w:1},{k:'x2',w:1},{k:'shield',w:1},{k:'timeShard',w:1}]); spawnItem(this.g,'power',pu,x,y); }
   }
 }
 
@@ -1357,6 +1527,7 @@ class Game{
     });
   }
   step(dt){
+    beginFrame();
     this.timeElapsed += dt; if (this.timeLeft>0) this.timeLeft = Math.max(0, this.timeLeft - dt); if (this.timeLeft<=0 || this.lives<=0){ this.endGame(); return; }
     this.arm.update(dt); this.wallet.update(dt); this.spawner.update(dt);
     const w=this.wallet; const cx=CONFIG.collision.walletScaleX, cy=CONFIG.collision.walletScaleY, px=CONFIG.collision.walletPadX, py=CONFIG.collision.walletPadY;
@@ -1382,9 +1553,7 @@ class Game{
 
       const hitbox = it.getBounds();
       if (checkAABB(WR, hitbox)){
-        this.onCatch(it);
-        it.dead = true;
-        if (gsap?.killTweensOf) gsap.killTweensOf(it);
+        handleCollision(it);
         continue;
       }
 
@@ -1403,50 +1572,7 @@ class Game{
     this.updateBgByScore(); if (this.shake>0) this.shake = Math.max(0, this.shake - dt*6);
   }
   onCatch(it){
-    const firstCatch = !this.didFirstCatch;
-    const { x: itemX, y: itemY } = it.getCenter();
-    if (it.kind==='good'){
-      this.wallet.bump(0.35, 'vertical');
-      let pts = CONFIG.score[it.subtype] || 0;
-      if (this.effects.freeze>0){
-        this.fx.add(new FxNegativeImpact(itemX,itemY));
-        playSound("wrong");
-        this.didFirstCatch=true;
-        return;
-      }
-      if (activeBonuses.x2?.active) pts *= 2;
-      this.comboStreak += 1;
-      if (this.comboStreak % CONFIG.combo.step === 0){
-        this.comboMult = Math.min(CONFIG.combo.maxMult, this.comboMult+1);
-      }
-      this.maxCombo = Math.max(this.maxCombo, this.comboStreak);
-      pts = Math.floor(pts * this.comboMult);
-      this.score += pts;
-      playSound("coin");
-      this.fx.add(new FxPositiveImpact(itemX,itemY));
-      if (this.settings.haptics && !firstCatch) try{ navigator.vibrate && navigator.vibrate(8); }catch(e){}
-    } else if (it.kind==='bad'){
-      const absorbed = handleNegativeCollision(this, it);
-      if (!absorbed) {
-        playSound("wrong");
-        if (it.subtype==='bomb') this.wallet.bump(0.65,'vertical'); else if (it.subtype==='anvil') this.wallet.bump(0.55,'vertical'); else this.wallet.bump(0.40,'vertical');
-        this.fx.add(new FxNegativeImpact(itemX,itemY));
-        this.comboStreak=0; this.comboMult=1;
-        if (it.subtype==='bomb'){ this.lives -= 1; this.shake = 0.8; if (this.settings.haptics && !firstCatch) try{ navigator.vibrate && navigator.vibrate(40); }catch(e){} }
-        else if (it.subtype==='shitcoin'){ this.score += CONFIG.score.bad.shitcoin; }
-        else if (it.subtype==='anvil'){ this.score += CONFIG.score.bad.anvil; this.wallet.slowTimer = 2.0; }
-        else if (it.subtype==='rugpull'){ const delta = Math.floor(this.score * CONFIG.score.rugpullPct); this.score = Math.max(0, this.score + delta); }
-        else if (it.subtype==='fakeAirdrop'){ this.effects.freeze = 3.0; }
-      }
-    } else if (it.kind==='power'){
-      this.wallet.bump(0.25,'horizontal');
-      if (it.subtype==='magnet'){ activateBonus('magnet', CONFIG.powerups.magnet); }
-      else if (it.subtype==='x2'){ activateBonus('x2', CONFIG.powerups.x2); }
-      else if (it.subtype==='shield'){ activateBonus('shield', CONFIG.powerups.shield); }
-      else if (it.subtype==='timeShard'){ this.timeLeft = Math.min(CONFIG.runSeconds, this.timeLeft + 5); playSound("bonusok"); }
-      this.fx.add(new FxPositiveImpact(itemX,itemY));
-    }
-    this.didFirstCatch=true;
+    handleCollision(it);
   }
   endGame(){ this.fx?.clearAll(); resetActiveBonuses(); resetShieldState({ silent: true }); this.state='over'; this.render(); try{ const best=parseInt(localStorage.getItem(LS.bestScore)||'0',10); if (this.score>best) localStorage.setItem(LS.bestScore, String(this.score)); const bestC=parseInt(localStorage.getItem(LS.bestCombo)||'0',10); if (this.maxCombo>bestC) localStorage.setItem(LS.bestCombo, String(this.maxCombo)); const runs=JSON.parse(localStorage.getItem(LS.runs)||'[]'); runs.unshift({ ts:Date.now(), score:this.score, combo:this.maxCombo, lvl:this.levelReached }); while (runs.length>20) runs.pop(); localStorage.setItem(LS.runs, JSON.stringify(runs)); }catch(e){}
     this.renderGameOver(); if (TG){ try{ TG.sendData(JSON.stringify({ score:this.score, duration:CONFIG.runSeconds, version:VERSION })); }catch(e){} }
