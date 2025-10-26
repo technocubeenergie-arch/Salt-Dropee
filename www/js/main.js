@@ -25,8 +25,25 @@ const HUD_CONFIG = {
   heartSize: 16,
   bonusIconSize: 16,
   gap: 10,
+
+  // Combo couleurs par palier
+  comboColors: {
+    "1.0": "#8aa0b3", // bleu/gris
+    "1.5": "#3ddc97", // vert
+    "2.0": "#ffc94a", // or
+    "3.0": "#ff5ad9", // magenta/néon
+    "4.0": "#ff5ad9"  // cap≥3.0 = même magenta
+  },
+
+  // Jauge combo (2–3 px)
   gaugeH: 3,
-  gaugeBg: "rgba(255,255,255,0.15)"
+  gaugeBg: "rgba(255,255,255,0.15)",
+
+  // Animations (durées légères)
+  anim: {
+    popDur: 0.15,
+    flashDur: 0.18
+  }
 };
 
 // Utils nécessaires au HUD
@@ -43,7 +60,7 @@ function abbr(n) {
   if (n >= 1e9) return (n/1e9).toFixed(1).replace(/\.0$/,'') + "B";
   if (n >= 1e6) return (n/1e6).toFixed(1).replace(/\.0$/,'') + "M";
   if (n >= 1e5) return (n/1e3).toFixed(1).replace(/\.0$/,'') + "k";
-  return (n|0).toLocaleString();
+  return n.toLocaleString();
 }
 
 // Tiers & progression
@@ -66,12 +83,10 @@ function progressToNext(streak) {
   return clamp((streak - cur.min) / (nxt.min - cur.min), 0, 1);
 }
 
-const COMBO_COLORS = {
-  "1.0": "#8aa0b3", // bleu/gris
-  "1.5": "#3ddc97", // vert
-  "2.0": "#ffc94a", // or
-  "3.0": "#ff5ad9", // magenta/néon
-  "4.0": "#ff5ad9"  // cap≥3.0
+// État visuel combo (pour GSAP)
+const comboVis = {
+  scale: 1,
+  flash: 0
 };
 
 const INPUT = {
@@ -98,67 +113,6 @@ let canvas;
 let ctx;
 let overlay;
 let game;
-
-let elHudScore;
-let elComboMult;
-let elComboStreak;
-let elComboFill;
-let elComboChip;
-let elHudLives;
-let elHudTime;
-
-function updateHUD(gameInstance) {
-  if (!elHudScore) return;
-  const g = gameInstance || game;
-  if (!g) return;
-
-  elHudScore.textContent = abbr((g.score ?? 0) | 0);
-
-  const streak = (g.comboStreak ?? 0) | 0;
-  const cur = currentTier(streak) || comboTiers[0];
-  const mult = cur.mult.toFixed(1);
-  const prog = progressToNext(streak);
-
-  if (elComboMult) elComboMult.textContent = `x${mult}`;
-  if (elComboStreak) elComboStreak.textContent = `(${streak})`;
-  if (elComboFill) {
-    elComboFill.style.width = `${Math.round(prog * 100)}%`;
-    const color =
-      COMBO_COLORS[String(cur.mult)] ||
-      (cur.mult >= 3.0 ? COMBO_COLORS["3.0"] : COMBO_COLORS["1.0"]);
-    if (color) {
-      elComboFill.style.backgroundColor = color;
-    }
-  }
-
-  const lives = Math.max(0, (g.lives ?? 0) | 0);
-  if (elHudLives) elHudLives.textContent = lives > 0 ? "♥".repeat(lives) : "";
-  if (elHudTime) elHudTime.textContent = `${Math.max(0, (g.timeLeft ?? 0) | 0)}s`;
-}
-
-function comboPop() {
-  if (!gsap?.fromTo || !elComboChip) return;
-  if (gsap?.killTweensOf) {
-    gsap.killTweensOf(elComboChip);
-  }
-  gsap.fromTo(
-    elComboChip,
-    { scale: 1 },
-    {
-      scale: 1.06,
-      duration: 0.08,
-      ease: "power2.out",
-      onComplete: () => {
-        gsap.to(elComboChip, { scale: 1, duration: 0.07, ease: "power2.in" });
-      }
-    }
-  );
-}
-
-function comboFlash() {
-  if (!gsap?.fromTo || !elComboChip) return;
-  gsap.fromTo(elComboChip, { opacity: 0.6 }, { opacity: 1, duration: 0.18, ease: "power1.out" });
-}
 
 // === Chargement des images ===
 const BronzeImg  = new Image(); let bronzeReady  = false; BronzeImg.onload  = ()=> bronzeReady  = true; BronzeImg.src  = 'assets/bronze.png';
@@ -568,17 +522,11 @@ function applyNegativeEffect(item, gameInstance, firstCatch) {
 
   gameInstance.comboStreak = 0;
   gameInstance.comboMult = comboTiers[0].mult;
-  if (elComboChip) {
-    if (gsap?.killTweensOf) {
-      gsap.killTweensOf(elComboChip);
-    }
-    if (gsap?.set) {
-      gsap.set(elComboChip, { scale: 1, opacity: 1 });
-    } else {
-      elComboChip.style.transform = "scale(1)";
-      elComboChip.style.opacity = "1";
-    }
+  if (gsap?.killTweensOf) {
+    gsap.killTweensOf(comboVis);
   }
+  comboVis.scale = 1;
+  comboVis.flash = 0;
 
   if (subtype === "bomb") {
     gameInstance.lives -= 1;
@@ -634,10 +582,41 @@ function resolvePositiveCollision(item, gameInstance, firstCatch) {
     pts = Math.floor(pts * gameInstance.comboMult);
     gameInstance.score += pts;
 
-    comboPop();
+    if (gsap?.to) {
+      if (gsap?.killTweensOf) {
+        gsap.killTweensOf(comboVis, 'scale');
+      }
+      comboVis.scale = 1;
+      gsap.to(comboVis, {
+        scale: 1.06,
+        duration: HUD_CONFIG.anim.popDur / 2,
+        ease: 'power2.out',
+        onComplete: () => {
+          gsap.to(comboVis, {
+            scale: 1,
+            duration: HUD_CONFIG.anim.popDur / 2,
+            ease: 'power2.in'
+          });
+        }
+      });
+    } else {
+      comboVis.scale = 1;
+    }
 
     if (newTier.mult > prevMult) {
-      comboFlash();
+      if (gsap?.to) {
+        if (gsap?.killTweensOf) {
+          gsap.killTweensOf(comboVis, 'flash');
+        }
+        comboVis.flash = 0.6;
+        gsap.to(comboVis, {
+          flash: 0,
+          duration: HUD_CONFIG.anim.flashDur,
+          ease: 'power1.out'
+        });
+      } else {
+        comboVis.flash = 0;
+      }
     }
 
     playSound("coin");
@@ -1573,10 +1552,109 @@ function drawCompactHUD(ctx, g) {
   const y = Math.round(Math.floor(H * topFrac));
   const x = HUD_CONFIG.padX;
   const w = W - HUD_CONFIG.padX * 2;
+  const h = barH;
 
-  // La version HUD canvas est désormais assurée par l'overlay HTML.
-  // On conserve néanmoins les métriques pour positionner les icônes bonus.
-  return { x, y, w, h: barH };
+  ctx.save();
+  ctx.fillStyle = HUD_CONFIG.bg;
+  roundRect(ctx, x, y, w, h, HUD_CONFIG.radius);
+  ctx.fill();
+
+  const fs = hudFontSize(W);
+  const pad = HUD_CONFIG.padX;
+  const innerX = x + pad;
+  const innerW = w - pad * 2;
+  const midX = x + w / 2;
+  const centerWidth = Math.min(Math.max(220, W * 0.36), Math.min(420, W * 0.5));
+  const leftW = Math.floor((innerW - centerWidth) / 2);
+  const rightW = innerW - leftW - centerWidth;
+  const textY = y + h / 2 + fs / 3;
+
+  // --------- GAUCHE : SCORE ----------
+  const scoreValue = Math.round(g.score ?? 0);
+  const scoreText = `SCORE  ${abbr(scoreValue)}`;
+  ctx.textBaseline = 'alphabetic';
+  ctx.textAlign = 'left';
+  ctx.font = `${fs}px "Roboto Mono", "Roboto Condensed", "Inter", system-ui, -apple-system, sans-serif`;
+  ctx.fillStyle = '#fff';
+  ctx.fillText(scoreText, innerX, textY);
+
+  // --------- CENTRE : CAPSULE COMBO ----------
+  const streak = Math.max(0, Math.floor(g.comboStreak ?? 0));
+  const cur = currentTier(streak) || comboTiers[0];
+  const combo = (cur.mult).toFixed(1);
+  const prog = progressToNext(streak);
+
+  const color =
+    HUD_CONFIG.comboColors[String(cur.mult)] ||
+    (cur.mult >= 3.0 ? HUD_CONFIG.comboColors['3.0'] : HUD_CONFIG.comboColors['1.0']);
+
+  const capW = centerWidth;
+  const capH = h - HUD_CONFIG.padY * 2;
+  const capX = midX - capW / 2;
+  const capY = y + HUD_CONFIG.padY;
+
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,255,255,0.08)';
+  roundRect(ctx, capX, capY, capW, capH, Math.min(8, HUD_CONFIG.radius));
+  ctx.fill();
+
+  const cx = capX + capW / 2;
+  const cy = capY + capH / 2;
+  ctx.translate(cx, cy);
+  ctx.scale(comboVis.scale, comboVis.scale);
+  ctx.translate(-cx, -cy);
+
+  const narrow = (W < 420);
+  const comboLabel = narrow ? `⚡ x${combo}  (${streak})` : `⚡ COMBO x${combo}  (${streak})`;
+
+  const labelBaseY = cy - 2;
+  const smallFs = Math.max(Math.round(fs * 0.9), HUD_CONFIG.fontMin);
+  ctx.textAlign = 'center';
+  ctx.font = `${smallFs}px "Roboto Condensed", "Inter", system-ui, sans-serif`;
+  ctx.fillStyle = '#fff';
+  ctx.fillText(comboLabel, cx, labelBaseY);
+
+  const gaugeW = Math.min(capW - 24, 380);
+  const gaugeH = HUD_CONFIG.gaugeH;
+  const gaugeX = cx - gaugeW / 2;
+  const gaugeY = labelBaseY + 6 + gaugeH;
+
+  ctx.fillStyle = HUD_CONFIG.gaugeBg;
+  roundRect(ctx, gaugeX, gaugeY, gaugeW, gaugeH, gaugeH / 2);
+  ctx.fill();
+
+  ctx.fillStyle = color;
+  roundRect(ctx, gaugeX, gaugeY, Math.max(1, Math.round(gaugeW * prog)), gaugeH, gaugeH / 2);
+  ctx.fill();
+
+  if (comboVis.flash > 0.01) {
+    ctx.fillStyle = `rgba(255,255,255,${comboVis.flash})`;
+    roundRect(ctx, capX, capY, capW, capH, Math.min(8, HUD_CONFIG.radius));
+    ctx.fill();
+  }
+
+  ctx.restore();
+
+  // --------- DROITE : VIES + TEMPS ----------
+  const rightX = x + w - pad - rightW;
+  ctx.font = `${fs}px "Roboto Mono", "Roboto Condensed", "Inter", system-ui, -apple-system, sans-serif`;
+  ctx.textAlign = 'right';
+  const timeTextShort = `${Math.max(0, Math.floor(g.timeLeft ?? 0))}s`;
+  const heartsCount = Math.max(0, Math.round(g.lives ?? 0));
+  const hearts = '♥'.repeat(heartsCount);
+
+  if (W < 360) {
+    const topLineY = y + h / 2 - 2;
+    ctx.fillText(hearts, rightX, topLineY);
+    ctx.fillText(timeTextShort, rightX, topLineY + fs * 0.9);
+  } else {
+    const mono = hearts ? `${hearts}   ${timeTextShort}` : timeTextShort;
+    ctx.fillText(mono, rightX, textY);
+  }
+
+  ctx.restore();
+
+  return { x, y, w, h };
 }
 
 class HUD{
@@ -1658,21 +1736,14 @@ class Game{
       setSoundEnabled(!!this.settings.sound);
     }
     this.timeLeft=CONFIG.runSeconds; this.timeElapsed=0; this.lives=CONFIG.lives; this.score=0; this.comboStreak=0; this.comboMult=comboTiers[0].mult; this.maxCombo=0; this.levelReached=1;
-    if (elComboChip) {
-      if (gsap?.killTweensOf) {
-        gsap.killTweensOf(elComboChip);
-      }
-      if (gsap?.set) {
-        gsap.set(elComboChip, { scale: 1, opacity: 1 });
-      } else {
-        elComboChip.style.transform = "scale(1)";
-        elComboChip.style.opacity = "1";
-      }
+    if (gsap?.killTweensOf) {
+      gsap.killTweensOf(comboVis);
     }
+    comboVis.scale = 1;
+    comboVis.flash = 0;
     this.arm=new Arm(this); this.arm.applyCaps(); this.wallet=new Wallet(this); this.wallet.applyCaps(); loadWallet(1); this.hud=new HUD(this); this.spawner=new Spawner(this);
     this.items=[]; this.effects={freeze:0}; this.fx = new FxManager(this);
     this.shake=0; this.bgIndex=0; this.didFirstCatch=false; this.updateBgByScore();
-    updateHUD(this);
     if (showTitle) this.renderTitle(); else this.render();
   }
   diffMult(){ return Math.pow(CONFIG.spawnRampFactor, Math.floor(this.timeElapsed/CONFIG.spawnRampEverySec)); }
@@ -1852,8 +1923,6 @@ class Game{
       }
     }
 
-    updateHUD(this);
-
     ctx.restore();
   }
 }
@@ -1878,14 +1947,6 @@ function startGame(){
   overlay = document.getElementById('overlay');
   if (!canvas || !ctx || !overlay) return;
 
-  elHudScore    = document.getElementById('hudScore');
-  elComboMult   = document.getElementById('hudComboMult');
-  elComboStreak = document.getElementById('hudComboStreak');
-  elComboFill   = document.getElementById('hudComboFill');
-  elComboChip   = document.getElementById('hudComboChip');
-  elHudLives    = document.getElementById('hudLives');
-  elHudTime     = document.getElementById('hudTime');
-
   window.__saltDroppeeStarted = true;
 
   if (typeof unlockAudioOnce === "function") {
@@ -1903,8 +1964,6 @@ function startGame(){
 
   game = new Game();
   if (game && game.wallet) targetX = game.wallet.x + game.wallet.w / 2;
-
-  updateHUD(game);
 
   addEvent(document, 'visibilitychange', ()=>{ if (document.hidden && game.state==='playing'){ const now = performance.now(); if (game.ignoreVisibilityUntil && now < game.ignoreVisibilityUntil) return; game.state='paused'; game.renderPause(); } });
 
