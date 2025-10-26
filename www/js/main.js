@@ -6,6 +6,89 @@
 const hasTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
 const gsap = window.gsap;
 
+// ---- HUD CONFIG (barre compacte) ----
+const HUD_CONFIG = {
+  // Hauteur de la barre = 7–9% de l’écran
+  barHFracMin: 0.07,  // 7%
+  barHFracMax: 0.09,  // 9%
+  padX: 12,           // marge latérale interne
+  padY: 8,            // marge verticale interne
+  radius: 10,         // coins arrondis
+  bg: "rgba(0,0,0,0.28)",
+
+  // Tailles de police (canvas, pas CSS clamp → on calcule)
+  fontMin: 12,
+  fontMax: 18,
+  fontVwPct: 0.026,   // ~2.6vw
+
+  // Taille icônes/éléments
+  heartSize: 16,
+  bonusIconSize: 16,
+  gap: 10,
+
+  // Combo couleurs par palier
+  comboColors: {
+    "1.0": "#8aa0b3", // bleu/gris
+    "1.5": "#3ddc97", // vert
+    "2.0": "#ffc94a", // or
+    "3.0": "#ff5ad9", // magenta/néon
+    "4.0": "#ff5ad9"  // cap≥3.0 = même magenta
+  },
+
+  // Jauge combo (2–3 px)
+  gaugeH: 3,
+  gaugeBg: "rgba(255,255,255,0.15)",
+
+  // Animations (durées légères)
+  anim: {
+    popDur: 0.15,
+    flashDur: 0.18
+  }
+};
+
+// Utils nécessaires au HUD
+function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
+
+// Approche “clamp canvas” (pas CSS) pour la taille de police
+function hudFontSize(baseW) {
+  const vw = baseW * HUD_CONFIG.fontVwPct; // ex. 2.6% de largeur
+  return clamp(Math.round(vw), HUD_CONFIG.fontMin, HUD_CONFIG.fontMax);
+}
+
+// Abréviation score (12.3k / 1.2M)
+function abbr(n) {
+  if (n >= 1e9) return (n/1e9).toFixed(1).replace(/\.0$/,'') + "B";
+  if (n >= 1e6) return (n/1e6).toFixed(1).replace(/\.0$/,'') + "M";
+  if (n >= 1e5) return (n/1e3).toFixed(1).replace(/\.0$/,'') + "k";
+  return n.toLocaleString();
+}
+
+// Tiers & progression
+const comboTiers = [
+  { min: 0,  mult: 1.0 },
+  { min: 5,  mult: 1.5 },
+  { min: 10, mult: 2.0 },
+  { min: 20, mult: 3.0 },
+  { min: 35, mult: 4.0 } // cap
+];
+function currentTier(streak) { return comboTiers.filter(t => streak >= t.min).pop(); }
+function nextTier(streak) {
+  const cur = currentTier(streak);
+  const idx = comboTiers.findIndex(t => t === cur);
+  return comboTiers[Math.min(idx + 1, comboTiers.length - 1)];
+}
+function progressToNext(streak) {
+  const cur = currentTier(streak), nxt = nextTier(streak);
+  if (nxt.min === cur.min) return 1;
+  return clamp((streak - cur.min) / (nxt.min - cur.min), 0, 1);
+}
+
+// État visuel combo (pour GSAP)
+const comboVis = {
+  scale: 1,
+  flash: 0
+};
+
 const INPUT = {
   tap: hasTouch ? 'touchstart' : 'click',
   down: hasTouch ? 'touchstart' : 'mousedown',
@@ -438,7 +521,12 @@ function applyNegativeEffect(item, gameInstance, firstCatch) {
   }
 
   gameInstance.comboStreak = 0;
-  gameInstance.comboMult = 1;
+  gameInstance.comboMult = comboTiers[0].mult;
+  if (gsap?.killTweensOf) {
+    gsap.killTweensOf(comboVis);
+  }
+  comboVis.scale = 1;
+  comboVis.flash = 0;
 
   if (subtype === "bomb") {
     gameInstance.lives -= 1;
@@ -484,13 +572,52 @@ function resolvePositiveCollision(item, gameInstance, firstCatch) {
     let pts = CONFIG.score[item.subtype] || 0;
     if (activeBonuses.x2?.active) pts *= 2;
 
+    const prevTier = currentTier(gameInstance.comboStreak || 0) || comboTiers[0];
+    const prevMult = prevTier.mult;
+
     gameInstance.comboStreak += 1;
-    if (gameInstance.comboStreak % CONFIG.combo.step === 0) {
-      gameInstance.comboMult = Math.min(CONFIG.combo.maxMult, gameInstance.comboMult + 1);
-    }
+    const newTier = currentTier(gameInstance.comboStreak) || comboTiers[comboTiers.length - 1];
+    gameInstance.comboMult = newTier.mult;
     gameInstance.maxCombo = Math.max(gameInstance.maxCombo, gameInstance.comboStreak);
     pts = Math.floor(pts * gameInstance.comboMult);
     gameInstance.score += pts;
+
+    if (gsap?.to) {
+      if (gsap?.killTweensOf) {
+        gsap.killTweensOf(comboVis, 'scale');
+      }
+      comboVis.scale = 1;
+      gsap.to(comboVis, {
+        scale: 1.06,
+        duration: HUD_CONFIG.anim.popDur / 2,
+        ease: 'power2.out',
+        onComplete: () => {
+          gsap.to(comboVis, {
+            scale: 1,
+            duration: HUD_CONFIG.anim.popDur / 2,
+            ease: 'power2.in'
+          });
+        }
+      });
+    } else {
+      comboVis.scale = 1;
+    }
+
+    if (newTier.mult > prevMult) {
+      if (gsap?.to) {
+        if (gsap?.killTweensOf) {
+          gsap.killTweensOf(comboVis, 'flash');
+        }
+        comboVis.flash = 0.6;
+        gsap.to(comboVis, {
+          flash: 0,
+          duration: HUD_CONFIG.anim.flashDur,
+          ease: 'power1.out'
+        });
+      } else {
+        comboVis.flash = 0;
+      }
+    }
 
     playSound("coin");
     gameInstance.fx?.add(new FxPositiveImpact(itemX, itemY));
@@ -1006,7 +1133,6 @@ function fxMagnetActive(wallet, fxManager) {
 // UTILS
 // =====================
 const snap = v => Math.round(v);
-const clamp = (v,min,max)=> Math.max(min, Math.min(max,v));
 const rand = (a,b)=> Math.random()*(b-a)+a;
 function choiceWeighted(entries){ const total = entries.reduce((s,e)=>s+e.w,0); let r = Math.random()*total; for (const e of entries){ if ((r-=e.w) <= 0) return e.k; } return entries[entries.length-1].k; }
 
@@ -1403,66 +1529,184 @@ class Spawner{
   }
 }
 
+function roundRect(ctx, x, y, w, h, r) {
+  const rr = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x, y + h, rr);
+  ctx.arcTo(x, y + h, x, y, rr);
+  ctx.arcTo(x, y, x + w, y, rr);
+  ctx.closePath();
+}
+
+function drawCompactHUD(ctx, g) {
+  if (!ctx || !g) return null;
+
+  const W = BASE_W;
+  const H = BASE_H;
+
+  const desired = H * 0.08;
+  const barH = Math.round(clamp(desired, H * HUD_CONFIG.barHFracMin, H * HUD_CONFIG.barHFracMax));
+  const topFrac = g.maxTopActorH || CONFIG.maxTopActorH || 0.14;
+  const y = Math.round(Math.floor(H * topFrac));
+  const x = HUD_CONFIG.padX;
+  const w = W - HUD_CONFIG.padX * 2;
+  const h = barH;
+
+  ctx.save();
+  ctx.fillStyle = HUD_CONFIG.bg;
+  roundRect(ctx, x, y, w, h, HUD_CONFIG.radius);
+  ctx.fill();
+
+  const fs = hudFontSize(W);
+  const pad = HUD_CONFIG.padX;
+  const innerX = x + pad;
+  const innerW = w - pad * 2;
+  const midX = x + w / 2;
+  const centerWidth = Math.min(Math.max(220, W * 0.36), Math.min(420, W * 0.5));
+  const leftW = Math.floor((innerW - centerWidth) / 2);
+  const rightW = innerW - leftW - centerWidth;
+  const textY = y + h / 2 + fs / 3;
+
+  // --------- GAUCHE : SCORE ----------
+  const scoreValue = Math.round(g.score ?? 0);
+  const scoreText = `SCORE  ${abbr(scoreValue)}`;
+  ctx.textBaseline = 'alphabetic';
+  ctx.textAlign = 'left';
+  ctx.font = `${fs}px "Roboto Mono", "Roboto Condensed", "Inter", system-ui, -apple-system, sans-serif`;
+  ctx.fillStyle = '#fff';
+  ctx.fillText(scoreText, innerX, textY);
+
+  // --------- CENTRE : CAPSULE COMBO ----------
+  const streak = Math.max(0, Math.floor(g.comboStreak ?? 0));
+  const cur = currentTier(streak) || comboTiers[0];
+  const combo = (cur.mult).toFixed(1);
+  const prog = progressToNext(streak);
+
+  const color =
+    HUD_CONFIG.comboColors[String(cur.mult)] ||
+    (cur.mult >= 3.0 ? HUD_CONFIG.comboColors['3.0'] : HUD_CONFIG.comboColors['1.0']);
+
+  const capW = centerWidth;
+  const capH = h - HUD_CONFIG.padY * 2;
+  const capX = midX - capW / 2;
+  const capY = y + HUD_CONFIG.padY;
+
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,255,255,0.08)';
+  roundRect(ctx, capX, capY, capW, capH, Math.min(8, HUD_CONFIG.radius));
+  ctx.fill();
+
+  const cx = capX + capW / 2;
+  const cy = capY + capH / 2;
+  ctx.translate(cx, cy);
+  ctx.scale(comboVis.scale, comboVis.scale);
+  ctx.translate(-cx, -cy);
+
+  const narrow = (W < 420);
+  const comboLabel = narrow ? `⚡ x${combo}  (${streak})` : `⚡ COMBO x${combo}  (${streak})`;
+
+  const labelBaseY = cy - 2;
+  const smallFs = Math.max(Math.round(fs * 0.9), HUD_CONFIG.fontMin);
+  ctx.textAlign = 'center';
+  ctx.font = `${smallFs}px "Roboto Condensed", "Inter", system-ui, sans-serif`;
+  ctx.fillStyle = '#fff';
+  ctx.fillText(comboLabel, cx, labelBaseY);
+
+  const gaugeW = Math.min(capW - 24, 380);
+  const gaugeH = HUD_CONFIG.gaugeH;
+  const gaugeX = cx - gaugeW / 2;
+  const gaugeY = labelBaseY + 6 + gaugeH;
+
+  ctx.fillStyle = HUD_CONFIG.gaugeBg;
+  roundRect(ctx, gaugeX, gaugeY, gaugeW, gaugeH, gaugeH / 2);
+  ctx.fill();
+
+  ctx.fillStyle = color;
+  roundRect(ctx, gaugeX, gaugeY, Math.max(1, Math.round(gaugeW * prog)), gaugeH, gaugeH / 2);
+  ctx.fill();
+
+  if (comboVis.flash > 0.01) {
+    ctx.fillStyle = `rgba(255,255,255,${comboVis.flash})`;
+    roundRect(ctx, capX, capY, capW, capH, Math.min(8, HUD_CONFIG.radius));
+    ctx.fill();
+  }
+
+  ctx.restore();
+
+  // --------- DROITE : VIES + TEMPS ----------
+  const rightX = x + w - pad - rightW;
+  ctx.font = `${fs}px "Roboto Mono", "Roboto Condensed", "Inter", system-ui, -apple-system, sans-serif`;
+  ctx.textAlign = 'right';
+  const timeTextShort = `${Math.max(0, Math.floor(g.timeLeft ?? 0))}s`;
+  const heartsCount = Math.max(0, Math.round(g.lives ?? 0));
+  const hearts = '♥'.repeat(heartsCount);
+
+  if (W < 360) {
+    const topLineY = y + h / 2 - 2;
+    ctx.fillText(hearts, rightX, topLineY);
+    ctx.fillText(timeTextShort, rightX, topLineY + fs * 0.9);
+  } else {
+    const mono = hearts ? `${hearts}   ${timeTextShort}` : timeTextShort;
+    ctx.fillText(mono, rightX, textY);
+  }
+
+  ctx.restore();
+
+  return { x, y, w, h };
+}
+
 class HUD{
   constructor(game){ this.g=game; }
   draw(g){
-    const P=this.g.palette;
-    g.save();
-    const topCap = Math.floor(BASE_H * CONFIG.maxTopActorH);
-    const BAR_H=28;
-    const barY=topCap+2;
-    g.fillStyle=P[0];
-    g.fillRect(0,barY,BASE_W,BAR_H);
-    g.fillStyle=P[4];
-    g.font='12px monospace';
-    g.textBaseline='top';
-    const ty=barY+10;
-    const s=`SCORE ${this.g.score|0}`;
-    const t=`TIME ${(Math.max(0,this.g.timeLeft)).toFixed(0)}s`;
-    const v=`LIVES ${'♥'.repeat(this.g.lives)}`;
-    const c=`COMBO x${this.g.comboMult.toFixed(1)} (${this.g.comboStreak|0})`;
-    g.fillText(s,6,ty);
-    g.fillText(v,100,ty);
-    g.fillText(t,300,ty);
-    g.fillText(c,190,ty);
-    const bonusX=6;
-    let bonusY=barY+BAR_H+4;
-    const iconSize=32;
-    const iconSpacing=8;
+    const metrics = drawCompactHUD(g, this.g);
+    const barY = metrics?.y ?? 0;
+    const barH = metrics?.h ?? 0;
 
-    const drawBonusIcon=(type,timeLeft)=>{
-      const icon=BonusIcons[type];
+    const bonusX = HUD_CONFIG.padX + 2;
+    let bonusY = barY + barH + HUD_CONFIG.padY;
+    const iconSize = HUD_CONFIG.bonusIconSize;
+    const iconSpacing = HUD_CONFIG.gap;
+    const timerFontSize = Math.max(HUD_CONFIG.fontMin, Math.round(hudFontSize(BASE_W) * 0.85));
+
+    const drawBonusIcon = (type, timeLeft) => {
+      const icon = BonusIcons[type];
       if (!icon) return;
-      const timer=Math.max(0, timeLeft);
+      const timer = Math.max(0, timeLeft);
       if (icon.complete) {
-        g.drawImage(icon,bonusX,bonusY,iconSize,iconSize);
+        g.drawImage(icon, bonusX, bonusY, iconSize, iconSize);
       }
-      g.fillStyle='#fff';
-      g.font='12px monospace';
-      g.textBaseline='top';
-      g.fillText(`${Math.ceil(timer)}s`, bonusX+iconSize+6, bonusY+8);
+      g.save();
+      g.fillStyle = '#fff';
+      g.font = `${timerFontSize}px "Roboto Mono", "Inter", monospace`;
+      g.textBaseline = 'middle';
+      g.fillText(`${Math.ceil(timer)}s`, bonusX + iconSize + 6, bonusY + iconSize / 2);
+      g.restore();
       bonusY += iconSize + iconSpacing;
     };
 
     // --- HUD des bonus temporaires ---
     for (const type in activeBonuses) {
-      const bonus=activeBonuses[type];
+      const bonus = activeBonuses[type];
       if (bonus.active) {
         drawBonusIcon(type, bonus.timeLeft);
       }
     }
 
-    const drawShieldIcon=(count)=>{
+    const drawShieldIcon = (count) => {
       if (!shieldIconImage.complete) return;
-      const size=iconSize;
-      const bx=bonusX;
-      const by=bonusY;
+      const size = iconSize;
+      const bx = bonusX;
+      const by = bonusY;
 
-      g.drawImage(shieldIconImage,bx,by,size,size);
-      g.fillStyle='#fff';
-      g.font='12px monospace';
-      g.textBaseline='top';
-      g.fillText(`x${count}`, bx+size+6, by+8);
+      g.drawImage(shieldIconImage, bx, by, size, size);
+      g.save();
+      g.fillStyle = '#fff';
+      g.font = `${timerFontSize}px "Roboto Mono", "Inter", monospace`;
+      g.textBaseline = 'middle';
+      g.fillText(`x${count}`, bx + size + 6, by + size / 2);
+      g.restore();
       bonusY += size + iconSpacing;
     };
 
@@ -1470,8 +1714,6 @@ class HUD{
     if (shield.count > 0) {
       drawShieldIcon(shield.count);
     }
-
-    g.restore();
   }
 }
 
@@ -1493,7 +1735,12 @@ class Game{
     if (typeof setSoundEnabled === "function") {
       setSoundEnabled(!!this.settings.sound);
     }
-    this.timeLeft=CONFIG.runSeconds; this.timeElapsed=0; this.lives=CONFIG.lives; this.score=0; this.comboStreak=0; this.comboMult=1; this.maxCombo=0; this.levelReached=1;
+    this.timeLeft=CONFIG.runSeconds; this.timeElapsed=0; this.lives=CONFIG.lives; this.score=0; this.comboStreak=0; this.comboMult=comboTiers[0].mult; this.maxCombo=0; this.levelReached=1;
+    if (gsap?.killTweensOf) {
+      gsap.killTweensOf(comboVis);
+    }
+    comboVis.scale = 1;
+    comboVis.flash = 0;
     this.arm=new Arm(this); this.arm.applyCaps(); this.wallet=new Wallet(this); this.wallet.applyCaps(); loadWallet(1); this.hud=new HUD(this); this.spawner=new Spawner(this);
     this.items=[]; this.effects={freeze:0}; this.fx = new FxManager(this);
     this.shake=0; this.bgIndex=0; this.didFirstCatch=false; this.updateBgByScore();
