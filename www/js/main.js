@@ -63,6 +63,55 @@ function abbr(n) {
   return n.toLocaleString();
 }
 
+function formatScore(value){
+  const num = Math.round(Number.isFinite(value) ? value : Number(value) || 0);
+  if (num === 0) return '0';
+  if (num < 0) return '-' + abbr(Math.abs(num));
+  return abbr(num);
+}
+
+function setHUDScore(v){
+  const el = document.getElementById('hudScore');
+  if (el) el.textContent = formatScore(v);
+}
+function setHUDCombo(mult, streak){
+  const multEl = document.getElementById('hudComboMult');
+  const streakEl = document.getElementById('hudComboStreak');
+  if (multEl) multEl.textContent = 'x' + Number(mult ?? 0).toFixed(1);
+  if (streakEl) streakEl.textContent = '(' + Math.max(0, Math.floor(Number(streak) || 0)) + ')';
+}
+function setHUDComboProgress(p){ // p: 0..1
+  const fill = document.getElementById('hudComboFill');
+  if (!fill) return;
+  const pct = (Math.max(0, Math.min(1, Number.isFinite(p) ? p : Number(p) || 0)) * 100).toFixed(0) + '%';
+  fill.style.width = pct;
+}
+function setHUDLives(n){
+  const livesEl = document.getElementById('hudLives');
+  if (livesEl) livesEl.textContent = '♥'.repeat(Math.max(0, (Number.isFinite(n) ? n : Number(n) || 0) | 0));
+}
+function setHUDTime(s){
+  const timeEl = document.getElementById('hudTime');
+  if (timeEl) timeEl.textContent = Math.max(0, (Number.isFinite(s) ? s : Number(s) || 0) | 0) + 's';
+}
+
+function updateComboChipVisual(color){
+  const chip = document.getElementById('hudComboChip');
+  if (chip){
+    const scale = Number.isFinite(comboVis.scale) ? comboVis.scale : 1;
+    chip.style.transform = `scale(${scale.toFixed(3)})`;
+    const flash = clamp(Number.isFinite(comboVis.flash) ? comboVis.flash : 0, 0, 1);
+    const base = 0.12;
+    const bgAlpha = clamp(base + flash * 0.35, base, 0.6);
+    chip.style.backgroundColor = `rgba(255,255,255,${bgAlpha.toFixed(3)})`;
+    chip.style.boxShadow = flash > 0.01 ? `0 0 ${Math.round(12 + flash * 10)}px rgba(255,255,255,${(0.45 * flash).toFixed(2)})` : '';
+  }
+  const fill = document.getElementById('hudComboFill');
+  if (fill && color) fill.style.background = color;
+  const multEl = document.getElementById('hudComboMult');
+  if (multEl && color) multEl.style.color = color;
+}
+
 // Tiers & progression
 const comboTiers = [
   { min: 0,  mult: 1.0 },
@@ -1541,7 +1590,7 @@ function roundRect(ctx, x, y, w, h, r) {
 }
 
 function drawCompactHUD(ctx, g) {
-  if (!ctx || !g) return null;
+  if (!g) return null;
 
   const W = BASE_W;
   const H = BASE_H;
@@ -1554,120 +1603,26 @@ function drawCompactHUD(ctx, g) {
   const w = W - HUD_CONFIG.padX * 2;
   const h = barH;
 
-  ctx.save();
-  ctx.fillStyle = HUD_CONFIG.bg;
-  roundRect(ctx, x, y, w, h, HUD_CONFIG.radius);
-  ctx.fill();
-
-  const fs = hudFontSize(W);
-  const pad = HUD_CONFIG.padX;
-  const innerX = x + pad;
-  const innerW = w - pad * 2;
-  const midX = x + w / 2;
-  const centerWidth = Math.min(Math.max(220, W * 0.36), Math.min(420, W * 0.5));
-  const leftW = Math.floor((innerW - centerWidth) / 2);
-  const rightW = innerW - leftW - centerWidth;
-  // --------- GAUCHE : SCORE ----------
   const scoreValue = Math.round(g.score ?? 0);
-  const scoreLabelFs = Math.max(Math.round(fs * 0.8), Math.max(HUD_CONFIG.fontMin - 1, 10));
-  const scoreValueFs = Math.max(Math.round(fs * 1.15), scoreLabelFs + 2);
-  const scoreLabelLine = scoreLabelFs * 1.05;
-  const scoreValueLine = scoreValueFs * 1.05;
-  const scoreBlockHeight = scoreLabelLine + scoreValueLine;
-  const scoreTop = y + (h - scoreBlockHeight) / 2;
-  ctx.save();
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'top';
-  ctx.fillStyle = '#fff';
-  ctx.font = `${scoreLabelFs}px "Roboto Mono", "Roboto Condensed", "Inter", system-ui, -apple-system, sans-serif`;
-  ctx.globalAlpha = 0.9;
-  ctx.fillText('SCORE', innerX, scoreTop);
-  ctx.globalAlpha = 1;
-  ctx.font = `700 ${scoreValueFs}px "Roboto Mono", "Roboto Condensed", "Inter", system-ui, -apple-system, sans-serif`;
-  ctx.fillText(abbr(scoreValue), innerX, scoreTop + scoreLabelLine);
-  ctx.restore();
+  setHUDScore(scoreValue);
 
-  // --------- CENTRE : CAPSULE COMBO ----------
   const streak = Math.max(0, Math.floor(g.comboStreak ?? 0));
   const cur = currentTier(streak) || comboTiers[0];
-  const combo = (cur.mult).toFixed(1);
-  const prog = progressToNext(streak);
+  const comboMult = cur.mult;
+  setHUDCombo(comboMult, streak);
+  setHUDComboProgress(progressToNext(streak));
 
   const color =
     HUD_CONFIG.comboColors[String(cur.mult)] ||
     (cur.mult >= 3.0 ? HUD_CONFIG.comboColors['3.0'] : HUD_CONFIG.comboColors['1.0']);
 
-  const capW = centerWidth;
-  const capH = h - HUD_CONFIG.padY * 2;
-  const capX = midX - capW / 2;
-  const capY = y + HUD_CONFIG.padY;
+  updateComboChipVisual(color);
 
-  ctx.save();
-  ctx.fillStyle = 'rgba(255,255,255,0.08)';
-  roundRect(ctx, capX, capY, capW, capH, Math.min(8, HUD_CONFIG.radius));
-  ctx.fill();
-
-  const cx = capX + capW / 2;
-  const cy = capY + capH / 2;
-  ctx.translate(cx, cy);
-  ctx.scale(comboVis.scale, comboVis.scale);
-  ctx.translate(-cx, -cy);
-
-  const narrow = (W < 420);
-  const comboLabel = narrow ? `⚡ x${combo}  (${streak})` : `⚡ COMBO x${combo}  (${streak})`;
-
-  const labelBaseY = cy - 2;
-  const smallFs = Math.max(Math.round(fs * 0.9), HUD_CONFIG.fontMin);
-  ctx.textAlign = 'center';
-  ctx.font = `${smallFs}px "Roboto Condensed", "Inter", system-ui, sans-serif`;
-  ctx.fillStyle = '#fff';
-  ctx.fillText(comboLabel, cx, labelBaseY);
-
-  const gaugeW = Math.min(capW - 24, 380);
-  const gaugeH = HUD_CONFIG.gaugeH;
-  const gaugeX = cx - gaugeW / 2;
-  const gaugeY = labelBaseY + 6 + gaugeH;
-
-  ctx.fillStyle = HUD_CONFIG.gaugeBg;
-  roundRect(ctx, gaugeX, gaugeY, gaugeW, gaugeH, gaugeH / 2);
-  ctx.fill();
-
-  ctx.fillStyle = color;
-  roundRect(ctx, gaugeX, gaugeY, Math.max(1, Math.round(gaugeW * prog)), gaugeH, gaugeH / 2);
-  ctx.fill();
-
-  if (comboVis.flash > 0.01) {
-    ctx.fillStyle = `rgba(255,255,255,${comboVis.flash})`;
-    roundRect(ctx, capX, capY, capW, capH, Math.min(8, HUD_CONFIG.radius));
-    ctx.fill();
-  }
-
-  ctx.restore();
-
-  // --------- DROITE : VIES + TEMPS ----------
-  const rightX = x + w - pad - rightW;
-  const livesFs = fs;
-  const timeFs = Math.max(Math.round(fs * 0.9), HUD_CONFIG.fontMin);
-  const livesLine = livesFs * 1.05;
-  const timeLine = timeFs * 1.05;
-  const rightBlockHeight = livesLine + timeLine;
-  const rightTop = y + (h - rightBlockHeight) / 2;
-  const timeTextShort = `${Math.max(0, Math.floor(g.timeLeft ?? 0))}s`;
   const heartsCount = Math.max(0, Math.round(g.lives ?? 0));
-  const hearts = '♥'.repeat(heartsCount);
+  setHUDLives(heartsCount);
 
-  ctx.save();
-  ctx.textAlign = 'right';
-  ctx.textBaseline = 'top';
-  ctx.fillStyle = '#fff';
-  ctx.font = `${livesFs}px "Roboto Mono", "Roboto Condensed", "Inter", system-ui, -apple-system, sans-serif`;
-  ctx.fillText(hearts, rightX, rightTop);
-  ctx.globalAlpha = 0.9;
-  ctx.font = `${timeFs}px "Roboto Mono", "Roboto Condensed", "Inter", system-ui, -apple-system, sans-serif`;
-  ctx.fillText(timeTextShort, rightX, rightTop + livesLine);
-  ctx.restore();
-
-  ctx.restore();
+  const timeSeconds = Math.max(0, Math.floor(g.timeLeft ?? 0));
+  setHUDTime(timeSeconds);
 
   return { x, y, w, h };
 }
