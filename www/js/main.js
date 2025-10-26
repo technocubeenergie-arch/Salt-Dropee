@@ -1571,7 +1571,9 @@ function drawCompactHUD(ctx, g) {
   const scoreValue = Math.round(g.score ?? 0);
   const scoreLabelFs = Math.max(Math.round(fs * 0.8), Math.max(HUD_CONFIG.fontMin - 1, 10));
   const scoreValueFs = Math.max(Math.round(fs * 1.15), scoreLabelFs + 2);
-  const scoreBlockHeight = scoreLabelFs + scoreValueFs * 1.05;
+  const scoreLabelLine = scoreLabelFs * 1.05;
+  const scoreValueLine = scoreValueFs * 1.05;
+  const scoreBlockHeight = scoreLabelLine + scoreValueLine;
   const scoreTop = y + (h - scoreBlockHeight) / 2;
   ctx.save();
   ctx.textAlign = 'left';
@@ -1582,7 +1584,7 @@ function drawCompactHUD(ctx, g) {
   ctx.fillText('SCORE', innerX, scoreTop);
   ctx.globalAlpha = 1;
   ctx.font = `700 ${scoreValueFs}px "Roboto Mono", "Roboto Condensed", "Inter", system-ui, -apple-system, sans-serif`;
-  ctx.fillText(abbr(scoreValue), innerX, scoreTop + scoreLabelFs * 1.05);
+  ctx.fillText(abbr(scoreValue), innerX, scoreTop + scoreLabelLine);
   ctx.restore();
 
   // --------- CENTRE : CAPSULE COMBO ----------
@@ -1646,7 +1648,9 @@ function drawCompactHUD(ctx, g) {
   const rightX = x + w - pad - rightW;
   const livesFs = fs;
   const timeFs = Math.max(Math.round(fs * 0.9), HUD_CONFIG.fontMin);
-  const rightBlockHeight = livesFs + timeFs * 1.05;
+  const livesLine = livesFs * 1.05;
+  const timeLine = timeFs * 1.05;
+  const rightBlockHeight = livesLine + timeLine;
   const rightTop = y + (h - rightBlockHeight) / 2;
   const timeTextShort = `${Math.max(0, Math.floor(g.timeLeft ?? 0))}s`;
   const heartsCount = Math.max(0, Math.round(g.lives ?? 0));
@@ -1660,7 +1664,7 @@ function drawCompactHUD(ctx, g) {
   ctx.fillText(hearts, rightX, rightTop);
   ctx.globalAlpha = 0.9;
   ctx.font = `${timeFs}px "Roboto Mono", "Roboto Condensed", "Inter", system-ui, -apple-system, sans-serif`;
-  ctx.fillText(timeTextShort, rightX, rightTop + livesFs * 1.05);
+  ctx.fillText(timeTextShort, rightX, rightTop + livesLine);
   ctx.restore();
 
   ctx.restore();
