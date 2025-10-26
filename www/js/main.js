@@ -1567,16 +1567,23 @@ function drawCompactHUD(ctx, g) {
   const centerWidth = Math.min(Math.max(220, W * 0.36), Math.min(420, W * 0.5));
   const leftW = Math.floor((innerW - centerWidth) / 2);
   const rightW = innerW - leftW - centerWidth;
-  const textY = y + h / 2 + fs / 3;
-
   // --------- GAUCHE : SCORE ----------
   const scoreValue = Math.round(g.score ?? 0);
-  const scoreText = `SCORE  ${abbr(scoreValue)}`;
-  ctx.textBaseline = 'alphabetic';
+  const scoreLabelFs = Math.max(Math.round(fs * 0.8), Math.max(HUD_CONFIG.fontMin - 1, 10));
+  const scoreValueFs = Math.max(Math.round(fs * 1.15), scoreLabelFs + 2);
+  const scoreBlockHeight = scoreLabelFs + scoreValueFs * 1.05;
+  const scoreTop = y + (h - scoreBlockHeight) / 2;
+  ctx.save();
   ctx.textAlign = 'left';
-  ctx.font = `${fs}px "Roboto Mono", "Roboto Condensed", "Inter", system-ui, -apple-system, sans-serif`;
+  ctx.textBaseline = 'top';
   ctx.fillStyle = '#fff';
-  ctx.fillText(scoreText, innerX, textY);
+  ctx.font = `${scoreLabelFs}px "Roboto Mono", "Roboto Condensed", "Inter", system-ui, -apple-system, sans-serif`;
+  ctx.globalAlpha = 0.9;
+  ctx.fillText('SCORE', innerX, scoreTop);
+  ctx.globalAlpha = 1;
+  ctx.font = `700 ${scoreValueFs}px "Roboto Mono", "Roboto Condensed", "Inter", system-ui, -apple-system, sans-serif`;
+  ctx.fillText(abbr(scoreValue), innerX, scoreTop + scoreLabelFs * 1.05);
+  ctx.restore();
 
   // --------- CENTRE : CAPSULE COMBO ----------
   const streak = Math.max(0, Math.floor(g.comboStreak ?? 0));
@@ -1637,20 +1644,24 @@ function drawCompactHUD(ctx, g) {
 
   // --------- DROITE : VIES + TEMPS ----------
   const rightX = x + w - pad - rightW;
-  ctx.font = `${fs}px "Roboto Mono", "Roboto Condensed", "Inter", system-ui, -apple-system, sans-serif`;
-  ctx.textAlign = 'right';
+  const livesFs = fs;
+  const timeFs = Math.max(Math.round(fs * 0.9), HUD_CONFIG.fontMin);
+  const rightBlockHeight = livesFs + timeFs * 1.05;
+  const rightTop = y + (h - rightBlockHeight) / 2;
   const timeTextShort = `${Math.max(0, Math.floor(g.timeLeft ?? 0))}s`;
   const heartsCount = Math.max(0, Math.round(g.lives ?? 0));
   const hearts = '♥'.repeat(heartsCount);
 
-  if (W < 360) {
-    const topLineY = y + h / 2 - 2;
-    ctx.fillText(hearts, rightX, topLineY);
-    ctx.fillText(timeTextShort, rightX, topLineY + fs * 0.9);
-  } else {
-    const mono = hearts ? `${hearts}   ${timeTextShort}` : timeTextShort;
-    ctx.fillText(mono, rightX, textY);
-  }
+  ctx.save();
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = '#fff';
+  ctx.font = `${livesFs}px "Roboto Mono", "Roboto Condensed", "Inter", system-ui, -apple-system, sans-serif`;
+  ctx.fillText(hearts, rightX, rightTop);
+  ctx.globalAlpha = 0.9;
+  ctx.font = `${timeFs}px "Roboto Mono", "Roboto Condensed", "Inter", system-ui, -apple-system, sans-serif`;
+  ctx.fillText(timeTextShort, rightX, rightTop + livesFs * 1.05);
+  ctx.restore();
 
   ctx.restore();
 
