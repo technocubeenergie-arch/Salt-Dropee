@@ -1912,7 +1912,7 @@ function getCanvasPoint(evt){
 function startGame(){
   if (window.__saltDroppeeStarted) return;
 
-  canvas = document.getElementById('game');
+  canvas = document.getElementById('gameCanvas');
   ctx = canvas?.getContext('2d');
   overlay = document.getElementById('overlay');
   if (!canvas || !ctx || !overlay) return;
