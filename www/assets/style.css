@@ -55,7 +55,7 @@ button:hover { filter: brightness(1.2); }
   position: absolute;
   left: 0;
   right: 0;
-  top: 12vh(--hud-top, 6vh);
+  top: 12vh;
   margin: 0 auto;
   width: 100%;
   display: grid;
