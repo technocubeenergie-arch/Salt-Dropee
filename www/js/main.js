@@ -1242,6 +1242,20 @@ let SCALE = 1, VIEW_W = BASE_W, VIEW_H = BASE_H;
 let targetX = BASE_W / 2;
 const WR = { x: 0, y: 0, w: 0, h: 0 };
 
+function positionHUD(){
+  const canvasEl = document.getElementById('gameCanvas');
+  const hud = document.getElementById('hud');
+  if (!canvasEl || !hud) return;
+
+  const rect = canvasEl.getBoundingClientRect();
+  const offsetPx = Math.round(rect.height * 0.14);
+
+  hud.style.setProperty('--hud-top', offsetPx + 'px');
+}
+
+window.addEventListener('load', positionHUD);
+window.addEventListener('resize', positionHUD);
+
 function resize(){
   if (!canvas) return;
   const vw = window.innerWidth, vh = window.innerHeight;
@@ -1252,6 +1266,7 @@ function resize(){
   canvas.style.width  = VIEW_W + 'px';
   canvas.style.height = VIEW_H + 'px';
   setupHiDPI();
+  positionHUD();
 }
 
 // =====================
