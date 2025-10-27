@@ -1248,7 +1248,7 @@ function positionHUD(){
   if (!canvasEl || !hud) return;
 
   const rect = canvasEl.getBoundingClientRect();
-  const offsetPx = Math.round(rect.height * 0.14);
+  const offsetPx = Math.round(rect.height * 0.21);
 
   hud.style.setProperty('--hud-top', offsetPx + 'px');
 }
