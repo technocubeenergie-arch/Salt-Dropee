@@ -179,11 +179,80 @@ let game;
 let currentLevelIndex = 0; // 0 → LEVELS[0] = niveau 1
 let levelState = { targetScore: 0, timeLimit: 0, lives: 0 };
 
+// --- Game state & guards ---
+let gameState = "playing";  // "playing" | "paused" | "inter"
+let levelEnded = false;
+
+function canEndLevel(){
+  return !levelEnded && gameState === "playing";
+}
+
 /* global */ let score = 0;   // nombre
 /* global */ let streak = 0;  // nombre
 /* global */ let combo = 1.0; // nombre (ex: 1.0)
 /* global */ let timeLeft = 0;// nombre (secondes)
 /* global */ let lives = 0;   // nombre
+
+// Spawning/inputs/animations toggles
+let spawningEnabled = true;
+let inputEnabled = true;
+
+function stopSpawningItems(){
+  spawningEnabled = false;
+  if (game?.spawner) {
+    game.spawner.acc = 0;
+  }
+}
+
+function pauseAllAnimations(){
+  if (window.gsap?.globalTimeline) {
+    gsap.globalTimeline.pause();
+  }
+}
+
+function disablePlayerInput(){
+  inputEnabled = false;
+  if (typeof input !== "undefined") {
+    input.dragging = false;
+    input.dash = false;
+  }
+  leftPressed = false;
+  rightPressed = false;
+}
+
+function resumeAllAnimations(){
+  if (window.gsap?.globalTimeline) {
+    gsap.globalTimeline.resume();
+  }
+}
+
+function enablePlayerInput(){
+  inputEnabled = true;
+  if (typeof input !== "undefined") {
+    input.dragging = false;
+    input.dash = false;
+  }
+}
+
+function hardResetRuntime(){
+  if (typeof items !== "undefined" && Array.isArray(items)) {
+    items.length = 0;
+  }
+  if (Array.isArray(game?.items)) {
+    game.items.length = 0;
+  }
+  if (game?.spawner) {
+    game.spawner.acc = 0;
+  }
+  if (game?.fx?.clearAll) {
+    game.fx.clearAll();
+  }
+  resetActiveBonuses();
+  resetShieldState({ silent: true });
+  if (window.gsap) {
+    gsap.killTweensOf("*");
+  }
+}
 
 function loadLevel(index) {
   // garde-fou
@@ -234,6 +303,41 @@ function loadLevel(index) {
 }
 
 function startLevel1() { loadLevel(0); }
+
+function checkEndConditions(){
+  if (!canEndLevel()) return;
+
+  if (score >= levelState.targetScore && lives > 0 && timeLeft > 0){
+    endLevel("win");
+    return;
+  }
+
+  if (timeLeft <= 0 || lives <= 0){
+    endLevel("lose");
+    return;
+  }
+}
+
+function endLevel(result){
+  if (!canEndLevel()) return;
+  levelEnded = true;
+  gameState = "inter";
+
+  stopSpawningItems();
+  pauseAllAnimations();
+  disablePlayerInput();
+
+  if (game) {
+    game.state = "inter";
+    if (typeof game.render === "function") {
+      game.render();
+    }
+  }
+
+  window.__saltDroppeeLoopStarted = false;
+
+  showInterLevelScreen(result);
+}
 
 window.loadLevel = loadLevel;
 
@@ -1344,66 +1448,105 @@ function resize(){
 }
 
 // --- Écran intermédiaire : show/hide ---
-function showInterLevelScreen(result = "win") {
+function goToNextLevel(){
+  const next = currentLevelIndex + 1;
+  const lastIndex = Math.max(0, LEVELS.length - 1);
+
+  hardResetRuntime();
+  loadLevel(Math.min(next, lastIndex));
+  resumeGameplay();
+}
+
+function resumeGameplay(){
+  levelEnded = false;
+  gameState = "playing";
+  spawningEnabled = true;
+  resumeAllAnimations();
+  enablePlayerInput();
+  leftPressed = false;
+  rightPressed = false;
+
+  if (game) {
+    game.state = "playing";
+    if (game.spawner) {
+      game.spawner.acc = 0;
+    }
+    game.lastTime = performance.now();
+    window.__saltDroppeeLoopStarted = false;
+    score = game.score;
+    lives = game.lives;
+    timeLeft = game.timeLeft;
+    game.loop();
+  }
+}
+
+function showInterLevelScreen(result="win"){
   const screen = document.getElementById("interLevelScreen");
-  const title = document.getElementById("interTitle");
+  const title  = document.getElementById("interTitle");
   const scoreText = document.getElementById("interScore");
+  const btnNext = document.getElementById("btnNextLevel");
   if (!screen || !title || !scoreText) return;
 
-  title.textContent = result === "win" ? "Niveau terminé 🎉" : "Game Over 💀";
-
+  title.textContent = (result === "win") ? "Niveau terminé 🎉" : "Game Over 💀";
   const numericScore = Number.isFinite(score) ? score : Number(window.score) || 0;
   const formattedScore = typeof formatScore === "function"
     ? formatScore(numericScore)
     : String(numericScore | 0);
   scoreText.textContent = "Score : " + formattedScore;
 
+  if (btnNext){
+    btnNext.textContent = (result === "win") ? "Niveau suivant" : "Rejouer";
+    btnNext.onclick = () => {
+      hideInterLevelScreen();
+      if (result === "win"){
+        goToNextLevel();
+      } else {
+        hardResetRuntime();
+        loadLevel(currentLevelIndex);
+        resumeGameplay();
+      }
+    };
+  }
+
   screen.classList.remove("hidden");
   screen.setAttribute("aria-hidden", "false");
-
-  // (option) pause du jeu : g.pause = true; gsap.globalTimeline.pause();
-  // Laissez commenté si votre moteur gère déjà une pause ailleurs.
 }
 
-function hideInterLevelScreen() {
+function hideInterLevelScreen(){
   const screen = document.getElementById("interLevelScreen");
   if (!screen) return;
   screen.classList.add("hidden");
   screen.setAttribute("aria-hidden", "true");
-
-  // (option) reprise : g.pause = false; gsap.globalTimeline.resume();
 }
 
 // --- Boutons ---
-function bindInterLevelButtons() {
+function bindInterLevelButtons(){
   const bNext = document.getElementById("btnNextLevel");
   const bSave = document.getElementById("btnSaveQuit");
   const bSett = document.getElementById("btnSettings");
 
-  if (bNext) bNext.addEventListener("click", () => {
-    hideInterLevelScreen();
-    if (typeof loadLevel === "function") {
-      const levels = Array.isArray(window.LEVELS) ? window.LEVELS : LEVELS;
-      const nextIndex = Math.min(currentLevelIndex + 1, (levels?.length || 1) - 1);
-      loadLevel(nextIndex);
-    }
-  });
+  if (bNext){
+    bNext.onclick = () => {
+      hideInterLevelScreen();
+      goToNextLevel();
+    };
+  }
 
-  if (bSave) bSave.addEventListener("click", () => {
-    hideInterLevelScreen();
-    // TODO: sauvegarde + retour menu (étape suivante)
-    console.log("[InterLevel] Sauvegarde et retour au menu");
-    // playSound && playSound("click");
-  });
+  if (bSave){
+    bSave.onclick = () => {
+      hideInterLevelScreen();
+      console.log("[InterLevel] save & quit stub");
+    };
+  }
 
-  if (bSett) bSett.addEventListener("click", () => {
-    hideInterLevelScreen();
-    if (typeof openSettings === "function") {
-      openSettings();
-    } else {
-      console.log("[InterLevel] openSettings() indisponible");
-    }
-  });
+  if (bSett){
+    bSett.onclick = () => {
+      hideInterLevelScreen();
+      if (typeof openSettings === "function") {
+        openSettings();
+      }
+    };
+  }
 }
 
 // --- Test manuel temporaire : appuyer sur 'i' pour afficher l’écran ---
@@ -1424,6 +1567,18 @@ const input = { dash:false, dragging:false };
 let leftPressed = false;
 let rightPressed = false;
 function onKeyDown(e){
+  const allowTitleStart = (e.code === 'Enter');
+  if (!inputEnabled && !allowTitleStart) return;
+
+  if (!inputEnabled && allowTitleStart){
+    const g = Game.instance;
+    if (g && g.state==='title'){
+      playSound("click");
+      requestAnimationFrame(()=> g.uiStartFromTitle());
+    }
+    return;
+  }
+
   if (e.code === 'ArrowLeft' || e.code === 'KeyA'){
     leftPressed = true;
   }
@@ -1431,7 +1586,7 @@ function onKeyDown(e){
     rightPressed = true;
   }
   if (e.code === 'Space') input.dash = true;
-  if (e.code === 'Enter'){
+  if (allowTitleStart){
     const g = Game.instance;
     if (g && g.state==='title'){
       playSound("click");
@@ -1445,12 +1600,13 @@ function onKeyUp(e){
   if (e.code === 'Space') input.dash = false;
 }
 function onPointerDown(e){
+  if (!inputEnabled) return;
   const point = getCanvasPoint(e);
   input.dragging = true;
   if (game && game.wallet) animateWalletToCenter(game.wallet, point.x);
 }
 function onPointerMove(e){
-  if (!input.dragging) return;
+  if (!inputEnabled || !input.dragging) return;
   const point = getCanvasPoint(e);
   if (game && game.wallet) animateWalletToCenter(game.wallet, point.x);
 }
@@ -1730,7 +1886,15 @@ function spawnItem(gameInstance, kind, subtype, x, y, extra = {}) {
 
 class Spawner{
   constructor(game){ this.g=game; this.acc=0; }
-  update(dt){ const diff=this.g.diffMult(); this.acc += dt * (CONFIG.baseSpawnPerSec * diff); while (this.acc >= 1){ this.spawnOne(); this.acc -= 1; } }
+  update(dt){
+    if (!spawningEnabled || gameState !== "playing") return;
+    const diff=this.g.diffMult();
+    this.acc += dt * (CONFIG.baseSpawnPerSec * diff);
+    while (this.acc >= 1){
+      this.spawnOne();
+      this.acc -= 1;
+    }
+  }
   spawnOne(){
     const x = this.g.arm.spawnX(); const y = this.g.arm.spawnY();
     let pGood=0.7, pBad=0.2, pPow=0.1; if (this.g.timeElapsed>30){ pGood=0.6; pBad=0.3; pPow=0.1; }
@@ -1858,6 +2022,10 @@ class Game{
   constructor(){ Game.instance=this; this.reset({ showTitle:true }); }
   reset({showTitle=true}={}){
     window.__saltDroppeeLoopStarted = false;
+    gameState = "paused";
+    levelEnded = false;
+    spawningEnabled = false;
+    enablePlayerInput();
     if (this.fx) this.fx.clearAll();
     resetActiveBonuses();
     resetShieldState({ silent: true });
@@ -1882,7 +2050,17 @@ class Game{
   }
   diffMult(){ return Math.pow(CONFIG.spawnRampFactor, Math.floor(this.timeElapsed/CONFIG.spawnRampEverySec)); }
   updateBgByScore(){ const th=CONFIG.evolveThresholds; let idx=0; for (let i=0;i<th.length;i++){ if (this.score>=th[i]) idx=i; } if (idx!==this.bgIndex){ this.bgIndex=idx; this.wallet.evolveByScore(this.score); this.levelReached = Math.max(this.levelReached, this.wallet.level); } }
-  start(){ this.state='playing'; this.lastTime=performance.now(); this.ignoreClicksUntil=this.lastTime+500; this.ignoreVisibilityUntil=this.lastTime+1000; this.loop(); }
+  start(){
+    levelEnded = false;
+    gameState = "playing";
+    spawningEnabled = true;
+    enablePlayerInput();
+    this.state='playing';
+    this.lastTime=performance.now();
+    this.ignoreClicksUntil=this.lastTime+500;
+    this.ignoreVisibilityUntil=this.lastTime+1000;
+    this.loop();
+  }
   loop(){
     if (this.state!=='playing'){
       window.__saltDroppeeLoopStarted = false;
@@ -1909,8 +2087,31 @@ class Game{
   }
   step(dt){
     beginFrame();
-    this.timeElapsed += dt; if (this.timeLeft>0) this.timeLeft = Math.max(0, this.timeLeft - dt); if (this.timeLeft<=0 || this.lives<=0){ this.endGame(); return; }
-    this.arm.update(dt); this.wallet.update(dt); this.spawner.update(dt);
+
+    if (gameState !== "playing"){
+      score = this.score;
+      lives = this.lives;
+      timeLeft = this.timeLeft;
+      return;
+    }
+
+    this.timeElapsed += dt;
+    if (this.timeLeft > 0){
+      this.timeLeft = Math.max(0, this.timeLeft - dt);
+    }
+
+    score = this.score;
+    lives = this.lives;
+    timeLeft = this.timeLeft;
+
+    checkEndConditions();
+    if (gameState !== "playing") return;
+
+    this.arm.update(dt);
+    this.wallet.update(dt);
+    if (spawningEnabled && typeof this.spawner?.update === "function"){
+      this.spawner.update(dt);
+    }
     const w=this.wallet; const cx=CONFIG.collision.walletScaleX, cy=CONFIG.collision.walletScaleY, px=CONFIG.collision.walletPadX, py=CONFIG.collision.walletPadY;
     WR.x = w.x + (w.w - w.w*cx)/2 + px;
     WR.y = w.y + (w.h - w.h*cy)/2 + py;
@@ -1951,6 +2152,11 @@ class Game{
       if (this.effects.freeze<0) this.effects.freeze = 0;
     }
     this.updateBgByScore(); if (this.shake>0) this.shake = Math.max(0, this.shake - dt*6);
+
+    score = this.score;
+    lives = this.lives;
+    timeLeft = this.timeLeft;
+    checkEndConditions();
   }
   onCatch(it){
     handleCollision(it);
