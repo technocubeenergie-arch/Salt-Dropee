@@ -54,6 +54,19 @@
           <div class="hud-time" id="hudTime">60s</div>
         </div>
       </div>
+
+      <!-- Inter-level overlay (caché par défaut) -->
+      <div id="interLevelScreen" class="hidden" aria-hidden="true">
+        <div class="inter-content" role="dialog" aria-modal="true" aria-labelledby="interTitle">
+          <h2 id="interTitle">Niveau terminé !</h2>
+          <p id="interScore">Score : 0000</p>
+          <div class="inter-buttons">
+            <button id="btnNextLevel" type="button">Niveau suivant</button>
+            <button id="btnSaveQuit" type="button">Sauvegarder &amp; Quitter</button>
+            <button id="btnSettings" type="button">Paramètres</button>
+          </div>
+        </div>
+      </div>
     </div>
     <div class="overlay" id="overlay" aria-live="polite"></div>
   </div>
