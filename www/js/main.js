@@ -16,6 +16,8 @@ const LEVELS = [
 ];
 // D'autres champs pourront être ajoutés plus tard (spawnRates, bg, music, etc.) sans effet immédiat.
 
+window.LEVELS = LEVELS;
+
 // ---- HUD CONFIG (barre compacte) ----
 const HUD_CONFIG = {
   // Hauteur de la barre = 7–9% de l’écran
@@ -189,6 +191,7 @@ function loadLevel(index) {
 
   const L = LEVELS[index];
   currentLevelIndex = index;
+  window.currentLevelIndex = currentLevelIndex;
 
   // Copier les valeurs utiles dans levelState
   levelState.targetScore = L.targetScore;
@@ -1339,6 +1342,80 @@ function resize(){
   setupHiDPI();
   positionHUD();
 }
+
+// --- Écran intermédiaire : show/hide ---
+function showInterLevelScreen(result = "win") {
+  const screen = document.getElementById("interLevelScreen");
+  const title = document.getElementById("interTitle");
+  const scoreText = document.getElementById("interScore");
+  if (!screen || !title || !scoreText) return;
+
+  title.textContent = result === "win" ? "Niveau terminé 🎉" : "Game Over 💀";
+
+  const numericScore = Number.isFinite(score) ? score : Number(window.score) || 0;
+  const formattedScore = typeof formatScore === "function"
+    ? formatScore(numericScore)
+    : String(numericScore | 0);
+  scoreText.textContent = "Score : " + formattedScore;
+
+  screen.classList.remove("hidden");
+  screen.setAttribute("aria-hidden", "false");
+
+  // (option) pause du jeu : g.pause = true; gsap.globalTimeline.pause();
+  // Laissez commenté si votre moteur gère déjà une pause ailleurs.
+}
+
+function hideInterLevelScreen() {
+  const screen = document.getElementById("interLevelScreen");
+  if (!screen) return;
+  screen.classList.add("hidden");
+  screen.setAttribute("aria-hidden", "true");
+
+  // (option) reprise : g.pause = false; gsap.globalTimeline.resume();
+}
+
+// --- Boutons ---
+function bindInterLevelButtons() {
+  const bNext = document.getElementById("btnNextLevel");
+  const bSave = document.getElementById("btnSaveQuit");
+  const bSett = document.getElementById("btnSettings");
+
+  if (bNext) bNext.addEventListener("click", () => {
+    hideInterLevelScreen();
+    if (typeof loadLevel === "function") {
+      const levels = Array.isArray(window.LEVELS) ? window.LEVELS : LEVELS;
+      const nextIndex = Math.min(currentLevelIndex + 1, (levels?.length || 1) - 1);
+      loadLevel(nextIndex);
+    }
+  });
+
+  if (bSave) bSave.addEventListener("click", () => {
+    hideInterLevelScreen();
+    // TODO: sauvegarde + retour menu (étape suivante)
+    console.log("[InterLevel] Sauvegarde et retour au menu");
+    // playSound && playSound("click");
+  });
+
+  if (bSett) bSett.addEventListener("click", () => {
+    hideInterLevelScreen();
+    if (typeof openSettings === "function") {
+      openSettings();
+    } else {
+      console.log("[InterLevel] openSettings() indisponible");
+    }
+  });
+}
+
+// --- Test manuel temporaire : appuyer sur 'i' pour afficher l’écran ---
+window.addEventListener("keydown", (e) => {
+  if (e.key === "i" || e.key === "I") showInterLevelScreen("win");
+});
+
+// Appeler le binding après chargement du DOM / init jeu
+window.addEventListener("load", bindInterLevelButtons);
+
+window.showInterLevelScreen = showInterLevelScreen;
+window.hideInterLevelScreen = hideInterLevelScreen;
 
 // =====================
 // INPUT
