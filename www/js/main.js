@@ -6,6 +6,16 @@
 const hasTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
 const gsap = window.gsap;
 
+// --- LEVELS: configuration de base (peut être étendue plus tard) ---
+const LEVELS = [
+  { id: 1, name: "Départ",      targetScore: 200,  timeLimit: 90,  lives: 3 },
+  { id: 2, name: "Initiation",  targetScore: 400,  timeLimit: 90,  lives: 3 },
+  { id: 3, name: "Montée",      targetScore: 700,  timeLimit: 90,  lives: 3 },
+  { id: 4, name: "Maîtrise",    targetScore: 1100, timeLimit: 90,  lives: 3 },
+  { id: 5, name: "Légende",     targetScore: 1600, timeLimit: 90,  lives: 3 }
+];
+// D'autres champs pourront être ajoutés plus tard (spawnRates, bg, music, etc.) sans effet immédiat.
+
 // ---- HUD CONFIG (barre compacte) ----
 const HUD_CONFIG = {
   // Hauteur de la barre = 7–9% de l’écran
@@ -162,6 +172,67 @@ let canvas;
 let ctx;
 let overlay;
 let game;
+
+// --- État "niveaux" ---
+let currentLevelIndex = 0; // 0 → LEVELS[0] = niveau 1
+let levelState = { targetScore: 0, timeLimit: 0, lives: 0 };
+
+/* global */ let score = 0;   // nombre
+/* global */ let streak = 0;  // nombre
+/* global */ let combo = 1.0; // nombre (ex: 1.0)
+/* global */ let timeLeft = 0;// nombre (secondes)
+/* global */ let lives = 0;   // nombre
+
+function loadLevel(index) {
+  // garde-fou
+  if (index < 0 || index >= LEVELS.length) return;
+
+  const L = LEVELS[index];
+  currentLevelIndex = index;
+
+  // Copier les valeurs utiles dans levelState
+  levelState.targetScore = L.targetScore;
+  levelState.timeLimit   = L.timeLimit;
+  levelState.lives       = L.lives;
+
+  // --- Reset "compteurs de partie" (SANS toucher au moteur de jeu) ---
+  score    = 0;
+  streak   = 0;
+  combo    = 1.0;
+  timeLeft = L.timeLimit;
+  lives    = L.lives;
+
+  const instance = game || Game.instance || null;
+  if (instance) {
+    instance.score = 0;
+    instance.comboStreak = 0;
+    instance.comboMult = comboTiers[0]?.mult ?? 1.0;
+    instance.maxCombo = 0;
+    instance.timeLeft = L.timeLimit;
+    instance.timeElapsed = 0;
+    instance.lives = L.lives;
+    instance.targetScore = L.targetScore;
+  }
+
+  // Rafraîchir le HUD si vous avez des setters dédiés (sinon votre updateHUD() fera le reste)
+  if (typeof setHUDScore === "function") setHUDScore(score);
+  if (typeof setHUDLives === "function") setHUDLives(lives);
+  if (typeof setHUDTime  === "function") setHUDTime(timeLeft);
+
+  // (Option non-bloquante) : petite bannière “Niveau X — {name}”
+  // → Laisser commenté si vous ne voulez rien afficher pour le moment.
+  /*
+  if (window.gsap && document.getElementById('hud')) {
+    // Exemple minimal : flash visuel de la capsule combo
+    const chip = document.getElementById('hudComboChip');
+    if (chip) gsap.fromTo(chip, { opacity: 0.6 }, { opacity: 1, duration: 0.25, ease: "power1.out" });
+  }
+  */
+}
+
+function startLevel1() { loadLevel(0); }
+
+window.loadLevel = loadLevel;
 
 // === Chargement des images ===
 const BronzeImg  = new Image(); let bronzeReady  = false; BronzeImg.onload  = ()=> bronzeReady  = true; BronzeImg.src  = 'assets/bronze.png';
@@ -1729,6 +1800,7 @@ class Game{
     this.arm=new Arm(this); this.arm.applyCaps(); this.wallet=new Wallet(this); this.wallet.applyCaps(); loadWallet(1); this.hud=new HUD(this); this.spawner=new Spawner(this);
     this.items=[]; this.effects={freeze:0}; this.fx = new FxManager(this);
     this.shake=0; this.bgIndex=0; this.didFirstCatch=false; this.updateBgByScore();
+    loadLevel(currentLevelIndex);
     if (showTitle) this.renderTitle(); else this.render();
   }
   diffMult(){ return Math.pow(CONFIG.spawnRampFactor, Math.floor(this.timeElapsed/CONFIG.spawnRampEverySec)); }
@@ -1949,6 +2021,8 @@ function startGame(){
 
   game = new Game();
   if (game && game.wallet) targetX = game.wallet.x + game.wallet.w / 2;
+
+  startLevel1();
 
   addEvent(document, 'visibilitychange', ()=>{ if (document.hidden && game.state==='playing'){ const now = performance.now(); if (game.ignoreVisibilityUntil && now < game.ignoreVisibilityUntil) return; game.state='paused'; game.renderPause(); } });
 
