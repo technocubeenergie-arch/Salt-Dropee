@@ -143,20 +143,28 @@ function applyLevelBackground(src) {
 }
 
 // --- Wallet ---
+const ENABLE_SCORE_BASED_WALLET = false;
+
 let walletImage = null;
 
 function setWalletSprite(img) {
   if (!img) return;
   walletImage = img;
-  const walletEntity = typeof game !== 'undefined' ? game?.wallet : null;
+
+  const walletEntity = typeof game !== "undefined" ? game?.wallet : null;
   if (walletEntity?.applyCaps) {
     walletEntity.applyCaps();
   }
+
   if (walletEntity) {
     walletEntity.visualScale = 1;
     if (window.gsap) {
       gsap.fromTo(walletEntity, { visualScale: 0.95 }, { visualScale: 1, duration: 0.25, ease: "back.out(2)" });
     }
+  }
+
+  if (window.wallet && window.gsap) {
+    gsap.fromTo(window.wallet, { scale: 0.95 }, { scale: 1, duration: 0.25, ease: "back.out(2)" });
   }
 }
 
@@ -235,7 +243,7 @@ async function applyWalletForLevel(levelNumber) {
   const numeric = Math.floor(Number(levelNumber) || 1);
   const index = Math.max(0, Math.min(LEVELS.length - 1, numeric - 1));
   const assets = await ensureLevelAssets(index);
-  if (assets.wallet) {
+  if (ENABLE_SCORE_BASED_WALLET && assets.wallet) {
     setWalletSprite(assets.wallet);
   }
   return assets;
@@ -1858,7 +1866,23 @@ class Wallet{
     this.y = BASE_H - this.h - CONFIG.wallet.bottomOffset;
     targetX = this.x + this.w / 2;
   }
-  evolveByScore(score){ const th=CONFIG.evolveThresholds; let lvl=1; for (let i=0;i<th.length;i++){ if (score>=th[i]) lvl=i+1; } if (lvl!==this.level){ this.level=lvl; applyWalletForLevel(lvl); this.applyCaps(); this.g.fx.burst(this.x, this.y, '#ffcd75', 12); playSound("bonusok"); this.squashTimer=0.12; } }
+  evolveByScore(score){
+    const th = CONFIG.evolveThresholds;
+    let lvl = 1;
+    for (let i = 0; i < th.length; i++) {
+      if (score >= th[i]) lvl = i + 1;
+    }
+    if (lvl !== this.level) {
+      this.level = lvl;
+      if (ENABLE_SCORE_BASED_WALLET) {
+        applyWalletForLevel(lvl);
+        this.applyCaps();
+        this.g.fx.burst(this.x, this.y, '#ffcd75', 12);
+        playSound("bonusok");
+        this.squashTimer = 0.12;
+      }
+    }
+  }
   update(dt){
     const sens = this.g.settings.sensitivity || 1.0;
     const bounds = computeWalletCenterBounds(this);
@@ -2258,7 +2282,18 @@ class Game{
     if (showTitle) this.renderTitle(); else this.render();
   }
   diffMult(){ return Math.pow(CONFIG.spawnRampFactor, Math.floor(this.timeElapsed/CONFIG.spawnRampEverySec)); }
-  updateBgByScore(){ const th=CONFIG.evolveThresholds; let idx=0; for (let i=0;i<th.length;i++){ if (this.score>=th[i]) idx=i; } if (idx!==this.bgIndex){ this.bgIndex=idx; this.wallet.evolveByScore(this.score); this.levelReached = Math.max(this.levelReached, this.wallet.level); } }
+  updateBgByScore(){
+    const th = CONFIG.evolveThresholds;
+    let idx = 0;
+    for (let i = 0; i < th.length; i++) {
+      if (this.score >= th[i]) idx = i;
+    }
+    if (idx !== this.bgIndex) {
+      this.bgIndex = idx;
+      this.wallet.evolveByScore(this.score);
+      this.levelReached = Math.max(this.levelReached, this.wallet.level);
+    }
+  }
   start(){
     const levelCfg = LEVELS[currentLevelIndex];
     if (levelCfg?.background) {
