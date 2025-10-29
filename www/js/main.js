@@ -428,7 +428,36 @@ let drawLegacyBg = false; // doit rester false
 
 // --- État "niveaux" ---
 let currentLevelIndex = 0; // 0 → LEVELS[0] = niveau 1
-let levelState = { targetScore: 0, timeLimit: 0, lives: 0 };
+
+// --- Feature flag : activer/désactiver d'un coup les diffs par niveau ---
+const ENABLE_LEVEL_DIFFS = true; // mettre à false pour revenir au comportement précédent
+
+// Si votre jeu utilise déjà GSAP pour faire tomber les items, laissez true.
+// Si la chute est gérée en physique manuelle dans update(), laissez false.
+const USE_GSAP_FALL = true;
+
+const DEFAULT_LEVEL_WEIGHTS = { good: 0.7, bad: 0.3 };
+const DEFAULT_BONUS_RATES = { magnetRate: 0.06, shieldRate: 0.06, x2Rate: 0.05 };
+
+const existingLevelState = (typeof levelState === 'object' && levelState) || {};
+// --- State associé à la difficulté du niveau courant ---
+/* global */ const levelState = Object.assign(existingLevelState, {
+  targetScore: existingLevelState.targetScore ?? 0,
+  timeLimit: existingLevelState.timeLimit ?? 0,
+  lives: existingLevelState.lives ?? 0,
+  // valeurs par défaut (fallback si un champ manque dans LEVELS)
+  fallSpeedBase: existingLevelState.fallSpeedBase ?? 1.0,
+  fallSpeedRamp: existingLevelState.fallSpeedRamp ?? 0.0,            // ex: 0.004 = +0.4%/s
+  spawnIntervalMs: existingLevelState.spawnIntervalMs ?? 900,
+  maxConcurrentItems: existingLevelState.maxConcurrentItems ?? 6,
+  weights: Object.assign({}, existingLevelState.weights || DEFAULT_LEVEL_WEIGHTS),
+  bonusRates: Object.assign({}, existingLevelState.bonusRates || DEFAULT_BONUS_RATES),
+  levelStartTime: existingLevelState.levelStartTime ?? performance.now(),
+});
+
+if (typeof window !== 'undefined') {
+  window.levelState = levelState;
+}
 
 // --- Game state & guards ---
 let gameState = "playing";  // "playing" | "paused" | "inter"
@@ -451,7 +480,11 @@ let inputEnabled = true;
 function stopSpawningItems(){
   spawningEnabled = false;
   if (game?.spawner) {
-    game.spawner.acc = 0;
+    if (typeof game.spawner.reset === 'function') {
+      game.spawner.reset();
+    } else {
+      game.spawner.acc = 0;
+    }
   }
 }
 
@@ -493,7 +526,11 @@ function hardResetRuntime(){
     game.items.length = 0;
   }
   if (game?.spawner) {
-    game.spawner.acc = 0;
+    if (typeof game.spawner.reset === 'function') {
+      game.spawner.reset();
+    } else {
+      game.spawner.acc = 0;
+    }
   }
   if (game?.fx?.clearAll) {
     game.fx.clearAll();
@@ -503,6 +540,27 @@ function hardResetRuntime(){
   if (window.gsap) {
     gsap.killTweensOf("*");
   }
+}
+
+function applyDifficultyParams(L = {}) {
+  const cfg = L || {};
+  const fallSpeedBase = Number(cfg.fallSpeedBase);
+  const fallSpeedRamp = Number(cfg.fallSpeedRamp);
+  const spawnInterval = Number(cfg.spawnIntervalMs);
+  const maxItems = Number(cfg.maxConcurrentItems);
+  levelState.fallSpeedBase      = Number.isFinite(fallSpeedBase) ? fallSpeedBase : 1.0;
+  levelState.fallSpeedRamp      = Number.isFinite(fallSpeedRamp) ? fallSpeedRamp : 0.0;
+  levelState.spawnIntervalMs    = Number.isFinite(spawnInterval) ? spawnInterval : 900;
+  levelState.maxConcurrentItems = Number.isFinite(maxItems) ? maxItems : 6;
+  levelState.weights            = Object.assign({}, cfg.weights ?? DEFAULT_LEVEL_WEIGHTS);
+  levelState.bonusRates         = Object.assign({}, cfg.bonusRates ?? DEFAULT_BONUS_RATES);
+}
+
+function currentFallSpeed(){
+  if (!ENABLE_LEVEL_DIFFS) return 1.0;
+  const elapsedSec = (performance.now() - levelState.levelStartTime) / 1000;
+  const ramp = 1 + (levelState.fallSpeedRamp * elapsedSec);
+  return Math.max(0, levelState.fallSpeedBase * ramp);
 }
 
 async function loadLevel(index, options = {}) {
@@ -549,6 +607,17 @@ async function loadLevel(index, options = {}) {
     setWalletSprite(wallet);
   }
   setLevelMusic(music);
+
+  if (ENABLE_LEVEL_DIFFS) {
+    applyDifficultyParams(L);
+  } else {
+    applyDifficultyParams({});
+  }
+
+  levelState.levelStartTime = performance.now();
+  if (game?.spawner?.reset) {
+    game.spawner.reset();
+  }
 
   if (index + 1 < LEVELS.length) {
     ensureLevelAssets(index + 1);
@@ -1565,6 +1634,10 @@ function fxMagnetActive(wallet, fxManager) {
 const snap = v => Math.round(v);
 const rand = (a,b)=> Math.random()*(b-a)+a;
 function choiceWeighted(entries){ const total = entries.reduce((s,e)=>s+e.w,0); let r = Math.random()*total; for (const e of entries){ if ((r-=e.w) <= 0) return e.k; } return entries[entries.length-1].k; }
+function randomBool(p){
+  const prob = Number.isFinite(p) ? p : Number(p) || 0;
+  return Math.random() < prob;
+}
 
 function computeWalletCenterBounds(wallet){
   const overflow = 60;
@@ -1619,6 +1692,10 @@ function setupHiDPI(){
 
 const BASE_W = CONFIG.portraitBase.w;
 const BASE_H = CONFIG.portraitBase.h;
+const BASE_ITEM_VY = (BASE_H - 80) / Math.max(0.001, (CONFIG.fallDuration ?? 3));
+const MAX_MANUAL_VY = BASE_ITEM_VY * 3;
+const FALL_MIN_DURATION = 0.35;
+const FALL_MAX_DURATION = 6.0;
 let SCALE = 1, VIEW_W = BASE_W, VIEW_H = BASE_H;
 let targetX = BASE_W / 2;
 const WR = { x: 0, y: 0, w: 0, h: 0 };
@@ -1688,7 +1765,11 @@ function resumeGameplay(){
   if (game) {
     game.state = "playing";
     if (game.spawner) {
-      game.spawner.acc = 0;
+      if (typeof game.spawner.reset === 'function') {
+        game.spawner.reset();
+      } else {
+        game.spawner.acc = 0;
+      }
     }
     game.lastTime = performance.now();
     window.__saltDroppeeLoopStarted = false;
@@ -2015,9 +2096,41 @@ class FallingItem{
     this.isNegative = NEGATIVE_TYPES.has(subtype);
 
     const endY = BASE_H - 80;
-    const duration = CONFIG.fallDuration ?? 2.5;
+    const distance = Math.max(0, endY - this.y);
+    this.manualEndY = endY;
+    this.vyBase = BASE_ITEM_VY;
+    this._spawnSpeedFactor = 1.0;
 
-    if (gsap && typeof gsap.to === 'function'){
+    const useTween = USE_GSAP_FALL && gsap && typeof gsap.to === 'function';
+    if (!ENABLE_LEVEL_DIFFS) {
+      const legacyDuration = CONFIG.fallDuration ?? 2.5;
+      if (useTween) {
+        this._tween = gsap.to(this, {
+          y: endY,
+          scale: 1,
+          duration: legacyDuration,
+          ease: "power2.in",
+          onComplete: () => {
+            this.dead = true;
+          }
+        });
+        this.usingManualFall = false;
+      } else {
+        this._tween = null;
+        this.usingManualFall = true;
+        const vyLegacy = distance / Math.max(legacyDuration, 0.001);
+        if (Number.isFinite(vyLegacy) && vyLegacy > 0) {
+          this.vyBase = vyLegacy;
+        }
+      }
+      return;
+    }
+
+    this._spawnSpeedFactor = currentFallSpeed();
+
+    if (useTween) {
+      const velocity = Math.max(1, this.vyBase * this._spawnSpeedFactor);
+      const duration = clamp(distance / velocity, FALL_MIN_DURATION, FALL_MAX_DURATION);
       this._tween = gsap.to(this, {
         y: endY,
         scale: 1,
@@ -2027,13 +2140,29 @@ class FallingItem{
           this.dead = true;
         }
       });
+      this.usingManualFall = false;
     } else {
-      this.y = endY;
-      this.scale = 1;
+      this._tween = null;
+      this.usingManualFall = true;
     }
   }
 
   update(dt){
+    if (!this.alive || this.dead) return;
+
+    if (this.usingManualFall || !this._tween) {
+      const speedFactor = ENABLE_LEVEL_DIFFS ? currentFallSpeed() : 1.0;
+      const vy = clamp(this.vyBase * speedFactor, 0, MAX_MANUAL_VY);
+      this.y += vy * dt;
+      if (this.y >= this.manualEndY) {
+        this.y = this.manualEndY;
+        this.scale = 1;
+        this.dead = true;
+      } else {
+        this.updateScaleFromVerticalPosition();
+      }
+    }
+
     if (!this.alive || this.dead) return;
 
     const damping = Math.exp(-8 * dt);
@@ -2117,10 +2246,72 @@ function spawnItem(gameInstance, kind, subtype, x, y, extra = {}) {
   return item;
 }
 
+function spawnGoodToken(gameInstance, x, y) {
+  if (!gameInstance) return null;
+  const rar = CONFIG.rarity || {};
+  const entries = [
+    { k: 'bronze',  w: rar.bronze ?? 0.45 },
+    { k: 'silver',  w: rar.silver ?? 0.30 },
+    { k: 'gold',    w: rar.gold ?? 0.20 },
+    { k: 'diamond', w: rar.diamond ?? 0.05 },
+  ].filter(entry => (entry.w ?? 0) > 0);
+  if (!entries.length) {
+    entries.push({ k: 'bronze', w: 1 });
+  }
+  const subtype = choiceWeighted(entries);
+  return spawnItem(gameInstance, 'good', subtype, x, y);
+}
+
+function spawnBadToken(gameInstance, x, y) {
+  if (!gameInstance) return null;
+  const bw = CONFIG.badWeights || {};
+  const entries = [
+    { k: 'bomb',        w: bw.bomb ?? 0.35 },
+    { k: 'shitcoin',    w: bw.shitcoin ?? 0.25 },
+    { k: 'anvil',       w: bw.anvil ?? 0.20 },
+    { k: 'rugpull',     w: bw.rugpull ?? 0.10 },
+    { k: 'fakeAirdrop', w: bw.fakeAirdrop ?? 0.10 },
+  ].filter(entry => (entry.w ?? 0) > 0);
+  if (!entries.length) {
+    entries.push({ k: 'bomb', w: 1 });
+  }
+  const subtype = choiceWeighted(entries);
+  return spawnItem(gameInstance, 'bad', subtype, x, y);
+}
+
+function spawnBonus(gameInstance, subtype, x, y) {
+  if (!gameInstance || !subtype) return null;
+  return spawnItem(gameInstance, 'power', subtype, x, y);
+}
+
 class Spawner{
-  constructor(game){ this.g=game; this.acc=0; }
+  constructor(game){ this.g=game; this.acc=0; this.timeSinceLastSpawnMs=0; }
+  reset(){ this.acc = 0; this.timeSinceLastSpawnMs = 0; }
+  countActiveItems(){
+    const list = Array.isArray(this.g?.items) ? this.g.items : [];
+    let count = 0;
+    for (let i = 0; i < list.length; i++) {
+      const it = list[i];
+      if (it && !it.dead && it.alive !== false) count++;
+    }
+    return count;
+  }
   update(dt){
     if (!spawningEnabled || gameState !== "playing") return;
+    if (ENABLE_LEVEL_DIFFS){
+      const intervalRaw = Number(levelState.spawnIntervalMs);
+      const maxRaw = Number(levelState.maxConcurrentItems);
+      const interval = Math.max(16, Number.isFinite(intervalRaw) ? intervalRaw : 900);
+      const maxActive = Math.max(1, Number.isFinite(maxRaw) ? maxRaw : 6);
+      this.timeSinceLastSpawnMs += dt * 1000;
+      let activeCount = this.countActiveItems();
+      while (this.timeSinceLastSpawnMs >= interval && activeCount < maxActive){
+        this.spawnOne();
+        this.timeSinceLastSpawnMs -= interval;
+        activeCount = this.countActiveItems();
+      }
+      return;
+    }
     const diff=this.g.diffMult();
     this.acc += dt * (CONFIG.baseSpawnPerSec * diff);
     while (this.acc >= 1){
@@ -2130,6 +2321,28 @@ class Spawner{
   }
   spawnOne(){
     const x = this.g.arm.spawnX(); const y = this.g.arm.spawnY();
+    if (ENABLE_LEVEL_DIFFS){
+      const rates = levelState.bonusRates || DEFAULT_BONUS_RATES;
+      if (randomBool(rates.magnetRate)) { spawnBonus(this.g,'magnet',x,y); return; }
+      if (randomBool(rates.shieldRate)) { spawnBonus(this.g,'shield',x,y); return; }
+      if (randomBool(rates.x2Rate)) { spawnBonus(this.g,'x2',x,y); return; }
+
+      const weights = levelState.weights || DEFAULT_LEVEL_WEIGHTS;
+      const goodRaw = Number(weights.good);
+      const badRaw = Number(weights.bad);
+      const goodChance = clamp(Number.isFinite(goodRaw) ? goodRaw : DEFAULT_LEVEL_WEIGHTS.good, 0, 1);
+      const badChance = clamp(Number.isFinite(badRaw) ? badRaw : DEFAULT_LEVEL_WEIGHTS.bad, 0, 1);
+      const roll = Math.random();
+      if (roll < goodChance) {
+        spawnGoodToken(this.g, x, y);
+      } else if (roll < goodChance + badChance) {
+        spawnBadToken(this.g, x, y);
+      } else {
+        spawnBadToken(this.g, x, y);
+      }
+      return;
+    }
+
     let pGood=0.7, pBad=0.2, pPow=0.1; if (this.g.timeElapsed>30){ pGood=0.6; pBad=0.3; pPow=0.1; }
     const r=Math.random();
     if (r < pGood){ const rar = CONFIG.rarity; const sub = choiceWeighted([{k:'bronze',w:rar.bronze},{k:'silver',w:rar.silver},{k:'gold',w:rar.gold},{k:'diamond',w:rar.diamond}]); spawnItem(this.g,'good',sub,x,y); }
@@ -2275,7 +2488,7 @@ class Game{
     }
     comboVis.scale = 1;
     comboVis.flash = 0;
-    this.arm=new Arm(this); this.arm.applyCaps(); this.wallet=new Wallet(this); this.wallet.applyCaps(); applyWalletForLevel(1); this.hud=new HUD(this); this.spawner=new Spawner(this);
+    this.arm=new Arm(this); this.arm.applyCaps(); this.wallet=new Wallet(this); this.wallet.applyCaps(); applyWalletForLevel(1); this.hud=new HUD(this); this.spawner=new Spawner(this); this.spawner.reset();
     this.items=[]; this.effects={freeze:0}; this.fx = new FxManager(this);
     this.shake=0; this.bgIndex=0; this.didFirstCatch=false; this.updateBgByScore();
     loadLevel(currentLevelIndex, { applyBackground: !showTitle });
