@@ -6,15 +6,232 @@
 const hasTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
 const gsap = window.gsap;
 
-// --- LEVELS: configuration de base (peut être étendue plus tard) ---
+// --- LEVELS: fichiers réels du projet ---
 const LEVELS = [
-  { id: 1, name: "Départ",      targetScore: 200,  timeLimit: 90,  lives: 3 },
-  { id: 2, name: "Initiation",  targetScore: 400,  timeLimit: 90,  lives: 3 },
-  { id: 3, name: "Montée",      targetScore: 700,  timeLimit: 90,  lives: 3 },
-  { id: 4, name: "Maîtrise",    targetScore: 1100, timeLimit: 90,  lives: 3 },
-  { id: 5, name: "Légende",     targetScore: 1600, timeLimit: 90,  lives: 3 }
+  {
+    id: 1, name: "Level 1",
+    background: "assets/fondniveau1.png",
+    walletSprite: "assets/walletniveau1.png",
+    music: "assets/sounds/audioniveau1.mp3",
+    targetScore: 800, timeLimit: 60, lives: 3,
+  },
+  {
+    id: 2, name: "Level 2",
+    background: "assets/fondniveau2.png",
+    walletSprite: "assets/walletniveau2.png",
+    music: "assets/sounds/audioniveau2.mp3",
+    targetScore: 1200, timeLimit: 60, lives: 3,
+  },
+  {
+    id: 3, name: "Level 3",
+    background: "assets/fondniveau3.png",
+    walletSprite: "assets/walletniveau3.png",
+    music: "assets/sounds/audioniveau3.mp3",
+    targetScore: 1600, timeLimit: 60, lives: 3,
+  },
+  {
+    id: 4, name: "Level 4",
+    background: "assets/fondniveau4.png",
+    walletSprite: "assets/walletniveau4.png",
+    music: "assets/sounds/audioniveau4.mp3",
+    targetScore: 2000, timeLimit: 60, lives: 3,
+  },
+  {
+    id: 5, name: "Level 5",
+    background: "assets/fondniveau5.png",
+    walletSprite: "assets/walletniveau5.png",
+    music: "assets/sounds/audioniveau5.mp3",
+    targetScore: 2500, timeLimit: 60, lives: 3,
+  },
 ];
-// D'autres champs pourront être ajoutés plus tard (spawnRates, bg, music, etc.) sans effet immédiat.
+
+// --- Cache d'assets par niveau ---
+const levelAssets = {}; // index -> { bg:Image, wallet:Image, music:HTMLAudioElement|null }
+
+// Précharge et renvoie {bg, wallet, music}
+function preloadLevelAssets(levelCfg) {
+  const tasks = [];
+
+  // Image de fond
+  const bg = new Image();
+  bg.src = levelCfg.background;
+  tasks.push(new Promise(res => { bg.onload = res; bg.onerror = res; }));
+
+  // Image de wallet
+  const wallet = new Image();
+  wallet.src = levelCfg.walletSprite;
+  tasks.push(new Promise(res => { wallet.onload = res; wallet.onerror = res; }));
+
+  // Musique (préparée mais non jouée ici)
+  let music = null;
+  if (levelCfg.music) {
+    music = new Audio(levelCfg.music);
+    music.loop = true;
+    music.preload = "auto";
+    tasks.push(Promise.resolve());
+  }
+
+  return Promise.all(tasks).then(() => ({ bg, wallet, music }));
+}
+
+async function ensureLevelAssets(index) {
+  if (!levelAssets[index]) {
+    const levelCfg = LEVELS[index];
+    if (!levelCfg) return { bg: null, wallet: null, music: null };
+    levelAssets[index] = await preloadLevelAssets(levelCfg);
+  }
+  return levelAssets[index];
+}
+
+// --- Fond (HTML) ---
+function setBackgroundImage(img) {
+  if (!img) return;
+  const el = document.getElementById('bgLayer');
+  if (!el) return;
+  el.style.backgroundImage = `url("${img.src}")`;
+  requestAnimationFrame(() => {
+    el.style.opacity = 1;
+  });
+}
+
+function fadeOutBackgroundThen(cb) {
+  const el = document.getElementById('bgLayer');
+  if (!el) {
+    if (cb) cb();
+    return;
+  }
+  el.style.opacity = 0;
+  setTimeout(() => {
+    if (cb) cb();
+  }, 250);
+}
+
+let hasBackgroundImage = false;
+
+function applyLevelBackground(img) {
+  if (!img) return;
+  if (!hasBackgroundImage) {
+    setBackgroundImage(img);
+    hasBackgroundImage = true;
+  } else {
+    fadeOutBackgroundThen(() => setBackgroundImage(img));
+  }
+}
+
+// --- Wallet ---
+let walletImage = null;
+
+function setWalletSprite(img) {
+  if (!img) return;
+  walletImage = img;
+  const walletEntity = typeof game !== 'undefined' ? game?.wallet : null;
+  if (walletEntity?.applyCaps) {
+    walletEntity.applyCaps();
+  }
+  if (walletEntity) {
+    walletEntity.visualScale = 1;
+    if (window.gsap) {
+      gsap.fromTo(walletEntity, { visualScale: 0.95 }, { visualScale: 1, duration: 0.25, ease: "back.out(2)" });
+    }
+  }
+}
+
+// --- Musique ---
+let currentMusic = null;
+let musicVolume = 0.6;
+let musicEnabled = true;
+if (typeof window.isSoundEnabled === 'function') {
+  try {
+    musicEnabled = !!window.isSoundEnabled();
+  } catch (_) {}
+}
+
+function tryFadeOut(aud) {
+  if (!aud) return;
+  if (!window.gsap) {
+    try {
+      aud.pause();
+      aud.currentTime = 0;
+    } catch (_) {}
+    return;
+  }
+  gsap.to(aud, {
+    volume: 0,
+    duration: 0.4,
+    ease: "power1.out",
+    onComplete: () => {
+      try {
+        aud.pause();
+        aud.currentTime = 0;
+      } catch (_) {}
+    }
+  });
+}
+
+function safePlayMusic(aud) {
+  if (!aud || !musicEnabled) return;
+  aud.volume = 0;
+  aud.loop = true;
+  aud.play().then(() => {
+    if (window.gsap) {
+      gsap.to(aud, { volume: musicVolume, duration: 0.6, ease: "power2.out" });
+    } else {
+      aud.volume = musicVolume;
+    }
+  }).catch(() => {});
+}
+
+function setLevelMusic(audio) {
+  if (currentMusic && currentMusic !== audio) {
+    tryFadeOut(currentMusic);
+  }
+  currentMusic = audio || null;
+  if (currentMusic) {
+    try {
+      currentMusic.currentTime = 0;
+    } catch (_) {}
+  }
+  safePlayMusic(currentMusic);
+}
+
+function unlockMusicOnce() {
+  const once = () => {
+    if (currentMusic) {
+      safePlayMusic(currentMusic);
+    }
+  };
+  window.addEventListener('pointerdown', once, { once: true });
+  window.addEventListener('touchstart', once, { once: true });
+  window.addEventListener('mousedown', once, { once: true });
+}
+
+window.addEventListener('load', unlockMusicOnce);
+
+async function applyWalletForLevel(levelNumber) {
+  const numeric = Math.floor(Number(levelNumber) || 1);
+  const index = Math.max(0, Math.min(LEVELS.length - 1, numeric - 1));
+  const assets = await ensureLevelAssets(index);
+  if (assets.wallet) {
+    setWalletSprite(assets.wallet);
+  }
+  return assets;
+}
+
+const originalSetSoundEnabled = typeof window.setSoundEnabled === 'function'
+  ? window.setSoundEnabled
+  : null;
+
+window.setSoundEnabled = function patchedSetSoundEnabled(enabled) {
+  if (originalSetSoundEnabled) {
+    originalSetSoundEnabled(enabled);
+  }
+  musicEnabled = !!enabled;
+  if (!musicEnabled) {
+    tryFadeOut(currentMusic);
+  } else {
+    safePlayMusic(currentMusic);
+  }
+};
 
 window.LEVELS = LEVELS;
 
@@ -254,20 +471,17 @@ function hardResetRuntime(){
   }
 }
 
-function loadLevel(index) {
-  // garde-fou
+async function loadLevel(index) {
   if (index < 0 || index >= LEVELS.length) return;
 
   const L = LEVELS[index];
   currentLevelIndex = index;
   window.currentLevelIndex = currentLevelIndex;
 
-  // Copier les valeurs utiles dans levelState
   levelState.targetScore = L.targetScore;
   levelState.timeLimit   = L.timeLimit;
   levelState.lives       = L.lives;
 
-  // --- Reset "compteurs de partie" (SANS toucher au moteur de jeu) ---
   score    = 0;
   streak   = 0;
   combo    = 1.0;
@@ -286,23 +500,27 @@ function loadLevel(index) {
     instance.targetScore = L.targetScore;
   }
 
-  // Rafraîchir le HUD si vous avez des setters dédiés (sinon votre updateHUD() fera le reste)
+  const assets = await ensureLevelAssets(index);
+  const { bg, wallet, music } = assets;
+
+  if (bg) {
+    applyLevelBackground(bg);
+  }
+  if (wallet) {
+    setWalletSprite(wallet);
+  }
+  setLevelMusic(music);
+
+  if (index + 1 < LEVELS.length) {
+    ensureLevelAssets(index + 1);
+  }
+
   if (typeof setHUDScore === "function") setHUDScore(score);
   if (typeof setHUDLives === "function") setHUDLives(lives);
   if (typeof setHUDTime  === "function") setHUDTime(timeLeft);
-
-  // (Option non-bloquante) : petite bannière “Niveau X — {name}”
-  // → Laisser commenté si vous ne voulez rien afficher pour le moment.
-  /*
-  if (window.gsap && document.getElementById('hud')) {
-    // Exemple minimal : flash visuel de la capsule combo
-    const chip = document.getElementById('hudComboChip');
-    if (chip) gsap.fromTo(chip, { opacity: 0.6 }, { opacity: 1, duration: 0.25, ease: "power1.out" });
-  }
-  */
 }
 
-function startLevel1() { loadLevel(0); }
+async function startLevel1() { await loadLevel(0); }
 
 function checkEndConditions(){
   if (!canEndLevel()) return;
@@ -969,60 +1187,6 @@ Promise.all([
   new Promise(r => Hand.pinch.onload = r),
 ]).then(()=> Hand.ready = true);
 
-// --- Portefeuille
-const wallets = [
-  'assets/walletniveau1.png',
-  'assets/walletniveau2.png',
-  'assets/walletniveau3.png',
-  'assets/walletniveau4.png',
-  'assets/walletniveau4.png',
-];
-
-let currentLevel = 1;
-let walletImage = null;
-let currentWalletSrc = '';
-
-function loadWallet(level = 1) {
-  const previousLevel = currentLevel;
-  const numericLevel = Number(level);
-  const fallbackLevel = previousLevel || 1;
-  const targetLevel = Math.max(1, Math.min(wallets.length, Math.floor(Number.isFinite(numericLevel) ? numericLevel : fallbackLevel)));
-  currentLevel = targetLevel;
-  const nextSrc = wallets[targetLevel - 1];
-  const shouldReload = currentWalletSrc !== nextSrc;
-
-  if (shouldReload) {
-    currentWalletSrc = nextSrc;
-    const img = new Image();
-    img.onload = () => {
-      walletImage = img;
-      if (game?.wallet) {
-        game.wallet.applyCaps();
-      }
-    };
-    img.src = nextSrc;
-    if (img.complete && img.naturalWidth > 0) {
-      img.onload();
-    }
-  }
-
-  if (game?.wallet && (shouldReload || previousLevel !== targetLevel)) {
-    const targetWallet = game.wallet;
-    if (gsap && typeof gsap.fromTo === 'function') {
-      targetWallet.visualScale = 0.5;
-      gsap.fromTo(targetWallet, { visualScale: 0.5 }, {
-        visualScale: 1,
-        duration: 0.4,
-        ease: 'back.out(2)',
-      });
-    } else {
-      targetWallet.visualScale = 1;
-    }
-  }
-}
-
-loadWallet(currentLevel);
-
 // Pré-decode (si supporté)
  [GoldImg, SilverImg, BronzeImg, DiamondImg, BombImg,
  ShitcoinImg, RugpullImg, FakeADImg, AnvilImg,
@@ -1448,12 +1612,12 @@ function resize(){
 }
 
 // --- Écran intermédiaire : show/hide ---
-function goToNextLevel(){
+async function goToNextLevel(){
   const next = currentLevelIndex + 1;
   const lastIndex = Math.max(0, LEVELS.length - 1);
 
   hardResetRuntime();
-  loadLevel(Math.min(next, lastIndex));
+  await loadLevel(Math.min(next, lastIndex));
   resumeGameplay();
 }
 
@@ -1496,13 +1660,13 @@ function showInterLevelScreen(result="win"){
 
   if (btnNext){
     btnNext.textContent = (result === "win") ? "Niveau suivant" : "Rejouer";
-    btnNext.onclick = () => {
+    btnNext.onclick = async () => {
       hideInterLevelScreen();
       if (result === "win"){
-        goToNextLevel();
+        await goToNextLevel();
       } else {
         hardResetRuntime();
-        loadLevel(currentLevelIndex);
+        await loadLevel(currentLevelIndex);
         resumeGameplay();
       }
     };
@@ -1649,7 +1813,7 @@ class Wallet{
     this.y = BASE_H - this.h - CONFIG.wallet.bottomOffset;
     targetX = this.x + this.w / 2;
   }
-  evolveByScore(score){ const th=CONFIG.evolveThresholds; let lvl=1; for (let i=0;i<th.length;i++){ if (score>=th[i]) lvl=i+1; } if (lvl!==this.level){ this.level=lvl; loadWallet(lvl); this.applyCaps(); this.g.fx.burst(this.x, this.y, '#ffcd75', 12); playSound("bonusok"); this.squashTimer=0.12; } }
+  evolveByScore(score){ const th=CONFIG.evolveThresholds; let lvl=1; for (let i=0;i<th.length;i++){ if (score>=th[i]) lvl=i+1; } if (lvl!==this.level){ this.level=lvl; applyWalletForLevel(lvl); this.applyCaps(); this.g.fx.burst(this.x, this.y, '#ffcd75', 12); playSound("bonusok"); this.squashTimer=0.12; } }
   update(dt){
     const sens = this.g.settings.sensitivity || 1.0;
     const bounds = computeWalletCenterBounds(this);
@@ -2042,7 +2206,7 @@ class Game{
     }
     comboVis.scale = 1;
     comboVis.flash = 0;
-    this.arm=new Arm(this); this.arm.applyCaps(); this.wallet=new Wallet(this); this.wallet.applyCaps(); loadWallet(1); this.hud=new HUD(this); this.spawner=new Spawner(this);
+    this.arm=new Arm(this); this.arm.applyCaps(); this.wallet=new Wallet(this); this.wallet.applyCaps(); applyWalletForLevel(1); this.hud=new HUD(this); this.spawner=new Spawner(this);
     this.items=[]; this.effects={freeze:0}; this.fx = new FxManager(this);
     this.shake=0; this.bgIndex=0; this.didFirstCatch=false; this.updateBgByScore();
     loadLevel(currentLevelIndex);
@@ -2305,7 +2469,14 @@ function startGame(){
   game = new Game();
   if (game && game.wallet) targetX = game.wallet.x + game.wallet.w / 2;
 
-  startLevel1();
+  startLevel1().then(() => {
+    if (!game) return;
+    if (typeof game.renderTitle === 'function' && game.state === 'title') {
+      game.renderTitle();
+    } else if (typeof game.render === 'function') {
+      game.render();
+    }
+  });
 
   addEvent(document, 'visibilitychange', ()=>{ if (document.hidden && game.state==='playing'){ const now = performance.now(); if (game.ignoreVisibilityUntil && now < game.ignoreVisibilityUntil) return; game.state='paused'; game.renderPause(); } });
 
