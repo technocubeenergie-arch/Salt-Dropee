@@ -6,6 +6,8 @@
 const hasTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
 const gsap = window.gsap;
 
+console.info("[engine] fall engine: MANUAL");
+
 // --- LEVELS: fichiers réels du projet ---
 const LEVELS = [
   {
@@ -426,15 +428,61 @@ let game;
 
 let drawLegacyBg = false; // doit rester false
 
+let isMainLoopRunning = false;
+let lastLoopTimeMs = 0;
+
+function mainLoop(ts) {
+  if (!isMainLoopRunning) {
+    return;
+  }
+
+  if (typeof requestAnimationFrame !== "function") {
+    isMainLoopRunning = false;
+    lastLoopTimeMs = 0;
+    return;
+  }
+
+  if (!game || typeof game.step !== "function") {
+    lastLoopTimeMs = ts;
+    requestAnimationFrame(mainLoop);
+    return;
+  }
+
+  const dtMs = lastLoopTimeMs ? (ts - lastLoopTimeMs) : 16.67;
+  lastLoopTimeMs = ts;
+  const safeMs = Math.max(0, Math.min(dtMs, 33));
+  const dtSec = safeMs / 1000;
+
+  if (game.state === "playing" && gameState === "playing") {
+    game.step(dtSec);
+    if (typeof game.render === "function") {
+      game.render();
+    }
+  }
+
+  if (isMainLoopRunning) {
+    requestAnimationFrame(mainLoop);
+  }
+}
+
+function startLoopOnce() {
+  if (isMainLoopRunning) return;
+  if (typeof requestAnimationFrame !== "function") return;
+  isMainLoopRunning = true;
+  lastLoopTimeMs = 0;
+  requestAnimationFrame(mainLoop);
+}
+
+function stopMainLoop() {
+  isMainLoopRunning = false;
+  lastLoopTimeMs = 0;
+}
+
 // --- État "niveaux" ---
 let currentLevelIndex = 0; // 0 → LEVELS[0] = niveau 1
 
 // --- Feature flag : activer/désactiver d'un coup les diffs par niveau ---
 const ENABLE_LEVEL_DIFFS = true; // mettre à false pour revenir au comportement précédent
-
-// Si votre jeu utilise déjà GSAP pour faire tomber les items, laissez true.
-// Si la chute est gérée en physique manuelle dans update(), laissez false.
-const USE_GSAP_FALL = false;
 
 const DEFAULT_LEVEL_WEIGHTS = { good: 0.7, bad: 0.3 };
 const DEFAULT_BONUS_RATES = { magnetRate: 0.06, shieldRate: 0.06, x2Rate: 0.05 };
@@ -660,7 +708,7 @@ function endLevel(result){
     }
   }
 
-  window.__saltDroppeeLoopStarted = false;
+  stopMainLoop();
 
   showInterLevelScreen(result);
 }
@@ -1694,11 +1742,34 @@ const BASE_W = CONFIG.portraitBase.w;
 const BASE_H = CONFIG.portraitBase.h;
 const BASE_ITEM_VY = (BASE_H - 80) / Math.max(0.001, (CONFIG.fallDuration ?? 3));
 const MAX_MANUAL_VY = BASE_ITEM_VY * 3;
-const FALL_MIN_DURATION = 0.35;
-const FALL_MAX_DURATION = 6.0;
 let SCALE = 1, VIEW_W = BASE_W, VIEW_H = BASE_H;
 let targetX = BASE_W / 2;
 const WR = { x: 0, y: 0, w: 0, h: 0 };
+
+function scheduleFall(item, opts = {}) {
+  void item;
+  void opts;
+  return null;
+}
+
+function applyManualFall(item, dt) {
+  if (!item || !item.alive || item.dead) return;
+
+  const speedFactor = ENABLE_LEVEL_DIFFS ? currentFallSpeed() : 1.0;
+  const baseVy = Number.isFinite(item.vyBase) ? item.vyBase : BASE_ITEM_VY;
+  const vy = clamp(baseVy * speedFactor, 0, MAX_MANUAL_VY);
+  const endY = Number.isFinite(item.manualEndY) ? item.manualEndY : (BASE_H - 80);
+
+  item.y += vy * dt;
+
+  if (item.y >= endY) {
+    item.y = endY;
+    item.scale = 1;
+    item.dead = true;
+  } else if (typeof item.updateScaleFromVerticalPosition === "function") {
+    item.updateScaleFromVerticalPosition();
+  }
+}
 
 function positionHUD(){
   const canvasEl = document.getElementById('gameCanvas');
@@ -1771,13 +1842,12 @@ function resumeGameplay(){
         game.spawner.acc = 0;
       }
     }
-    game.lastTime = performance.now();
-    window.__saltDroppeeLoopStarted = false;
     score = game.score;
     lives = game.lives;
     timeLeft = game.timeLeft;
-    game.loop();
   }
+
+  startLoopOnce();
 }
 
 function showInterLevelScreen(result="win"){
@@ -2091,77 +2161,26 @@ class FallingItem{
     this.scale = this.spawnScale;
     this.alive = true;
     this._dead = false;
-    this._tween = null;
     this.vx = 0;
     this.isNegative = NEGATIVE_TYPES.has(subtype);
 
     const endY = BASE_H - 80;
-    const distance = Math.max(0, endY - this.y);
     this.manualEndY = endY;
     this.vyBase = BASE_ITEM_VY;
-    this._spawnSpeedFactor = 1.0;
-
-    const useTween = USE_GSAP_FALL && gsap && typeof gsap.to === 'function';
     if (!ENABLE_LEVEL_DIFFS) {
       const legacyDuration = CONFIG.fallDuration ?? 2.5;
-      if (useTween) {
-        this._tween = gsap.to(this, {
-          y: endY,
-          scale: 1,
-          duration: legacyDuration,
-          ease: "power2.in",
-          onComplete: () => {
-            this.dead = true;
-          }
-        });
-        this.usingManualFall = false;
-      } else {
-        this._tween = null;
-        this.usingManualFall = true;
-        const vyLegacy = distance / Math.max(legacyDuration, 0.001);
-        if (Number.isFinite(vyLegacy) && vyLegacy > 0) {
-          this.vyBase = vyLegacy;
-        }
+      const distance = Math.max(0, endY - this.y);
+      const vyLegacy = distance / Math.max(legacyDuration, 0.001);
+      if (Number.isFinite(vyLegacy) && vyLegacy > 0) {
+        this.vyBase = vyLegacy;
       }
-      return;
-    }
-
-    this._spawnSpeedFactor = currentFallSpeed();
-
-    if (useTween) {
-      const velocity = Math.max(1, this.vyBase * this._spawnSpeedFactor);
-      const duration = clamp(distance / velocity, FALL_MIN_DURATION, FALL_MAX_DURATION);
-      this._tween = gsap.to(this, {
-        y: endY,
-        scale: 1,
-        duration,
-        ease: "power2.in",
-        onComplete: () => {
-          this.dead = true;
-        }
-      });
-      this.usingManualFall = false;
-    } else {
-      this._tween = null;
-      this.usingManualFall = true;
     }
   }
 
   update(dt){
     if (!this.alive || this.dead) return;
 
-    if (this.usingManualFall || !this._tween) {
-      const speedFactor = ENABLE_LEVEL_DIFFS ? currentFallSpeed() : 1.0;
-      const vy = clamp(this.vyBase * speedFactor, 0, MAX_MANUAL_VY);
-      this.y += vy * dt;
-      if (this.y >= this.manualEndY) {
-        this.y = this.manualEndY;
-        this.scale = 1;
-        this.dead = true;
-      } else {
-        this.updateScaleFromVerticalPosition();
-      }
-    }
+    applyManualFall(this, dt);
 
     if (!this.alive || this.dead) return;
 
@@ -2206,7 +2225,6 @@ class FallingItem{
     if (value && !this._dead){
       this._dead = true;
       this.alive = false;
-      if (this._tween) this._tween.kill();
     }
   }
 
@@ -2244,6 +2262,14 @@ function spawnItem(gameInstance, kind, subtype, x, y, extra = {}) {
   Object.assign(item, extra);
   gameInstance.items.push(item);
   return item;
+}
+
+function activateItemFall(item) {
+  if (!item) return;
+  const targetY = Number.isFinite(item.manualEndY) ? item.manualEndY : (BASE_H - 80);
+  const distance = Math.max(0, targetY - item.y);
+  const baseDurationSec = distance / Math.max(1, BASE_ITEM_VY);
+  scheduleFall(item, { distancePx: distance, baseDurationSec, ease: "power2.in" });
 }
 
 function spawnGoodToken(gameInstance, x, y) {
@@ -2323,9 +2349,9 @@ class Spawner{
     const x = this.g.arm.spawnX(); const y = this.g.arm.spawnY();
     if (ENABLE_LEVEL_DIFFS){
       const rates = levelState.bonusRates || DEFAULT_BONUS_RATES;
-      if (randomBool(rates.magnetRate)) { spawnBonus(this.g,'magnet',x,y); return; }
-      if (randomBool(rates.shieldRate)) { spawnBonus(this.g,'shield',x,y); return; }
-      if (randomBool(rates.x2Rate)) { spawnBonus(this.g,'x2',x,y); return; }
+      if (randomBool(rates.magnetRate)) { activateItemFall(spawnBonus(this.g,'magnet',x,y)); return; }
+      if (randomBool(rates.shieldRate)) { activateItemFall(spawnBonus(this.g,'shield',x,y)); return; }
+      if (randomBool(rates.x2Rate)) { activateItemFall(spawnBonus(this.g,'x2',x,y)); return; }
 
       const weights = levelState.weights || DEFAULT_LEVEL_WEIGHTS;
       const goodRaw = Number(weights.good);
@@ -2334,20 +2360,20 @@ class Spawner{
       const badChance = clamp(Number.isFinite(badRaw) ? badRaw : DEFAULT_LEVEL_WEIGHTS.bad, 0, 1);
       const roll = Math.random();
       if (roll < goodChance) {
-        spawnGoodToken(this.g, x, y);
+        activateItemFall(spawnGoodToken(this.g, x, y));
       } else if (roll < goodChance + badChance) {
-        spawnBadToken(this.g, x, y);
+        activateItemFall(spawnBadToken(this.g, x, y));
       } else {
-        spawnBadToken(this.g, x, y);
+        activateItemFall(spawnBadToken(this.g, x, y));
       }
       return;
     }
 
     let pGood=0.7, pBad=0.2, pPow=0.1; if (this.g.timeElapsed>30){ pGood=0.6; pBad=0.3; pPow=0.1; }
     const r=Math.random();
-    if (r < pGood){ const rar = CONFIG.rarity; const sub = choiceWeighted([{k:'bronze',w:rar.bronze},{k:'silver',w:rar.silver},{k:'gold',w:rar.gold},{k:'diamond',w:rar.diamond}]); spawnItem(this.g,'good',sub,x,y); }
-    else if (r < pGood + pBad){ const bw = CONFIG.badWeights; const sub = choiceWeighted([{k:'bomb',w:bw.bomb*(this.g.timeElapsed>30?1.2:1)},{k:'shitcoin',w:bw.shitcoin},{k:'anvil',w:bw.anvil},{k:'rugpull',w:bw.rugpull},{k:'fakeAirdrop',w:bw.fakeAirdrop}]); spawnItem(this.g,'bad',sub,x,y); }
-    else { const pu = choiceWeighted([{k:'magnet',w:1},{k:'x2',w:1},{k:'shield',w:1},{k:'timeShard',w:1}]); spawnItem(this.g,'power',pu,x,y); }
+    if (r < pGood){ const rar = CONFIG.rarity; const sub = choiceWeighted([{k:'bronze',w:rar.bronze},{k:'silver',w:rar.silver},{k:'gold',w:rar.gold},{k:'diamond',w:rar.diamond}]); activateItemFall(spawnItem(this.g,'good',sub,x,y)); }
+    else if (r < pGood + pBad){ const bw = CONFIG.badWeights; const sub = choiceWeighted([{k:'bomb',w:bw.bomb*(this.g.timeElapsed>30?1.2:1)},{k:'shitcoin',w:bw.shitcoin},{k:'anvil',w:bw.anvil},{k:'rugpull',w:bw.rugpull},{k:'fakeAirdrop',w:bw.fakeAirdrop}]); activateItemFall(spawnItem(this.g,'bad',sub,x,y)); }
+    else { const pu = choiceWeighted([{k:'magnet',w:1},{k:'x2',w:1},{k:'shield',w:1},{k:'timeShard',w:1}]); activateItemFall(spawnItem(this.g,'power',pu,x,y)); }
   }
 }
 
@@ -2467,7 +2493,7 @@ class Game{
   static instance=null;
   constructor(){ Game.instance=this; this.reset({ showTitle:true }); }
   reset({showTitle=true}={}){
-    window.__saltDroppeeLoopStarted = false;
+    stopMainLoop();
     gameState = "paused";
     levelEnded = false;
     spawningEnabled = false;
@@ -2518,34 +2544,10 @@ class Game{
     spawningEnabled = true;
     enablePlayerInput();
     this.state='playing';
-    this.lastTime=performance.now();
-    this.ignoreClicksUntil=this.lastTime+500;
-    this.ignoreVisibilityUntil=this.lastTime+1000;
-    this.loop();
-  }
-  loop(){
-    if (this.state!=='playing'){
-      window.__saltDroppeeLoopStarted = false;
-      return;
-    }
-    if (window.__saltDroppeeLoopStarted) return;
-    window.__saltDroppeeLoopStarted = true;
-
-    const now=performance.now();
-    const dt=Math.min(0.033, (now-this.lastTime)/1000);
-    this.lastTime=now;
-    this.step(dt);
-    this.render();
-
-    if (this.state!=='playing'){
-      window.__saltDroppeeLoopStarted = false;
-      return;
-    }
-
-    requestAnimationFrame(()=>{
-      window.__saltDroppeeLoopStarted = false;
-      this.loop();
-    });
+    const now = performance.now();
+    this.ignoreClicksUntil = now + 500;
+    this.ignoreVisibilityUntil = now + 1000;
+    startLoopOnce();
   }
   step(dt){
     beginFrame();
@@ -2694,6 +2696,10 @@ class Game{
     addEvent(document.getElementById('back'), INPUT.tap, ()=>{ playSound("click"); this.renderTitle(); });
   }
   renderPause(){
+    gameState = "paused";
+    spawningEnabled = false;
+    stopMainLoop();
+    pauseAllAnimations();
     overlay.innerHTML = `<div class="panel"><h1>Pause</h1><div class="btnrow"><button id="resume">Reprendre</button><button id="quit">Menu</button></div></div>`;
     showOverlay(overlay);
     addEvent(document.getElementById('resume'), INPUT.tap, ()=>{
@@ -2701,8 +2707,13 @@ class Game{
       overlay.innerHTML='';
       hideOverlay(overlay);
       this.state='playing';
-      this.lastTime=performance.now();
-      this.loop();
+      const now = performance.now();
+      this.ignoreClicksUntil = now + 300;
+      this.ignoreVisibilityUntil = now + 600;
+      spawningEnabled = true;
+      gameState = "playing";
+      resumeAllAnimations();
+      startLoopOnce();
     });
     addEvent(document.getElementById('quit'), INPUT.tap, ()=>{
       playSound("click");
