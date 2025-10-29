@@ -430,11 +430,11 @@ let drawLegacyBg = false; // doit rester false
 let currentLevelIndex = 0; // 0 → LEVELS[0] = niveau 1
 
 // --- Feature flag : activer/désactiver d'un coup les diffs par niveau ---
-const ENABLE_LEVEL_DIFFS = false; // mettre à false pour revenir au comportement précédent
+const ENABLE_LEVEL_DIFFS = true; // mettre à false pour revenir au comportement précédent
 
 // Si votre jeu utilise déjà GSAP pour faire tomber les items, laissez true.
 // Si la chute est gérée en physique manuelle dans update(), laissez false.
-const USE_GSAP_FALL = true;
+const USE_GSAP_FALL = false;
 
 const DEFAULT_LEVEL_WEIGHTS = { good: 0.7, bad: 0.3 };
 const DEFAULT_BONUS_RATES = { magnetRate: 0.06, shieldRate: 0.06, x2Rate: 0.05 };
