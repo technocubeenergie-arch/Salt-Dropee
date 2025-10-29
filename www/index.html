@@ -57,7 +57,7 @@
       </div>
 
       <!-- Inter-level overlay (caché par défaut) -->
-      <div id="interLevelScreen" class="hidden" aria-hidden="true">
+      <div id="interLevelScreen" class="overlay" aria-hidden="true">
         <div class="inter-content" role="dialog" aria-modal="true" aria-labelledby="interTitle">
           <h2 id="interTitle">Niveau terminé !</h2>
           <p id="interScore">Score : 0000</p>
@@ -68,8 +68,10 @@
           </div>
         </div>
       </div>
+      
+      <!-- Overlays dynamiques (menu, pause, fin) -->
+      <div id="overlay" class="overlay" aria-live="polite" aria-hidden="true"></div>
     </div>
-    <div class="overlay" id="overlay" aria-live="polite"></div>
   </div>
 
   <!-- JS du jeu en chemin relatif -->
