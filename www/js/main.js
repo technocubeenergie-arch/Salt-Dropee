@@ -45,6 +45,8 @@ const LEVELS = [
   },
 ];
 
+const MENU_BACKGROUND_SRC = "assets/fondaccueil.png";
+
 // --- Cache d'assets par niveau ---
 const levelAssets = {}; // index -> { bg:Image, wallet:Image, music:HTMLAudioElement|null }
 
@@ -84,37 +86,59 @@ async function ensureLevelAssets(index) {
 }
 
 // --- Fond (HTML) ---
-function setBackgroundImage(img) {
-  if (!img) return;
+let hasBackgroundImage = false;
+let currentBackgroundSrc = '';
+
+function setBackgroundImageSrc(src) {
   const el = document.getElementById('bgLayer');
   if (!el) return;
-  el.style.backgroundImage = `url("${img.src}")`;
+
+  if (typeof src !== 'string' || !src.trim()) {
+    el.style.backgroundImage = 'none';
+    hasBackgroundImage = false;
+    currentBackgroundSrc = '';
+    return;
+  }
+
+  el.style.backgroundImage = `url("${src}")`;
   requestAnimationFrame(() => {
     el.style.opacity = 1;
   });
+  hasBackgroundImage = true;
+  currentBackgroundSrc = src;
 }
 
-function fadeOutBackgroundThen(cb) {
+function fadeOutBgThen(next) {
   const el = document.getElementById('bgLayer');
-  if (!el) {
-    if (cb) cb();
+  const applyNext = () => {
+    if (typeof next === 'function') {
+      next();
+    } else if (typeof next === 'string') {
+      setBackgroundImageSrc(next);
+    }
+  };
+
+  if (!el || !hasBackgroundImage) {
+    applyNext();
     return;
   }
+
   el.style.opacity = 0;
-  setTimeout(() => {
-    if (cb) cb();
-  }, 250);
+  setTimeout(applyNext, 250);
 }
 
-let hasBackgroundImage = false;
+function applyLevelBackground(src) {
+  if (!src) return;
 
-function applyLevelBackground(img) {
-  if (!img) return;
+  if (currentBackgroundSrc === src) {
+    setBackgroundImageSrc(src);
+    return;
+  }
+
   if (!hasBackgroundImage) {
-    setBackgroundImage(img);
-    hasBackgroundImage = true;
+    setBackgroundImageSrc(src);
   } else {
-    fadeOutBackgroundThen(() => setBackgroundImage(img));
+    fadeOutBgThen(() => setBackgroundImageSrc(src));
   }
 }
 
@@ -392,6 +416,8 @@ let ctx;
 let overlay;
 let game;
 
+let drawLegacyBg = false; // doit rester false
+
 // --- État "niveaux" ---
 let currentLevelIndex = 0; // 0 → LEVELS[0] = niveau 1
 let levelState = { targetScore: 0, timeLimit: 0, lives: 0 };
@@ -471,8 +497,10 @@ function hardResetRuntime(){
   }
 }
 
-async function loadLevel(index) {
+async function loadLevel(index, options = {}) {
   if (index < 0 || index >= LEVELS.length) return;
+
+  const { applyBackground = true } = options;
 
   const L = LEVELS[index];
   currentLevelIndex = index;
@@ -503,8 +531,11 @@ async function loadLevel(index) {
   const assets = await ensureLevelAssets(index);
   const { bg, wallet, music } = assets;
 
-  if (bg) {
-    applyLevelBackground(bg);
+  if (applyBackground) {
+    const bgSrc = bg?.src || L.background;
+    if (bgSrc) {
+      applyLevelBackground(bgSrc);
+    }
   }
   if (wallet) {
     setWalletSprite(wallet);
@@ -520,7 +551,7 @@ async function loadLevel(index) {
   if (typeof setHUDTime  === "function") setHUDTime(timeLeft);
 }
 
-async function startLevel1() { await loadLevel(0); }
+async function startLevel1() { await loadLevel(0, { applyBackground: false }); }
 
 function checkEndConditions(){
   if (!canEndLevel()) return;
@@ -2223,12 +2254,17 @@ class Game{
     this.arm=new Arm(this); this.arm.applyCaps(); this.wallet=new Wallet(this); this.wallet.applyCaps(); applyWalletForLevel(1); this.hud=new HUD(this); this.spawner=new Spawner(this);
     this.items=[]; this.effects={freeze:0}; this.fx = new FxManager(this);
     this.shake=0; this.bgIndex=0; this.didFirstCatch=false; this.updateBgByScore();
-    loadLevel(currentLevelIndex);
+    loadLevel(currentLevelIndex, { applyBackground: !showTitle });
     if (showTitle) this.renderTitle(); else this.render();
   }
   diffMult(){ return Math.pow(CONFIG.spawnRampFactor, Math.floor(this.timeElapsed/CONFIG.spawnRampEverySec)); }
   updateBgByScore(){ const th=CONFIG.evolveThresholds; let idx=0; for (let i=0;i<th.length;i++){ if (this.score>=th[i]) idx=i; } if (idx!==this.bgIndex){ this.bgIndex=idx; this.wallet.evolveByScore(this.score); this.levelReached = Math.max(this.levelReached, this.wallet.level); } }
   start(){
+    const levelCfg = LEVELS[currentLevelIndex];
+    if (levelCfg?.background) {
+      applyLevelBackground(levelCfg.background);
+    }
+
     levelEnded = false;
     gameState = "playing";
     spawningEnabled = true;
@@ -2350,6 +2386,13 @@ class Game{
     }
   }
   renderTitle(){
+    if (currentBackgroundSrc === MENU_BACKGROUND_SRC) {
+      setBackgroundImageSrc(MENU_BACKGROUND_SRC);
+    } else if (hasBackgroundImage) {
+      fadeOutBgThen(MENU_BACKGROUND_SRC);
+    } else {
+      setBackgroundImageSrc(MENU_BACKGROUND_SRC);
+    }
     overlay.innerHTML = `
       <div class="panel">
         <h1>Salt Droppee</h1>
@@ -2445,7 +2488,9 @@ class Game{
     ctx.clearRect(0,0,BASE_W,BASE_H);
     ctx.translate(sx,sy);
 
-    this.drawBg(ctx);
+    if (drawLegacyBg) {
+      this.drawBg(ctx);
+    }
     this.arm.draw(ctx);
     this.wallet.draw(ctx);
 
