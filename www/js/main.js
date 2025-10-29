@@ -1598,6 +1598,22 @@ function positionHUD(){
 window.addEventListener('load', positionHUD);
 window.addEventListener('resize', positionHUD);
 
+function showOverlay(el){
+  if (!el) return;
+  el.classList.add("show");
+  if (typeof el.setAttribute === "function") {
+    el.setAttribute("aria-hidden", "false");
+  }
+}
+
+function hideOverlay(el){
+  if (!el) return;
+  el.classList.remove("show");
+  if (typeof el.setAttribute === "function") {
+    el.setAttribute("aria-hidden", "true");
+  }
+}
+
 function resize(){
   if (!canvas) return;
   const vw = window.innerWidth, vh = window.innerHeight;
@@ -1672,15 +1688,13 @@ function showInterLevelScreen(result="win"){
     };
   }
 
-  screen.classList.remove("hidden");
-  screen.setAttribute("aria-hidden", "false");
+  showOverlay(screen);
 }
 
 function hideInterLevelScreen(){
   const screen = document.getElementById("interLevelScreen");
   if (!screen) return;
-  screen.classList.add("hidden");
-  screen.setAttribute("aria-hidden", "true");
+  hideOverlay(screen);
 }
 
 // --- Boutons ---
@@ -2328,7 +2342,13 @@ class Game{
   endGame(){ this.fx?.clearAll(); resetActiveBonuses(); resetShieldState({ silent: true }); this.state='over'; this.render(); try{ const best=parseInt(localStorage.getItem(LS.bestScore)||'0',10); if (this.score>best) localStorage.setItem(LS.bestScore, String(this.score)); const bestC=parseInt(localStorage.getItem(LS.bestCombo)||'0',10); if (this.maxCombo>bestC) localStorage.setItem(LS.bestCombo, String(this.maxCombo)); const runs=JSON.parse(localStorage.getItem(LS.runs)||'[]'); runs.unshift({ ts:Date.now(), score:this.score, combo:this.maxCombo, lvl:this.levelReached }); while (runs.length>20) runs.pop(); localStorage.setItem(LS.runs, JSON.stringify(runs)); }catch(e){}
     this.renderGameOver(); if (TG){ try{ TG.sendData(JSON.stringify({ score:this.score, duration:CONFIG.runSeconds, version:VERSION })); }catch(e){} }
   }
-  uiStartFromTitle(){ if (this.state==='title'){ overlay.innerHTML=''; this.start(); } }
+  uiStartFromTitle(){
+    if (this.state === 'title'){
+      overlay.innerHTML = '';
+      hideOverlay(overlay);
+      this.start();
+    }
+  }
   renderTitle(){
     overlay.innerHTML = `
       <div class="panel">
@@ -2340,6 +2360,7 @@ class Game{
           <button id="btnLB">Leaderboard local</button>
         </div>
       </div>`;
+    showOverlay(overlay);
     addEvent(document.getElementById('btnSettings'), INPUT.tap, ()=>{ playSound("click"); this.renderSettings(); });
     addEvent(document.getElementById('btnLB'), INPUT.tap, ()=>{ playSound("click"); this.renderLeaderboard(); });
     addEvent(document.getElementById('btnPlay'), INPUT.tap, async (e)=>{
@@ -2359,6 +2380,7 @@ class Game{
       <p>Sensibilité: <input type="range" id="sens" min="0.5" max="1.5" step="0.05" value="${s.sensitivity}"></p>
       <div class="btnrow"><button id="back">Retour</button></div>
     </div>`;
+    showOverlay(overlay);
     addEvent(document.getElementById('sound'), 'change', e=>{ playSound("click"); this.settings.sound = e.target.checked; saveSettings(this.settings); if (typeof setSoundEnabled === "function") { setSoundEnabled(this.settings.sound); } });
     addEvent(document.getElementById('contrast'), 'change', e=>{ playSound("click"); this.settings.contrast = e.target.checked; saveSettings(this.settings); this.reset(); });
     addEvent(document.getElementById('haptics'), 'change', e=>{ playSound("click"); this.settings.haptics = e.target.checked; saveSettings(this.settings); });
@@ -2377,9 +2399,27 @@ class Game{
       </div>
       <div class="btnrow"><button id="back">Retour</button></div>
     </div>`;
+    showOverlay(overlay);
     addEvent(document.getElementById('back'), INPUT.tap, ()=>{ playSound("click"); this.renderTitle(); });
   }
-  renderPause(){ overlay.innerHTML = `<div class="panel"><h1>Pause</h1><div class="btnrow"><button id="resume">Reprendre</button><button id="quit">Menu</button></div></div>`; addEvent(document.getElementById('resume'), INPUT.tap, ()=>{ playSound("click"); overlay.innerHTML=''; this.state='playing'; this.lastTime=performance.now(); this.loop(); }); addEvent(document.getElementById('quit'), INPUT.tap, ()=>{ playSound("click"); this.reset(); }); }
+  renderPause(){
+    overlay.innerHTML = `<div class="panel"><h1>Pause</h1><div class="btnrow"><button id="resume">Reprendre</button><button id="quit">Menu</button></div></div>`;
+    showOverlay(overlay);
+    addEvent(document.getElementById('resume'), INPUT.tap, ()=>{
+      playSound("click");
+      overlay.innerHTML='';
+      hideOverlay(overlay);
+      this.state='playing';
+      this.lastTime=performance.now();
+      this.loop();
+    });
+    addEvent(document.getElementById('quit'), INPUT.tap, ()=>{
+      playSound("click");
+      overlay.innerHTML='';
+      hideOverlay(overlay);
+      this.reset();
+    });
+  }
   renderGameOver(){ const best=parseInt(localStorage.getItem(LS.bestScore)||'0',10); overlay.innerHTML = `
     <div class="panel">
       <h1>Fin de partie</h1>
@@ -2391,8 +2431,9 @@ class Game{
         ${TG? '<button id="share">Partager</button>': ''}
       </div>
     </div>`;
-    addEvent(document.getElementById('again'), INPUT.tap, async ()=>{ playSound("click"); overlay.innerHTML=''; this.reset({showTitle:false}); await new Promise(r=>requestAnimationFrame(r)); this.start(); }, { passive:false });
-    addEvent(document.getElementById('menu'), INPUT.tap, ()=>{ playSound("click"); this.reset({showTitle:true}); });
+    showOverlay(overlay);
+    addEvent(document.getElementById('again'), INPUT.tap, async ()=>{ playSound("click"); overlay.innerHTML=''; hideOverlay(overlay); this.reset({showTitle:false}); await new Promise(r=>requestAnimationFrame(r)); this.start(); }, { passive:false });
+    addEvent(document.getElementById('menu'), INPUT.tap, ()=>{ playSound("click"); overlay.innerHTML=''; hideOverlay(overlay); this.reset({showTitle:true}); });
     if (TG){ const sh=document.getElementById('share'); if (sh) addEvent(sh, INPUT.tap, ()=>{ playSound("click"); try{ TG.sendData(JSON.stringify({ score:this.score, duration:CONFIG.runSeconds, version:VERSION })); }catch(e){} }); }
   }
   drawBg(g){ const grad=g.createLinearGradient(0,0,0,BASE_H); const presets=[ ['#0f2027','#203a43','#2c5364'], ['#232526','#414345','#6b6e70'], ['#1e3c72','#2a5298','#6fa3ff'], ['#42275a','#734b6d','#b57ea7'], ['#355c7d','#6c5b7b','#c06c84'] ]; const cols=presets[this.bgIndex % presets.length]; grad.addColorStop(0,cols[0]); grad.addColorStop(0.5,cols[1]); grad.addColorStop(1,cols[2]); g.fillStyle=grad; g.fillRect(0,0,BASE_W,BASE_H); }
