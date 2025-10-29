@@ -30,11 +30,24 @@ html, body { height: 100%; margin: 0; background: var(--bg); color: var(--ui); f
 
 
 #gameCanvas {
+  position: relative;
+  z-index: 1;
   background: #111;
   display: block;
   width: 100%;
   height: auto;
   touch-action: manipulation;
+}
+
+#bgLayer{
+  position:absolute;
+  inset:0;
+  background-size: cover;
+  background-position: center;
+  opacity: 0;
+  transition: opacity .25s ease;
+  pointer-events: none;
+  z-index: 0;
 }
 
 
