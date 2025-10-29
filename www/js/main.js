@@ -428,54 +428,71 @@ let game;
 
 let drawLegacyBg = false; // doit rester false
 
-let isMainLoopRunning = false;
-let lastLoopTimeMs = 0;
+let loopRunning = false;
+let lastLoopTimestamp = 0;
+let timeSinceLastSpawn = 0;
 
-function mainLoop(ts) {
-  if (!isMainLoopRunning) {
+function updateGame(dtMs) {
+  if (!game || typeof game.step !== "function") {
+    return;
+  }
+
+  if (game.state !== "playing" || gameState !== "playing") {
+    return;
+  }
+
+  const dtClampedMs = Math.max(0, dtMs);
+  const dtSec = dtClampedMs / 1000;
+
+  game.step(dtSec);
+
+  if (typeof game.render === "function") {
+    game.render();
+  }
+}
+
+function gameLoop(ts) {
+  if (!loopRunning) {
     return;
   }
 
   if (typeof requestAnimationFrame !== "function") {
-    isMainLoopRunning = false;
-    lastLoopTimeMs = 0;
+    loopRunning = false;
+    lastLoopTimestamp = 0;
     return;
   }
 
-  if (!game || typeof game.step !== "function") {
-    lastLoopTimeMs = ts;
-    requestAnimationFrame(mainLoop);
-    return;
+  if (!lastLoopTimestamp) {
+    lastLoopTimestamp = ts;
   }
 
-  const dtMs = lastLoopTimeMs ? (ts - lastLoopTimeMs) : 16.67;
-  lastLoopTimeMs = ts;
-  const safeMs = Math.max(0, Math.min(dtMs, 33));
-  const dtSec = safeMs / 1000;
+  const rawDelta = ts - lastLoopTimestamp;
+  const dtMs = Math.min(50, Math.max(0, Number.isFinite(rawDelta) ? rawDelta : 0));
+  lastLoopTimestamp = ts;
 
-  if (game.state === "playing" && gameState === "playing") {
-    game.step(dtSec);
-    if (typeof game.render === "function") {
-      game.render();
-    }
+  if (spawningEnabled) {
+    updateSpawn(dtMs);
   }
 
-  if (isMainLoopRunning) {
-    requestAnimationFrame(mainLoop);
+  updateGame(dtMs);
+
+  if (loopRunning) {
+    requestAnimationFrame(gameLoop);
   }
 }
 
-function startLoopOnce() {
-  if (isMainLoopRunning) return;
+function startMainLoopOnce() {
+  if (loopRunning) return;
   if (typeof requestAnimationFrame !== "function") return;
-  isMainLoopRunning = true;
-  lastLoopTimeMs = 0;
-  requestAnimationFrame(mainLoop);
+  loopRunning = true;
+  lastLoopTimestamp = 0;
+  requestAnimationFrame(gameLoop);
+  console.info("[loop] started");
 }
 
 function stopMainLoop() {
-  isMainLoopRunning = false;
-  lastLoopTimeMs = 0;
+  loopRunning = false;
+  lastLoopTimestamp = 0;
 }
 
 // --- État "niveaux" ---
@@ -522,11 +539,12 @@ function canEndLevel(){
 /* global */ let lives = 0;   // nombre
 
 // Spawning/inputs/animations toggles
-let spawningEnabled = true;
+let spawningEnabled = false;
 let inputEnabled = true;
 
 function stopSpawningItems(){
   spawningEnabled = false;
+  timeSinceLastSpawn = 0;
   if (game?.spawner) {
     if (typeof game.spawner.reset === 'function') {
       game.spawner.reset();
@@ -588,27 +606,103 @@ function hardResetRuntime(){
   if (window.gsap) {
     gsap.killTweensOf("*");
   }
+  timeSinceLastSpawn = 0;
+}
+
+function numOr(v, d) {
+  const num = Number(v);
+  return Number.isFinite(num) ? num : d;
 }
 
 function applyDifficultyParams(L = {}) {
   const cfg = L || {};
-  const fallSpeedBase = Number(cfg.fallSpeedBase);
-  const fallSpeedRamp = Number(cfg.fallSpeedRamp);
-  const spawnInterval = Number(cfg.spawnIntervalMs);
-  const maxItems = Number(cfg.maxConcurrentItems);
-  levelState.fallSpeedBase      = Number.isFinite(fallSpeedBase) ? fallSpeedBase : 1.0;
-  levelState.fallSpeedRamp      = Number.isFinite(fallSpeedRamp) ? fallSpeedRamp : 0.0;
-  levelState.spawnIntervalMs    = Number.isFinite(spawnInterval) ? spawnInterval : 900;
-  levelState.maxConcurrentItems = Number.isFinite(maxItems) ? maxItems : 6;
-  levelState.weights            = Object.assign({}, cfg.weights ?? DEFAULT_LEVEL_WEIGHTS);
-  levelState.bonusRates         = Object.assign({}, cfg.bonusRates ?? DEFAULT_BONUS_RATES);
+
+  levelState.fallSpeedBase      = Math.max(0.1, numOr(cfg.fallSpeedBase, 1.0));
+  levelState.fallSpeedRamp      = numOr(cfg.fallSpeedRamp, 0.0);
+
+  levelState.spawnIntervalMs    = Math.max(100, numOr(cfg.spawnIntervalMs, 900));
+  levelState.maxConcurrentItems = Math.max(1, numOr(cfg.maxConcurrentItems, 6));
+
+  const defW = { good: DEFAULT_LEVEL_WEIGHTS.good, bad: DEFAULT_LEVEL_WEIGHTS.bad };
+  levelState.weights = { ...defW, ...(cfg?.weights || {}) };
+
+  const defB = {
+    magnetRate: DEFAULT_BONUS_RATES.magnetRate,
+    shieldRate: DEFAULT_BONUS_RATES.shieldRate,
+    x2Rate: DEFAULT_BONUS_RATES.x2Rate,
+  };
+  const mergedBonus = { ...defB, ...(cfg?.bonusRates || {}) };
+  for (const key of Object.keys(mergedBonus)) {
+    mergedBonus[key] = Math.max(0, numOr(mergedBonus[key], defB[key] ?? 0));
+  }
+  levelState.bonusRates = mergedBonus;
+
+  console.info("[level/diffs] ", {
+    fallSpeedBase: levelState.fallSpeedBase,
+    fallSpeedRamp: levelState.fallSpeedRamp,
+    spawnIntervalMs: levelState.spawnIntervalMs,
+    maxConcurrentItems: levelState.maxConcurrentItems,
+    weights: levelState.weights,
+    bonusRates: levelState.bonusRates,
+  });
 }
 
 function currentFallSpeed(){
   if (!ENABLE_LEVEL_DIFFS) return 1.0;
-  const elapsedSec = (performance.now() - levelState.levelStartTime) / 1000;
-  const ramp = 1 + (levelState.fallSpeedRamp * elapsedSec);
-  return Math.max(0, levelState.fallSpeedBase * ramp);
+  const t = ((performance.now() - levelState.levelStartTime) / 1000) || 0;
+  const ramp = 1 + (levelState.fallSpeedRamp * t);
+  return levelState.fallSpeedBase * Math.max(0.1, ramp);
+}
+
+function getActiveItemsCount(){
+  if (typeof game?.spawner?.countActiveItems === 'function') {
+    try {
+      return game.spawner.countActiveItems();
+    } catch (_) {
+      // ignore and fallback below
+    }
+  }
+  const list = Array.isArray(game?.items) ? game.items : [];
+  let count = 0;
+  for (let i = 0; i < list.length; i++) {
+    const it = list[i];
+    if (it && !it.dead && it.alive !== false) count++;
+  }
+  return count;
+}
+
+function spawnOneItem(){
+  if (!game || !spawningEnabled || gameState !== "playing") return;
+  const spawner = game?.spawner;
+  if (typeof spawner?.spawnOne === 'function') {
+    spawner.spawnOne();
+  }
+}
+
+function updateSpawn(dtMs){
+  if (!game || !spawningEnabled || gameState !== "playing") return;
+  const spawner = game?.spawner;
+  if (!spawner) return;
+
+  if (!ENABLE_LEVEL_DIFFS) {
+    const dtSec = Math.max(0, dtMs) / 1000;
+    if (typeof spawner.update === 'function') {
+      spawner.update(dtSec);
+    }
+    return;
+  }
+
+  const intervalMs = Math.max(100, numOr(levelState.spawnIntervalMs, 900));
+  const maxActive = Math.max(1, numOr(levelState.maxConcurrentItems, 6));
+  if (getActiveItemsCount() >= maxActive) {
+    return;
+  }
+
+  timeSinceLastSpawn += Math.max(0, dtMs);
+  if (timeSinceLastSpawn >= intervalMs) {
+    spawnOneItem();
+    timeSinceLastSpawn = 0;
+  }
 }
 
 async function loadLevel(index, options = {}) {
@@ -663,6 +757,7 @@ async function loadLevel(index, options = {}) {
   }
 
   levelState.levelStartTime = performance.now();
+  timeSinceLastSpawn = 0;
   if (game?.spawner?.reset) {
     game.spawner.reset();
   }
@@ -1801,6 +1896,18 @@ function hideOverlay(el){
   }
 }
 
+function hideMenuOverlays(){
+  const overlayEl = document.getElementById('overlay');
+  if (overlayEl) {
+    overlayEl.innerHTML = '';
+    hideOverlay(overlayEl);
+  }
+  const interLevel = document.getElementById('interLevelScreen');
+  if (interLevel) {
+    hideOverlay(interLevel);
+  }
+}
+
 function resize(){
   if (!canvas) return;
   const vw = window.innerWidth, vh = window.innerHeight;
@@ -1828,6 +1935,7 @@ function resumeGameplay(){
   levelEnded = false;
   gameState = "playing";
   spawningEnabled = true;
+  timeSinceLastSpawn = 0;
   resumeAllAnimations();
   enablePlayerInput();
   leftPressed = false;
@@ -1847,7 +1955,7 @@ function resumeGameplay(){
     timeLeft = game.timeLeft;
   }
 
-  startLoopOnce();
+  startMainLoopOnce();
 }
 
 function showInterLevelScreen(result="win"){
@@ -2497,6 +2605,7 @@ class Game{
     gameState = "paused";
     levelEnded = false;
     spawningEnabled = false;
+    timeSinceLastSpawn = 0;
     enablePlayerInput();
     if (this.fx) this.fx.clearAll();
     resetActiveBonuses();
@@ -2539,15 +2648,19 @@ class Game{
       applyLevelBackground(levelCfg.background);
     }
 
+    hideMenuOverlays();
+
     levelEnded = false;
     gameState = "playing";
     spawningEnabled = true;
+    timeSinceLastSpawn = 0;
+    levelState.levelStartTime = performance.now();
     enablePlayerInput();
     this.state='playing';
     const now = performance.now();
     this.ignoreClicksUntil = now + 500;
     this.ignoreVisibilityUntil = now + 1000;
-    startLoopOnce();
+    startMainLoopOnce();
   }
   step(dt){
     beginFrame();
@@ -2573,9 +2686,6 @@ class Game{
 
     this.arm.update(dt);
     this.wallet.update(dt);
-    if (spawningEnabled && typeof this.spawner?.update === "function"){
-      this.spawner.update(dt);
-    }
     const w=this.wallet; const cx=CONFIG.collision.walletScaleX, cy=CONFIG.collision.walletScaleY, px=CONFIG.collision.walletPadX, py=CONFIG.collision.walletPadY;
     WR.x = w.x + (w.w - w.w*cx)/2 + px;
     WR.y = w.y + (w.h - w.h*cy)/2 + py;
@@ -2711,9 +2821,10 @@ class Game{
       this.ignoreClicksUntil = now + 300;
       this.ignoreVisibilityUntil = now + 600;
       spawningEnabled = true;
+      timeSinceLastSpawn = 0;
       gameState = "playing";
       resumeAllAnimations();
-      startLoopOnce();
+      startMainLoopOnce();
     });
     addEvent(document.getElementById('quit'), INPUT.tap, ()=>{
       playSound("click");
