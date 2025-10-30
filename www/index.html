@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <meta name="format-detection" content="telephone=no" />
+  <meta name="color-scheme" content="dark light" />
+  <title>Salt Droppee</title>
+
+  <!-- CSS en chemin relatif -->
+  <link rel="stylesheet" href="assets/style.css" />
+
+  <!-- Cordova: chargement conditionnel, jamais en dur -->
+  <script>
+    if (window.cordova) {
+      document.write('<script src="cordova.js"><\\/script>');
+    }
+  </script>
+
+</head>
+<body>
+  <div class="wrap">
+    <div id="gameWrapper">
+      <canvas
+        id="gameCanvas"
+        width="360"
+        height="640"
+        aria-label="Salt Droppee canvas"
+      ></canvas>
+
+      <!-- HUD overlay -->
+      <div id="hud" aria-label="Game HUD">
+        <!-- Gauche : SCORE sur 2 lignes -->
+        <div class="hud-left">
+          <div class="hud-score-label">SCORE</div>
+          <div class="hud-score-value" id="hudScore">0</div>
+        </div>
+
+        <!-- Centre : Combo + mini-jauge -->
+        <div class="hud-center">
+          <div class="combo-chip" id="hudComboChip">
+            <span class="combo-icon">⚡</span>
+            <span class="combo-mult" id="hudComboMult">x1.0</span>
+            <span class="combo-streak" id="hudComboStreak">(0)</span>
+          </div>
+          <div class="combo-bar">
+            <div class="combo-bar-fill" id="hudComboFill"></div>
+          </div>
+        </div>
+
+        <!-- Droite : 2 lignes (Vies / Temps) -->
+        <div class="hud-right" id="hudRight">
+          <div class="hud-lives" id="hudLives">♥♥♥</div>
+          <div class="hud-time" id="hudTime">60s</div>
+        </div>
+      </div>
+
+      <!-- Inter-level overlay (caché par défaut) -->
+      <div id="interLevelScreen" class="hidden" aria-hidden="true">
+        <div class="inter-content" role="dialog" aria-modal="true" aria-labelledby="interTitle">
+          <h2 id="interTitle">Niveau terminé !</h2>
+          <p id="interScore">Score : 0000</p>
+          <div class="inter-buttons">
+            <button id="btnNextLevel" type="button">Niveau suivant</button>
+            <button id="btnSaveQuit" type="button">Sauvegarder &amp; Quitter</button>
+            <button id="btnSettings" type="button">Paramètres</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="overlay" id="overlay" aria-live="polite"></div>
+  </div>
+
+  <!-- JS du jeu en chemin relatif -->
+  <script src="lib/gsap/gsap.min.js"></script>
+  <script src="js/soundManager.js"></script>
+  <script src="js/main.js" defer></script>
+
+</body>
+</html>
