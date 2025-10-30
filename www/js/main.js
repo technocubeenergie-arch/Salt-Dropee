@@ -143,19 +143,27 @@ function applyLevelBackground(src) {
 }
 
 // --- Wallet ---
+const ENABLE_SCORE_BASED_WALLET = false;
 let walletImage = null;
 
 function setWalletSprite(img) {
   if (!img) return;
   walletImage = img;
-  const walletEntity = typeof game !== 'undefined' ? game?.wallet : null;
-  if (walletEntity?.applyCaps) {
-    walletEntity.applyCaps();
+
+  const runtimeWallet = (typeof window !== 'undefined' && window.wallet)
+    ? window.wallet
+    : (typeof game !== 'undefined' ? game?.wallet : null);
+
+  if (runtimeWallet?.applyCaps) {
+    runtimeWallet.applyCaps();
   }
-  if (walletEntity) {
-    walletEntity.visualScale = 1;
-    if (window.gsap) {
-      gsap.fromTo(walletEntity, { visualScale: 0.95 }, { visualScale: 1, duration: 0.25, ease: "back.out(2)" });
+
+  if (window.gsap && runtimeWallet) {
+    if (Object.prototype.hasOwnProperty.call(runtimeWallet, 'visualScale')) {
+      runtimeWallet.visualScale = 1;
+      gsap.fromTo(runtimeWallet, { visualScale: 0.95 }, { visualScale: 1, duration: 0.25, ease: "back.out(2)" });
+    } else {
+      gsap.fromTo(runtimeWallet, { scale: 0.95 }, { scale: 1, duration: 0.25, ease: "back.out(2)" });
     }
   }
 }
@@ -510,13 +518,15 @@ async function loadLevel(index, options = {}) {
   levelState.timeLimit   = L.timeLimit;
   levelState.lives       = L.lives;
 
+  const instance = game || Game.instance || null;
+  const { bg, wallet, music } = await ensureLevelAssets(index);
+
   score    = 0;
   streak   = 0;
   combo    = 1.0;
   timeLeft = L.timeLimit;
   lives    = L.lives;
 
-  const instance = game || Game.instance || null;
   if (instance) {
     instance.score = 0;
     instance.comboStreak = 0;
@@ -528,19 +538,14 @@ async function loadLevel(index, options = {}) {
     instance.targetScore = L.targetScore;
   }
 
-  const assets = await ensureLevelAssets(index);
-  const { bg, wallet, music } = assets;
-
   if (applyBackground) {
     const bgSrc = bg?.src || L.background;
     if (bgSrc) {
       applyLevelBackground(bgSrc);
     }
   }
-  if (wallet) {
-    setWalletSprite(wallet);
-  }
   setLevelMusic(music);
+  setWalletSprite(wallet);
 
   if (index + 1 < LEVELS.length) {
     ensureLevelAssets(index + 1);
@@ -1858,7 +1863,25 @@ class Wallet{
     this.y = BASE_H - this.h - CONFIG.wallet.bottomOffset;
     targetX = this.x + this.w / 2;
   }
-  evolveByScore(score){ const th=CONFIG.evolveThresholds; let lvl=1; for (let i=0;i<th.length;i++){ if (score>=th[i]) lvl=i+1; } if (lvl!==this.level){ this.level=lvl; applyWalletForLevel(lvl); this.applyCaps(); this.g.fx.burst(this.x, this.y, '#ffcd75', 12); playSound("bonusok"); this.squashTimer=0.12; } }
+  evolveByScore(score){
+    if (!ENABLE_SCORE_BASED_WALLET) {
+      return;
+    }
+    // --- ANCIEN CODE DÉSACTIVÉ ---
+    const th = CONFIG.evolveThresholds;
+    let lvl = 1;
+    for (let i = 0; i < th.length; i++) {
+      if (score >= th[i]) lvl = i + 1;
+    }
+    if (lvl !== this.level) {
+      this.level = lvl;
+      applyWalletForLevel(lvl);
+      this.applyCaps();
+      this.g.fx.burst(this.x, this.y, '#ffcd75', 12);
+      playSound("bonusok");
+      this.squashTimer = 0.12;
+    }
+  }
   update(dt){
     const sens = this.g.settings.sensitivity || 1.0;
     const bounds = computeWalletCenterBounds(this);
