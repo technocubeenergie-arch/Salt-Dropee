@@ -179,6 +179,38 @@ let game;
 let currentLevelIndex = 0; // 0 → LEVELS[0] = niveau 1
 let levelState = { targetScore: 0, timeLimit: 0, lives: 0 };
 
+// --- Game state & guards ---
+let gameState = "playing";  // "playing" | "paused" | "inter"
+let levelEnded = false;
+
+function canEndLevel(){
+  return !levelEnded && gameState === "playing";
+}
+
+// Spawning/inputs/animations toggles
+let spawningEnabled = true;
+let inputEnabled = true;
+
+function stopSpawningItems(){ spawningEnabled = false; }
+function pauseAllAnimations(){ if (window.gsap?.globalTimeline) gsap.globalTimeline.pause(); }
+function disablePlayerInput(){
+  inputEnabled = false;
+  leftPressed = false;
+  rightPressed = false;
+  input.dash = false;
+  input.dragging = false;
+}
+
+function resumeAllAnimations(){ if (window.gsap?.globalTimeline) gsap.globalTimeline.resume(); }
+function enablePlayerInput(){ inputEnabled = true; }
+
+function hardResetRuntime(){
+  if (typeof items !== "undefined" && Array.isArray(items)) items.length = 0;
+  if (Array.isArray(game?.items)) game.items.length = 0;
+  game?.fx?.clearAll?.();
+  if (window.gsap?.killTweensOf) gsap.killTweensOf("*");
+}
+
 /* global */ let score = 0;   // nombre
 /* global */ let streak = 0;  // nombre
 /* global */ let combo = 1.0; // nombre (ex: 1.0)
@@ -231,6 +263,53 @@ function loadLevel(index) {
     if (chip) gsap.fromTo(chip, { opacity: 0.6 }, { opacity: 1, duration: 0.25, ease: "power1.out" });
   }
   */
+}
+
+function checkEndConditions(){
+  if (!canEndLevel()) return;
+
+  if (score >= levelState.targetScore && lives > 0 && timeLeft > 0){
+    endLevel("win");
+    return;
+  }
+
+  if (timeLeft <= 0 || lives <= 0){
+    endLevel("lose");
+    return;
+  }
+}
+
+function endLevel(result){
+  if (!canEndLevel()) return;
+  levelEnded = true;
+  gameState = "inter";
+
+  stopSpawningItems();
+  pauseAllAnimations();
+  disablePlayerInput();
+
+  showInterLevelScreen(result);
+}
+
+function resumeGameplay(){
+  levelEnded = false;
+  gameState = "playing";
+  spawningEnabled = true;
+  resumeAllAnimations();
+  enablePlayerInput();
+  if (game?.spawner) {
+    game.spawner.acc = 0;
+  }
+}
+
+function goToNextLevel(){
+  const next = currentLevelIndex + 1;
+  const lastIndex = Math.max(0, LEVELS.length - 1);
+  const targetIndex = Math.min(next, lastIndex);
+
+  hardResetRuntime();
+  loadLevel(targetIndex);
+  resumeGameplay();
 }
 
 function startLevel1() { loadLevel(0); }
@@ -1348,6 +1427,7 @@ function showInterLevelScreen(result = "win") {
   const screen = document.getElementById("interLevelScreen");
   const title = document.getElementById("interTitle");
   const scoreText = document.getElementById("interScore");
+  const btnNext = document.getElementById("btnNextLevel");
   if (!screen || !title || !scoreText) return;
 
   title.textContent = result === "win" ? "Niveau terminé 🎉" : "Game Over 💀";
@@ -1358,11 +1438,22 @@ function showInterLevelScreen(result = "win") {
     : String(numericScore | 0);
   scoreText.textContent = "Score : " + formattedScore;
 
+  if (btnNext){
+    btnNext.textContent = result === "win" ? "Niveau suivant" : "Rejouer";
+    btnNext.onclick = () => {
+      hideInterLevelScreen();
+      if (result === "win"){
+        goToNextLevel();
+      } else {
+        hardResetRuntime();
+        loadLevel(currentLevelIndex);
+        resumeGameplay();
+      }
+    };
+  }
+
   screen.classList.remove("hidden");
   screen.setAttribute("aria-hidden", "false");
-
-  // (option) pause du jeu : g.pause = true; gsap.globalTimeline.pause();
-  // Laissez commenté si votre moteur gère déjà une pause ailleurs.
 }
 
 function hideInterLevelScreen() {
@@ -1380,30 +1471,31 @@ function bindInterLevelButtons() {
   const bSave = document.getElementById("btnSaveQuit");
   const bSett = document.getElementById("btnSettings");
 
-  if (bNext) bNext.addEventListener("click", () => {
-    hideInterLevelScreen();
-    if (typeof loadLevel === "function") {
-      const levels = Array.isArray(window.LEVELS) ? window.LEVELS : LEVELS;
-      const nextIndex = Math.min(currentLevelIndex + 1, (levels?.length || 1) - 1);
-      loadLevel(nextIndex);
-    }
-  });
+  if (bNext){
+    bNext.onclick = () => {
+      hideInterLevelScreen();
+      goToNextLevel();
+    };
+  }
 
-  if (bSave) bSave.addEventListener("click", () => {
-    hideInterLevelScreen();
-    // TODO: sauvegarde + retour menu (étape suivante)
-    console.log("[InterLevel] Sauvegarde et retour au menu");
-    // playSound && playSound("click");
-  });
+  if (bSave){
+    bSave.onclick = () => {
+      hideInterLevelScreen();
+      console.log("[InterLevel] save & quit stub");
+      // goToMainMenu && goToMainMenu();
+    };
+  }
 
-  if (bSett) bSett.addEventListener("click", () => {
-    hideInterLevelScreen();
-    if (typeof openSettings === "function") {
-      openSettings();
-    } else {
-      console.log("[InterLevel] openSettings() indisponible");
-    }
-  });
+  if (bSett){
+    bSett.onclick = () => {
+      hideInterLevelScreen();
+      if (typeof openSettings === "function") {
+        openSettings();
+      } else {
+        console.log("[InterLevel] openSettings() indisponible");
+      }
+    };
+  }
 }
 
 // --- Test manuel temporaire : appuyer sur 'i' pour afficher l’écran ---
@@ -1424,6 +1516,7 @@ const input = { dash:false, dragging:false };
 let leftPressed = false;
 let rightPressed = false;
 function onKeyDown(e){
+  if (!inputEnabled) return;
   if (e.code === 'ArrowLeft' || e.code === 'KeyA'){
     leftPressed = true;
   }
@@ -1440,17 +1533,24 @@ function onKeyDown(e){
   }
 }
 function onKeyUp(e){
+  if (!inputEnabled){
+    if (e.code === 'ArrowLeft' || e.code === 'KeyA') leftPressed = false;
+    if (e.code === 'ArrowRight' || e.code === 'KeyD') rightPressed = false;
+    if (e.code === 'Space') input.dash = false;
+    return;
+  }
   if (e.code === 'ArrowLeft' || e.code === 'KeyA') leftPressed = false;
   if (e.code === 'ArrowRight' || e.code === 'KeyD') rightPressed = false;
   if (e.code === 'Space') input.dash = false;
 }
 function onPointerDown(e){
+  if (!inputEnabled) return;
   const point = getCanvasPoint(e);
   input.dragging = true;
   if (game && game.wallet) animateWalletToCenter(game.wallet, point.x);
 }
 function onPointerMove(e){
-  if (!input.dragging) return;
+  if (!inputEnabled || !input.dragging) return;
   const point = getCanvasPoint(e);
   if (game && game.wallet) animateWalletToCenter(game.wallet, point.x);
 }
@@ -1730,7 +1830,12 @@ function spawnItem(gameInstance, kind, subtype, x, y, extra = {}) {
 
 class Spawner{
   constructor(game){ this.g=game; this.acc=0; }
-  update(dt){ const diff=this.g.diffMult(); this.acc += dt * (CONFIG.baseSpawnPerSec * diff); while (this.acc >= 1){ this.spawnOne(); this.acc -= 1; } }
+  update(dt){
+    if (!spawningEnabled) return;
+    const diff=this.g.diffMult();
+    this.acc += dt * (CONFIG.baseSpawnPerSec * diff);
+    while (this.acc >= 1){ this.spawnOne(); this.acc -= 1; }
+  }
   spawnOne(){
     const x = this.g.arm.spawnX(); const y = this.g.arm.spawnY();
     let pGood=0.7, pBad=0.2, pPow=0.1; if (this.g.timeElapsed>30){ pGood=0.6; pBad=0.3; pPow=0.1; }
@@ -1858,6 +1963,11 @@ class Game{
   constructor(){ Game.instance=this; this.reset({ showTitle:true }); }
   reset({showTitle=true}={}){
     window.__saltDroppeeLoopStarted = false;
+    levelEnded = false;
+    gameState = "playing";
+    spawningEnabled = true;
+    enablePlayerInput();
+    resumeAllAnimations();
     if (this.fx) this.fx.clearAll();
     resetActiveBonuses();
     resetShieldState({ silent: true });
@@ -1882,7 +1992,7 @@ class Game{
   }
   diffMult(){ return Math.pow(CONFIG.spawnRampFactor, Math.floor(this.timeElapsed/CONFIG.spawnRampEverySec)); }
   updateBgByScore(){ const th=CONFIG.evolveThresholds; let idx=0; for (let i=0;i<th.length;i++){ if (this.score>=th[i]) idx=i; } if (idx!==this.bgIndex){ this.bgIndex=idx; this.wallet.evolveByScore(this.score); this.levelReached = Math.max(this.levelReached, this.wallet.level); } }
-  start(){ this.state='playing'; this.lastTime=performance.now(); this.ignoreClicksUntil=this.lastTime+500; this.ignoreVisibilityUntil=this.lastTime+1000; this.loop(); }
+  start(){ resumeGameplay(); this.state='playing'; this.lastTime=performance.now(); this.ignoreClicksUntil=this.lastTime+500; this.ignoreVisibilityUntil=this.lastTime+1000; this.loop(); }
   loop(){
     if (this.state!=='playing'){
       window.__saltDroppeeLoopStarted = false;
@@ -1909,8 +2019,23 @@ class Game{
   }
   step(dt){
     beginFrame();
-    this.timeElapsed += dt; if (this.timeLeft>0) this.timeLeft = Math.max(0, this.timeLeft - dt); if (this.timeLeft<=0 || this.lives<=0){ this.endGame(); return; }
-    this.arm.update(dt); this.wallet.update(dt); this.spawner.update(dt);
+    score = this.score;
+    lives = this.lives;
+    timeLeft = this.timeLeft;
+
+    if (gameState !== "playing") return;
+
+    timeLeft -= dt;
+    if (timeLeft < 0) timeLeft = 0;
+    this.timeLeft = timeLeft;
+    this.timeElapsed += dt;
+
+    checkEndConditions();
+    if (gameState !== "playing") return;
+
+    this.arm.update(dt);
+    this.wallet.update(dt);
+    this.spawner.update(dt);
     const w=this.wallet; const cx=CONFIG.collision.walletScaleX, cy=CONFIG.collision.walletScaleY, px=CONFIG.collision.walletPadX, py=CONFIG.collision.walletPadY;
     WR.x = w.x + (w.w - w.w*cx)/2 + px;
     WR.y = w.y + (w.h - w.h*cy)/2 + py;
@@ -1951,6 +2076,10 @@ class Game{
       if (this.effects.freeze<0) this.effects.freeze = 0;
     }
     this.updateBgByScore(); if (this.shake>0) this.shake = Math.max(0, this.shake - dt*6);
+    score = this.score;
+    lives = this.lives;
+    timeLeft = this.timeLeft;
+    if (gameState === "playing") checkEndConditions();
   }
   onCatch(it){
     handleCollision(it);
