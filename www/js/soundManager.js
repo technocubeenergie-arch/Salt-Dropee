@@ -38,6 +38,12 @@ function unlockAudioOnce() {
         sounds[k].play().then(() => sounds[k].pause());
       } catch (_) {}
     }
+    const currentMusic = typeof window.getCurrentLevelMusic === "function"
+      ? window.getCurrentLevelMusic()
+      : null;
+    if (currentMusic && typeof window.safePlayMusic === "function") {
+      window.safePlayMusic(currentMusic);
+    }
     window.removeEventListener("pointerdown", tryUnlock);
     window.removeEventListener("touchstart", tryUnlock);
     window.removeEventListener("mousedown", tryUnlock);
