@@ -6,17 +6,142 @@
 const hasTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
 const gsap = window.gsap;
 
-// --- LEVELS: configuration de base (peut être étendue plus tard) ---
+// --- LEVELS: fichiers réels du projet ---
 const LEVELS = [
-  { id: 1, name: "Départ",      targetScore: 200,  timeLimit: 90,  lives: 3 },
-  { id: 2, name: "Initiation",  targetScore: 400,  timeLimit: 90,  lives: 3 },
-  { id: 3, name: "Montée",      targetScore: 700,  timeLimit: 90,  lives: 3 },
-  { id: 4, name: "Maîtrise",    targetScore: 1100, timeLimit: 90,  lives: 3 },
-  { id: 5, name: "Légende",     targetScore: 1600, timeLimit: 90,  lives: 3 }
+  {
+    id: 1, name: "Level 1",
+    background: "assets/fondniveau1.png",
+    walletSprite: "assets/walletniveau1.png",
+    music: "assets/sounds/audioniveau1.mp3",
+    targetScore: 800, timeLimit: 60, lives: 3,
+  },
+  {
+    id: 2, name: "Level 2",
+    background: "assets/fondniveau2.png",
+    walletSprite: "assets/walletniveau2.png",
+    music: "assets/sounds/audioniveau2.mp3",
+    targetScore: 1200, timeLimit: 60, lives: 3,
+  },
+  {
+    id: 3, name: "Level 3",
+    background: "assets/fondniveau3.png",
+    walletSprite: "assets/walletniveau3.png",
+    music: "assets/sounds/audioniveau3.mp3",
+    targetScore: 1600, timeLimit: 60, lives: 3,
+  },
+  {
+    id: 4, name: "Level 4",
+    background: "assets/fondniveau4.png",
+    walletSprite: "assets/walletniveau4.png",
+    music: "assets/sounds/audioniveau4.mp3",
+    targetScore: 2000, timeLimit: 60, lives: 3,
+  },
+  {
+    id: 5, name: "Level 5",
+    background: "assets/fondniveau5.png",
+    walletSprite: "assets/walletniveau5.png",
+    music: "assets/sounds/audioniveau5.mp3",
+    targetScore: 2500, timeLimit: 60, lives: 3,
+  },
 ];
-// D'autres champs pourront être ajoutés plus tard (spawnRates, bg, music, etc.) sans effet immédiat.
 
 window.LEVELS = LEVELS;
+
+// --- Cache d'assets par niveau ---
+const levelAssets = {}; // index -> { bg:Image, wallet:Image, music:HTMLAudioElement|null }
+
+// Précharge et renvoie {bg, wallet, music}
+function preloadLevelAssets(levelCfg) {
+  const tasks = [];
+
+  const bg = new Image();
+  bg.src = levelCfg.background;
+  tasks.push(new Promise(res => { bg.onload = res; bg.onerror = res; }));
+
+  const wallet = new Image();
+  wallet.src = levelCfg.walletSprite;
+  tasks.push(new Promise(res => { wallet.onload = res; wallet.onerror = res; }));
+
+  let music = null;
+  if (levelCfg.music) {
+    music = new Audio(levelCfg.music);
+    music.loop = true;
+    music.preload = "auto";
+    tasks.push(Promise.resolve());
+  }
+
+  return Promise.all(tasks).then(() => ({ bg, wallet, music }));
+}
+
+async function ensureLevelAssets(index) {
+  if (!levelAssets[index]) {
+    levelAssets[index] = await preloadLevelAssets(LEVELS[index]);
+  }
+  return levelAssets[index];
+}
+
+function setBackgroundImage(img) {
+  const el = document.getElementById('bgLayer');
+  if (!el || !img) return;
+  el.style.backgroundImage = `url("${img.src}")`;
+  requestAnimationFrame(() => { el.style.opacity = 1; });
+}
+
+function fadeOutBackgroundThen(cb) {
+  const el = document.getElementById('bgLayer');
+  if (!el) { cb && cb(); return; }
+  el.style.opacity = 0;
+  setTimeout(() => cb && cb(), 250);
+}
+
+let walletImage = null;
+
+function setWalletSprite(img) {
+  if (!img) return;
+  walletImage = img;
+}
+
+let currentMusic = null;
+let musicVolume = 0.6;
+let musicEnabled = true;
+
+function tryFadeOut(aud) {
+  if (!aud) return;
+  if (!window.gsap) {
+    try { aud.pause(); aud.currentTime = 0; } catch (_) {}
+    return;
+  }
+  gsap.to(aud, {
+    volume: 0,
+    duration: 0.4,
+    ease: "power1.out",
+    onComplete: () => { try { aud.pause(); aud.currentTime = 0; } catch (_) {} }
+  });
+}
+
+function safePlayMusic(aud) {
+  if (!aud || !musicEnabled) return;
+  aud.volume = 0;
+  aud.loop = true;
+  aud.play().then(() => {
+    if (window.gsap) {
+      gsap.to(aud, { volume: musicVolume, duration: 0.6, ease: "power2.out" });
+    } else {
+      aud.volume = musicVolume;
+    }
+  }).catch(() => {});
+}
+
+function setLevelMusic(audio) {
+  if (currentMusic && currentMusic !== audio) {
+    tryFadeOut(currentMusic);
+  }
+  currentMusic = audio || null;
+  safePlayMusic(currentMusic);
+}
+
+window.safePlayMusic = window.safePlayMusic || safePlayMusic;
+window.getCurrentLevelMusic = () => currentMusic;
 
 // ---- HUD CONFIG (barre compacte) ----
 const HUD_CONFIG = {
@@ -217,20 +342,18 @@ function hardResetRuntime(){
 /* global */ let timeLeft = 0;// nombre (secondes)
 /* global */ let lives = 0;   // nombre
 
-function loadLevel(index) {
-  // garde-fou
+async function loadLevel(index) {
   if (index < 0 || index >= LEVELS.length) return;
 
+  const assets = await ensureLevelAssets(index);
   const L = LEVELS[index];
   currentLevelIndex = index;
   window.currentLevelIndex = currentLevelIndex;
 
-  // Copier les valeurs utiles dans levelState
   levelState.targetScore = L.targetScore;
   levelState.timeLimit   = L.timeLimit;
   levelState.lives       = L.lives;
 
-  // --- Reset "compteurs de partie" (SANS toucher au moteur de jeu) ---
   score    = 0;
   streak   = 0;
   combo    = 1.0;
@@ -249,20 +372,41 @@ function loadLevel(index) {
     instance.targetScore = L.targetScore;
   }
 
-  // Rafraîchir le HUD si vous avez des setters dédiés (sinon votre updateHUD() fera le reste)
+  if (assets?.bg) {
+    const bgLayer = document.getElementById('bgLayer');
+    const hasCurrent = !!(bgLayer && bgLayer.style.backgroundImage);
+    if (hasCurrent) {
+      fadeOutBackgroundThen(() => setBackgroundImage(assets.bg));
+    } else {
+      setBackgroundImage(assets.bg);
+    }
+  }
+
+  if (assets?.wallet) {
+    setWalletSprite(assets.wallet);
+    if (game?.wallet) {
+      if (gsap && typeof gsap.fromTo === "function") {
+        gsap.fromTo(game.wallet, { visualScale: 0.5 }, {
+          visualScale: 1,
+          duration: 0.4,
+          ease: "back.out(2)",
+        });
+      } else {
+        game.wallet.visualScale = 1;
+      }
+      game.wallet.applyCaps?.();
+    }
+  }
+
+  setLevelMusic(assets?.music || null);
+
+  if (index + 1 < LEVELS.length) {
+    ensureLevelAssets(index + 1);
+  }
+
   if (typeof setHUDScore === "function") setHUDScore(score);
   if (typeof setHUDLives === "function") setHUDLives(lives);
   if (typeof setHUDTime  === "function") setHUDTime(timeLeft);
-
-  // (Option non-bloquante) : petite bannière “Niveau X — {name}”
-  // → Laisser commenté si vous ne voulez rien afficher pour le moment.
-  /*
-  if (window.gsap && document.getElementById('hud')) {
-    // Exemple minimal : flash visuel de la capsule combo
-    const chip = document.getElementById('hudComboChip');
-    if (chip) gsap.fromTo(chip, { opacity: 0.6 }, { opacity: 1, duration: 0.25, ease: "power1.out" });
-  }
-  */
 }
 
 function checkEndConditions(){
@@ -302,17 +446,17 @@ function resumeGameplay(){
   }
 }
 
-function goToNextLevel(){
+async function goToNextLevel(){
   const next = currentLevelIndex + 1;
   const lastIndex = Math.max(0, LEVELS.length - 1);
   const targetIndex = Math.min(next, lastIndex);
 
   hardResetRuntime();
-  loadLevel(targetIndex);
+  await loadLevel(targetIndex);
   resumeGameplay();
 }
 
-function startLevel1() { loadLevel(0); }
+function startLevel1() { return loadLevel(0); }
 
 window.loadLevel = loadLevel;
 
@@ -944,59 +1088,32 @@ Promise.all([
   new Promise(r => Hand.pinch.onload = r),
 ]).then(()=> Hand.ready = true);
 
-// --- Portefeuille
-const wallets = [
-  'assets/walletniveau1.png',
-  'assets/walletniveau2.png',
-  'assets/walletniveau3.png',
-  'assets/walletniveau4.png',
-  'assets/walletniveau4.png',
-];
+async function loadWallet(level = 1) {
+  const numericLevel = Math.max(1, Math.floor(Number.isFinite(level) ? level : Number(level) || 1));
+  const targetIndex = Math.min(Math.max(numericLevel - 1, 0), LEVELS.length - 1);
 
-let currentLevel = 1;
-let walletImage = null;
-let currentWalletSrc = '';
-
-function loadWallet(level = 1) {
-  const previousLevel = currentLevel;
-  const numericLevel = Number(level);
-  const fallbackLevel = previousLevel || 1;
-  const targetLevel = Math.max(1, Math.min(wallets.length, Math.floor(Number.isFinite(numericLevel) ? numericLevel : fallbackLevel)));
-  currentLevel = targetLevel;
-  const nextSrc = wallets[targetLevel - 1];
-  const shouldReload = currentWalletSrc !== nextSrc;
-
-  if (shouldReload) {
-    currentWalletSrc = nextSrc;
-    const img = new Image();
-    img.onload = () => {
-      walletImage = img;
+  try {
+    const assets = await ensureLevelAssets(targetIndex);
+    if (assets?.wallet) {
+      setWalletSprite(assets.wallet);
       if (game?.wallet) {
-        game.wallet.applyCaps();
+        if (gsap && typeof gsap.fromTo === 'function') {
+          const targetWallet = game.wallet;
+          gsap.fromTo(targetWallet, { visualScale: 0.5 }, {
+            visualScale: 1,
+            duration: 0.4,
+            ease: 'back.out(2)',
+          });
+        } else {
+          game.wallet.visualScale = 1;
+        }
+        game.wallet.applyCaps?.();
       }
-    };
-    img.src = nextSrc;
-    if (img.complete && img.naturalWidth > 0) {
-      img.onload();
     }
-  }
-
-  if (game?.wallet && (shouldReload || previousLevel !== targetLevel)) {
-    const targetWallet = game.wallet;
-    if (gsap && typeof gsap.fromTo === 'function') {
-      targetWallet.visualScale = 0.5;
-      gsap.fromTo(targetWallet, { visualScale: 0.5 }, {
-        visualScale: 1,
-        duration: 0.4,
-        ease: 'back.out(2)',
-      });
-    } else {
-      targetWallet.visualScale = 1;
-    }
+  } catch (_) {
+    // noop
   }
 }
-
-loadWallet(currentLevel);
 
 // Pré-decode (si supporté)
  [GoldImg, SilverImg, BronzeImg, DiamondImg, BombImg,
@@ -1440,13 +1557,13 @@ function showInterLevelScreen(result = "win") {
 
   if (btnNext){
     btnNext.textContent = result === "win" ? "Niveau suivant" : "Rejouer";
-    btnNext.onclick = () => {
+    btnNext.onclick = async () => {
       hideInterLevelScreen();
       if (result === "win"){
-        goToNextLevel();
+        await goToNextLevel();
       } else {
         hardResetRuntime();
-        loadLevel(currentLevelIndex);
+        await loadLevel(currentLevelIndex);
         resumeGameplay();
       }
     };
@@ -1978,6 +2095,7 @@ class Game{
     if (typeof setSoundEnabled === "function") {
       setSoundEnabled(!!this.settings.sound);
     }
+    musicEnabled = !!this.settings.sound;
     this.timeLeft=CONFIG.runSeconds; this.timeElapsed=0; this.lives=CONFIG.lives; this.score=0; this.comboStreak=0; this.comboMult=comboTiers[0].mult; this.maxCombo=0; this.levelReached=1;
     if (gsap?.killTweensOf) {
       gsap.killTweensOf(comboVis);
@@ -2118,7 +2236,23 @@ class Game{
       <p>Sensibilité: <input type="range" id="sens" min="0.5" max="1.5" step="0.05" value="${s.sensitivity}"></p>
       <div class="btnrow"><button id="back">Retour</button></div>
     </div>`;
-    addEvent(document.getElementById('sound'), 'change', e=>{ playSound("click"); this.settings.sound = e.target.checked; saveSettings(this.settings); if (typeof setSoundEnabled === "function") { setSoundEnabled(this.settings.sound); } });
+    addEvent(document.getElementById('sound'), 'change', e => {
+      playSound("click");
+      this.settings.sound = e.target.checked;
+      saveSettings(this.settings);
+      musicEnabled = !!this.settings.sound;
+      if (typeof setSoundEnabled === "function") {
+        setSoundEnabled(this.settings.sound);
+      }
+      const current = typeof getCurrentLevelMusic === 'function'
+        ? getCurrentLevelMusic()
+        : null;
+      if (!musicEnabled) {
+        tryFadeOut(current);
+      } else if (current) {
+        safePlayMusic(current);
+      }
+    });
     addEvent(document.getElementById('contrast'), 'change', e=>{ playSound("click"); this.settings.contrast = e.target.checked; saveSettings(this.settings); this.reset(); });
     addEvent(document.getElementById('haptics'), 'change', e=>{ playSound("click"); this.settings.haptics = e.target.checked; saveSettings(this.settings); });
     addEvent(document.getElementById('sens'), 'input', e=>{ this.settings.sensitivity = parseFloat(e.target.value); saveSettings(this.settings); });
