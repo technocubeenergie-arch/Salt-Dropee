@@ -49,6 +49,10 @@ const LEVELS = [
 
 const MENU_BACKGROUND_SRC = "assets/fondaccueil.png";
 
+// --- Paramètres fixes de gameplay (historique)
+const SPAWN_INTERVAL_MS = 900;
+const MAX_CONCURRENT_ITEMS = 6;
+
 // --- Cache d'assets par niveau ---
 const levelAssets = {}; // index -> { bg:Image, wallet:Image, music:HTMLAudioElement|null }
 
@@ -481,26 +485,12 @@ function stopMainLoop() {
 // --- État "niveaux" ---
 let currentLevelIndex = 0; // 0 → LEVELS[0] = niveau 1
 
-// --- Feature flag : activer/désactiver d'un coup les diffs par niveau ---
-const ENABLE_LEVEL_DIFFS = true; // mettre à false pour revenir au comportement précédent
-
-const DEFAULT_LEVEL_WEIGHTS = { good: 0.7, bad: 0.3 };
-const DEFAULT_BONUS_RATES = { magnetRate: 0.06, shieldRate: 0.06, x2Rate: 0.05 };
-
 const existingLevelState = (typeof levelState === 'object' && levelState) || {};
-// --- State associé à la difficulté du niveau courant ---
+// --- State associé au niveau courant ---
 /* global */ const levelState = Object.assign(existingLevelState, {
   targetScore: existingLevelState.targetScore ?? 0,
   timeLimit: existingLevelState.timeLimit ?? 0,
   lives: existingLevelState.lives ?? 0,
-  // valeurs par défaut (fallback si un champ manque dans LEVELS)
-  fallSpeedBase: existingLevelState.fallSpeedBase ?? 1.0,
-  fallSpeedRamp: existingLevelState.fallSpeedRamp ?? 0.0,            // ex: 0.004 = +0.4%/s
-  spawnIntervalMs: existingLevelState.spawnIntervalMs ?? 900,
-  maxConcurrentItems: existingLevelState.maxConcurrentItems ?? 6,
-  weights: Object.assign({}, existingLevelState.weights || DEFAULT_LEVEL_WEIGHTS),
-  bonusRates: Object.assign({}, existingLevelState.bonusRates || DEFAULT_BONUS_RATES),
-  levelStartTime: existingLevelState.levelStartTime ?? performance.now(),
 });
 
 if (typeof window !== 'undefined') {
@@ -590,27 +580,6 @@ function hardResetRuntime(){
   }
 }
 
-function applyDifficultyParams(L = {}) {
-  const cfg = L || {};
-  const fallSpeedBase = Number(cfg.fallSpeedBase);
-  const fallSpeedRamp = Number(cfg.fallSpeedRamp);
-  const spawnInterval = Number(cfg.spawnIntervalMs);
-  const maxItems = Number(cfg.maxConcurrentItems);
-  levelState.fallSpeedBase      = Number.isFinite(fallSpeedBase) ? fallSpeedBase : 1.0;
-  levelState.fallSpeedRamp      = Number.isFinite(fallSpeedRamp) ? fallSpeedRamp : 0.0;
-  levelState.spawnIntervalMs    = Number.isFinite(spawnInterval) ? spawnInterval : 900;
-  levelState.maxConcurrentItems = Number.isFinite(maxItems) ? maxItems : 6;
-  levelState.weights            = Object.assign({}, cfg.weights ?? DEFAULT_LEVEL_WEIGHTS);
-  levelState.bonusRates         = Object.assign({}, cfg.bonusRates ?? DEFAULT_BONUS_RATES);
-}
-
-function currentFallSpeed(){
-  if (!ENABLE_LEVEL_DIFFS) return 1.0;
-  const elapsedSec = (performance.now() - levelState.levelStartTime) / 1000;
-  const ramp = 1 + (levelState.fallSpeedRamp * elapsedSec);
-  return Math.max(0, levelState.fallSpeedBase * ramp);
-}
-
 async function loadLevel(index, options = {}) {
   if (index < 0 || index >= LEVELS.length) return;
 
@@ -656,13 +625,6 @@ async function loadLevel(index, options = {}) {
   }
   setLevelMusic(music);
 
-  if (ENABLE_LEVEL_DIFFS) {
-    applyDifficultyParams(L);
-  } else {
-    applyDifficultyParams({});
-  }
-
-  levelState.levelStartTime = performance.now();
   if (game?.spawner?.reset) {
     game.spawner.reset();
   }
@@ -1682,10 +1644,6 @@ function fxMagnetActive(wallet, fxManager) {
 const snap = v => Math.round(v);
 const rand = (a,b)=> Math.random()*(b-a)+a;
 function choiceWeighted(entries){ const total = entries.reduce((s,e)=>s+e.w,0); let r = Math.random()*total; for (const e of entries){ if ((r-=e.w) <= 0) return e.k; } return entries[entries.length-1].k; }
-function randomBool(p){
-  const prob = Number.isFinite(p) ? p : Number(p) || 0;
-  return Math.random() < prob;
-}
 
 function computeWalletCenterBounds(wallet){
   const overflow = 60;
@@ -1755,9 +1713,8 @@ function scheduleFall(item, opts = {}) {
 function applyManualFall(item, dt) {
   if (!item || !item.alive || item.dead) return;
 
-  const speedFactor = ENABLE_LEVEL_DIFFS ? currentFallSpeed() : 1.0;
   const baseVy = Number.isFinite(item.vyBase) ? item.vyBase : BASE_ITEM_VY;
-  const vy = clamp(baseVy * speedFactor, 0, MAX_MANUAL_VY);
+  const vy = clamp(baseVy, 0, MAX_MANUAL_VY);
   const endY = Number.isFinite(item.manualEndY) ? item.manualEndY : (BASE_H - 80);
 
   item.y += vy * dt;
@@ -2167,13 +2124,11 @@ class FallingItem{
     const endY = BASE_H - 80;
     this.manualEndY = endY;
     this.vyBase = BASE_ITEM_VY;
-    if (!ENABLE_LEVEL_DIFFS) {
-      const legacyDuration = CONFIG.fallDuration ?? 2.5;
-      const distance = Math.max(0, endY - this.y);
-      const vyLegacy = distance / Math.max(legacyDuration, 0.001);
-      if (Number.isFinite(vyLegacy) && vyLegacy > 0) {
-        this.vyBase = vyLegacy;
-      }
+    const legacyDuration = CONFIG.fallDuration ?? 2.5;
+    const distance = Math.max(0, endY - this.y);
+    const vyLegacy = distance / Math.max(legacyDuration, 0.001);
+    if (Number.isFinite(vyLegacy) && vyLegacy > 0) {
+      this.vyBase = vyLegacy;
     }
   }
 
@@ -2324,50 +2279,18 @@ class Spawner{
   }
   update(dt){
     if (!spawningEnabled || gameState !== "playing") return;
-    if (ENABLE_LEVEL_DIFFS){
-      const intervalRaw = Number(levelState.spawnIntervalMs);
-      const maxRaw = Number(levelState.maxConcurrentItems);
-      const interval = Math.max(16, Number.isFinite(intervalRaw) ? intervalRaw : 900);
-      const maxActive = Math.max(1, Number.isFinite(maxRaw) ? maxRaw : 6);
-      this.timeSinceLastSpawnMs += dt * 1000;
-      let activeCount = this.countActiveItems();
-      while (this.timeSinceLastSpawnMs >= interval && activeCount < maxActive){
-        this.spawnOne();
-        this.timeSinceLastSpawnMs -= interval;
-        activeCount = this.countActiveItems();
-      }
-      return;
-    }
-    const diff=this.g.diffMult();
-    this.acc += dt * (CONFIG.baseSpawnPerSec * diff);
-    while (this.acc >= 1){
+    const interval = SPAWN_INTERVAL_MS;
+    const maxActive = MAX_CONCURRENT_ITEMS;
+    this.timeSinceLastSpawnMs += dt * 1000;
+    let activeCount = this.countActiveItems();
+    while (this.timeSinceLastSpawnMs >= interval && activeCount < maxActive){
       this.spawnOne();
-      this.acc -= 1;
+      this.timeSinceLastSpawnMs -= interval;
+      activeCount = this.countActiveItems();
     }
   }
   spawnOne(){
     const x = this.g.arm.spawnX(); const y = this.g.arm.spawnY();
-    if (ENABLE_LEVEL_DIFFS){
-      const rates = levelState.bonusRates || DEFAULT_BONUS_RATES;
-      if (randomBool(rates.magnetRate)) { activateItemFall(spawnBonus(this.g,'magnet',x,y)); return; }
-      if (randomBool(rates.shieldRate)) { activateItemFall(spawnBonus(this.g,'shield',x,y)); return; }
-      if (randomBool(rates.x2Rate)) { activateItemFall(spawnBonus(this.g,'x2',x,y)); return; }
-
-      const weights = levelState.weights || DEFAULT_LEVEL_WEIGHTS;
-      const goodRaw = Number(weights.good);
-      const badRaw = Number(weights.bad);
-      const goodChance = clamp(Number.isFinite(goodRaw) ? goodRaw : DEFAULT_LEVEL_WEIGHTS.good, 0, 1);
-      const badChance = clamp(Number.isFinite(badRaw) ? badRaw : DEFAULT_LEVEL_WEIGHTS.bad, 0, 1);
-      const roll = Math.random();
-      if (roll < goodChance) {
-        activateItemFall(spawnGoodToken(this.g, x, y));
-      } else if (roll < goodChance + badChance) {
-        activateItemFall(spawnBadToken(this.g, x, y));
-      } else {
-        activateItemFall(spawnBadToken(this.g, x, y));
-      }
-      return;
-    }
 
     let pGood=0.7, pBad=0.2, pPow=0.1; if (this.g.timeElapsed>30){ pGood=0.6; pBad=0.3; pPow=0.1; }
     const r=Math.random();
@@ -2520,7 +2443,6 @@ class Game{
     loadLevel(currentLevelIndex, { applyBackground: !showTitle });
     if (showTitle) this.renderTitle(); else this.render();
   }
-  diffMult(){ return Math.pow(CONFIG.spawnRampFactor, Math.floor(this.timeElapsed/CONFIG.spawnRampEverySec)); }
   updateBgByScore(){
     const th = CONFIG.evolveThresholds;
     let idx = 0;
