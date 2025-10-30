@@ -6,6 +6,31 @@
 const hasTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
 const gsap = window.gsap;
 
+// --- Loop & spawn state
+let loopRunning = false;
+let lastTs = 0;
+let spawningEnabled = false;
+let timeSinceLastSpawn = 0;
+
+function startMainLoopOnce(){
+  if (loopRunning) return;
+  loopRunning = true;
+  lastTs = 0;
+  requestAnimationFrame(gameLoop);
+  console.info("[loop] started");
+}
+
+function gameLoop(ts){
+  if (!lastTs) lastTs = ts;
+  const dtMs = Math.min(50, ts - lastTs);
+  lastTs = ts;
+
+  if (spawningEnabled) updateSpawn(dtMs);
+  updateGameFrame(dtMs);
+
+  requestAnimationFrame(gameLoop);
+}
+
 // --- LEVELS: fichiers réels du projet ---
 const LEVELS = [
   {
@@ -80,6 +105,18 @@ async function ensureLevelAssets(index) {
   return levelAssets[index];
 }
 
+function updateGameFrame(dtMs){
+  if (!game || game.state !== 'playing') return;
+  const dt = Math.max(0, Math.min(0.05, dtMs / 1000));
+  if (dt <= 0) return;
+  try {
+    game.step(dt);
+    game.render();
+  } catch (err) {
+    console.error('[loop] update failed', err);
+  }
+}
+
 function setBackgroundImage(img) {
   const el = document.getElementById('bgLayer');
   if (!el || !img) return;
@@ -101,44 +138,181 @@ function setWalletSprite(img) {
   walletImage = img;
 }
 
+function hideMenuOverlays(){
+  document.querySelectorAll('.overlay')
+    .forEach(el => {
+      el.style.opacity = 0;
+      el.style.pointerEvents = 'none';
+      el.setAttribute('aria-hidden', 'true');
+      if (el.id === 'overlay') {
+        setTimeout(() => {
+          if (el.style.opacity === '0') {
+            el.innerHTML = '';
+          }
+        }, 250);
+      }
+    });
+}
+
+function showOverlayContent(html){
+  if (!overlay) overlay = document.getElementById('overlay');
+  if (!overlay) return;
+  overlay.innerHTML = html;
+  overlay.style.opacity = 1;
+  overlay.style.pointerEvents = 'auto';
+  overlay.setAttribute('aria-hidden', 'false');
+}
+
+function warmCanvasTextures(){
+  if (canvasPrimed || !ctx) return;
+  canvasPrimed = true;
+  requestAnimationFrame(() => {
+    try {
+      const prev = ctx.imageSmoothingEnabled;
+      ctx.imageSmoothingEnabled = false;
+      const imgs = [
+        walletImage,
+        GoldImg, SilverImg, BronzeImg, DiamondImg,
+        BombImg, ShitcoinImg, RugpullImg, FakeADImg, AnvilImg,
+        MagnetImg, X2Img, ShieldImg, TimeImg,
+        Hand?.open, Hand?.pinch
+      ];
+      for (const im of imgs) {
+        if (im && im.naturalWidth) {
+          ctx.drawImage(im, 0, 0, 1, 1);
+        }
+      }
+      ctx.save();
+      ctx.shadowColor = 'rgba(0,0,0,0.15)';
+      ctx.shadowBlur = 4;
+      ctx.shadowOffsetY = 1;
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(4, 4, 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      ctx.imageSmoothingEnabled = prev;
+      ctx.clearRect(0, 0, 8, 8);
+    } catch (_) {}
+  });
+}
+
+function spawnOneItem(){
+  if (!game?.spawner?.spawnOne) return;
+  try {
+    game.spawner.spawnOne();
+  } catch (err) {
+    console.error('[spawn] spawnOne failed', err);
+  }
+}
+
+function updateSpawn(dtMs){
+  const activeList = Array.isArray(game?.items) ? game.items : (window.activeItems || []);
+  const maxActive = levelState?.maxConcurrentItems ?? 6;
+  if (activeList && activeList.length >= maxActive) {
+    timeSinceLastSpawn = Math.min(timeSinceLastSpawn + dtMs, 1e4);
+    return;
+  }
+
+  const baseRate = CONFIG?.baseSpawnPerSec ? 1000 / CONFIG.baseSpawnPerSec : 900;
+  const baseInterval = Math.max(100, levelState?.spawnIntervalMs ?? baseRate);
+  const rampEvery = Number(CONFIG?.spawnRampEverySec) || 0;
+  const rampFactor = Number(CONFIG?.spawnRampFactor) || 1;
+
+  let effectiveInterval = baseInterval;
+  if (game && rampEvery > 0 && rampFactor > 1) {
+    const elapsed = Math.max(0, game.timeElapsed || 0);
+    const steps = Math.floor(elapsed / rampEvery);
+    if (steps > 0) {
+      effectiveInterval = baseInterval / Math.pow(rampFactor, steps);
+    }
+  }
+  effectiveInterval = Math.max(100, effectiveInterval);
+
+  timeSinceLastSpawn += dtMs;
+  if (timeSinceLastSpawn >= effectiveInterval) {
+    spawnOneItem();
+    timeSinceLastSpawn = 0;
+    // console.log('[spawn] ok');
+  }
+}
+
 let currentMusic = null;
 let musicVolume = 0.6;
 let musicEnabled = true;
 
-function tryFadeOut(aud) {
+function tryFadeOut(aud){
   if (!aud) return;
-  if (!window.gsap) {
-    try { aud.pause(); aud.currentTime = 0; } catch (_) {}
-    return;
-  }
-  gsap.to(aud, {
-    volume: 0,
-    duration: 0.4,
-    ease: "power1.out",
-    onComplete: () => { try { aud.pause(); aud.currentTime = 0; } catch (_) {} }
-  });
+  try {
+    if (window.gsap) {
+      gsap.to(aud, {
+        volume: 0,
+        duration: 0.4,
+        onComplete: () => {
+          try {
+            aud.pause();
+            aud.currentTime = 0;
+          } catch (_) {}
+        }
+      });
+    } else {
+      aud.pause();
+      aud.currentTime = 0;
+    }
+  } catch (_) {}
 }
 
-function safePlayMusic(aud) {
+function safePlayMusic(aud){
   if (!aud || !musicEnabled) return;
-  aud.volume = 0;
-  aud.loop = true;
-  aud.play().then(() => {
-    if (window.gsap) {
-      gsap.to(aud, { volume: musicVolume, duration: 0.6, ease: "power2.out" });
+  try {
+    aud.loop = true;
+    aud.volume = 0;
+    const p = aud.play();
+    if (p && typeof p.then === 'function') {
+      p.then(() => {
+        if (window.gsap) {
+          gsap.to(aud, { volume: musicVolume, duration: 0.6 });
+        } else {
+          aud.volume = musicVolume;
+        }
+      }).catch(() => {
+        // iOS bloque parfois : on rejouera après gesture
+      });
     } else {
       aud.volume = musicVolume;
     }
-  }).catch(() => {});
+  } catch (_) {}
 }
 
-function setLevelMusic(audio) {
+function setLevelMusic(audio){
   if (currentMusic && currentMusic !== audio) {
     tryFadeOut(currentMusic);
   }
   currentMusic = audio || null;
   safePlayMusic(currentMusic);
 }
+
+let audioUnlockRegistered = false;
+
+function unlockAudioOnce(){
+  if (audioUnlockRegistered) return;
+  audioUnlockRegistered = true;
+  const once = () => {
+    try {
+      if (typeof window.unlockSfxOnce === 'function') {
+        window.unlockSfxOnce();
+      }
+    } catch (_) {}
+    try {
+      safePlayMusic(currentMusic);
+    } catch (_) {}
+  };
+  ["pointerdown","touchstart","mousedown"].forEach(ev =>
+    window.addEventListener(ev, once, { once:true, passive:true })
+  );
+}
+
+window.addEventListener('load', unlockAudioOnce);
 
 window.safePlayMusic = window.safePlayMusic || safePlayMusic;
 window.getCurrentLevelMusic = () => currentMusic;
@@ -299,10 +473,40 @@ let canvas;
 let ctx;
 let overlay;
 let game;
+let canvasPrimed = false;
 
 // --- État "niveaux" ---
 let currentLevelIndex = 0; // 0 → LEVELS[0] = niveau 1
-let levelState = { targetScore: 0, timeLimit: 0, lives: 0 };
+let levelState = {
+  targetScore: 0,
+  timeLimit: 0,
+  lives: 0,
+  fallSpeedBase: 1.0,
+  fallSpeedRamp: 0.0,
+  spawnIntervalMs: 900,
+  maxConcurrentItems: 6,
+  weights: { good: 0.7, bad: 0.3 },
+  bonusRates: { magnetRate: 0.06, shieldRate: 0.06, x2Rate: 0.05 }
+};
+
+function numOr(v, d){
+  const n = Number(v);
+  return Number.isFinite(n) ? n : d;
+}
+
+function applyDifficultyParams(L = {}){
+  const spawnFromConfig = CONFIG?.baseSpawnPerSec ? 1000 / CONFIG.baseSpawnPerSec : 900;
+  levelState.fallSpeedBase      = Math.max(0.1, numOr(L.fallSpeedBase, levelState.fallSpeedBase));
+  levelState.fallSpeedRamp      = numOr(L.fallSpeedRamp, 0.0);
+  levelState.spawnIntervalMs    = Math.max(100, numOr(L.spawnIntervalMs, spawnFromConfig));
+  levelState.maxConcurrentItems = Math.max(1,   numOr(L.maxConcurrentItems, 6));
+
+  const defW = { good: 0.7, bad: 0.3 };
+  levelState.weights = { ...defW, ...(L?.weights || {}) };
+
+  const defB = { magnetRate: 0.06, shieldRate: 0.06, x2Rate: 0.05 };
+  levelState.bonusRates = { ...defB, ...(L?.bonusRates || {}) };
+}
 
 // --- Game state & guards ---
 let gameState = "playing";  // "playing" | "paused" | "inter"
@@ -313,7 +517,6 @@ function canEndLevel(){
 }
 
 // Spawning/inputs/animations toggles
-let spawningEnabled = true;
 let inputEnabled = true;
 
 function stopSpawningItems(){ spawningEnabled = false; }
@@ -345,14 +548,17 @@ function hardResetRuntime(){
 async function loadLevel(index) {
   if (index < 0 || index >= LEVELS.length) return;
 
-  const assets = await ensureLevelAssets(index);
   const L = LEVELS[index];
+  console.info('[level] load', index, L?.name);
+
+  const { bg, wallet, music } = await ensureLevelAssets(index);
   currentLevelIndex = index;
   window.currentLevelIndex = currentLevelIndex;
 
   levelState.targetScore = L.targetScore;
   levelState.timeLimit   = L.timeLimit;
   levelState.lives       = L.lives;
+  applyDifficultyParams(L);
 
   score    = 0;
   streak   = 0;
@@ -372,18 +578,18 @@ async function loadLevel(index) {
     instance.targetScore = L.targetScore;
   }
 
-  if (assets?.bg) {
+  if (bg) {
     const bgLayer = document.getElementById('bgLayer');
     const hasCurrent = !!(bgLayer && bgLayer.style.backgroundImage);
     if (hasCurrent) {
-      fadeOutBackgroundThen(() => setBackgroundImage(assets.bg));
+      fadeOutBackgroundThen(() => setBackgroundImage(bg));
     } else {
-      setBackgroundImage(assets.bg);
+      setBackgroundImage(bg);
     }
   }
 
-  if (assets?.wallet) {
-    setWalletSprite(assets.wallet);
+  if (wallet) {
+    setWalletSprite(wallet);
     if (game?.wallet) {
       if (gsap && typeof gsap.fromTo === "function") {
         gsap.fromTo(game.wallet, { visualScale: 0.5 }, {
@@ -398,7 +604,7 @@ async function loadLevel(index) {
     }
   }
 
-  setLevelMusic(assets?.music || null);
+  setLevelMusic(music || null);
 
   if (index + 1 < LEVELS.length) {
     ensureLevelAssets(index + 1);
@@ -407,6 +613,35 @@ async function loadLevel(index) {
   if (typeof setHUDScore === "function") setHUDScore(score);
   if (typeof setHUDLives === "function") setHUDLives(lives);
   if (typeof setHUDTime  === "function") setHUDTime(timeLeft);
+
+  console.info('[level] ready');
+}
+
+async function onClickPlay(e){
+  e?.preventDefault?.();
+  e?.stopPropagation?.();
+  if (typeof playSound === 'function') {
+    playSound('click');
+  }
+
+  hideMenuOverlays();
+  warmCanvasTextures();
+
+  startMainLoopOnce();
+  spawningEnabled = true;
+  timeSinceLastSpawn = 0;
+
+  if (game && typeof game.uiStartFromTitle === 'function') {
+    game.uiStartFromTitle();
+  } else if (game && typeof game.start === 'function') {
+    game.start();
+  }
+
+  try {
+    await loadLevel(0);
+  } catch (err) {
+    console.error('[start] loadLevel failed, continuing', err);
+  }
 }
 
 function checkEndConditions(){
@@ -439,8 +674,10 @@ function resumeGameplay(){
   levelEnded = false;
   gameState = "playing";
   spawningEnabled = true;
+  timeSinceLastSpawn = 0;
   resumeAllAnimations();
   enablePlayerInput();
+  startMainLoopOnce();
   if (game?.spawner) {
     game.spawner.acc = 0;
   }
@@ -2079,10 +2316,10 @@ class Game{
   static instance=null;
   constructor(){ Game.instance=this; this.reset({ showTitle:true }); }
   reset({showTitle=true}={}){
-    window.__saltDroppeeLoopStarted = false;
     levelEnded = false;
     gameState = "playing";
-    spawningEnabled = true;
+    spawningEnabled = false;
+    timeSinceLastSpawn = 0;
     enablePlayerInput();
     resumeAllAnimations();
     if (this.fx) this.fx.clearAll();
@@ -2110,30 +2347,16 @@ class Game{
   }
   diffMult(){ return Math.pow(CONFIG.spawnRampFactor, Math.floor(this.timeElapsed/CONFIG.spawnRampEverySec)); }
   updateBgByScore(){ const th=CONFIG.evolveThresholds; let idx=0; for (let i=0;i<th.length;i++){ if (this.score>=th[i]) idx=i; } if (idx!==this.bgIndex){ this.bgIndex=idx; this.wallet.evolveByScore(this.score); this.levelReached = Math.max(this.levelReached, this.wallet.level); } }
-  start(){ resumeGameplay(); this.state='playing'; this.lastTime=performance.now(); this.ignoreClicksUntil=this.lastTime+500; this.ignoreVisibilityUntil=this.lastTime+1000; this.loop(); }
+  start(){
+    resumeGameplay();
+    this.state='playing';
+    const now = performance.now();
+    this.ignoreClicksUntil = now + 500;
+    this.ignoreVisibilityUntil = now + 1000;
+    warmCanvasTextures();
+  }
   loop(){
-    if (this.state!=='playing'){
-      window.__saltDroppeeLoopStarted = false;
-      return;
-    }
-    if (window.__saltDroppeeLoopStarted) return;
-    window.__saltDroppeeLoopStarted = true;
-
-    const now=performance.now();
-    const dt=Math.min(0.033, (now-this.lastTime)/1000);
-    this.lastTime=now;
-    this.step(dt);
-    this.render();
-
-    if (this.state!=='playing'){
-      window.__saltDroppeeLoopStarted = false;
-      return;
-    }
-
-    requestAnimationFrame(()=>{
-      window.__saltDroppeeLoopStarted = false;
-      this.loop();
-    });
+    startMainLoopOnce();
   }
   step(dt){
     beginFrame();
@@ -2153,7 +2376,6 @@ class Game{
 
     this.arm.update(dt);
     this.wallet.update(dt);
-    this.spawner.update(dt);
     const w=this.wallet; const cx=CONFIG.collision.walletScaleX, cy=CONFIG.collision.walletScaleY, px=CONFIG.collision.walletPadX, py=CONFIG.collision.walletPadY;
     WR.x = w.x + (w.w - w.w*cx)/2 + px;
     WR.y = w.y + (w.h - w.h*cy)/2 + py;
@@ -2205,9 +2427,9 @@ class Game{
   endGame(){ this.fx?.clearAll(); resetActiveBonuses(); resetShieldState({ silent: true }); this.state='over'; this.render(); try{ const best=parseInt(localStorage.getItem(LS.bestScore)||'0',10); if (this.score>best) localStorage.setItem(LS.bestScore, String(this.score)); const bestC=parseInt(localStorage.getItem(LS.bestCombo)||'0',10); if (this.maxCombo>bestC) localStorage.setItem(LS.bestCombo, String(this.maxCombo)); const runs=JSON.parse(localStorage.getItem(LS.runs)||'[]'); runs.unshift({ ts:Date.now(), score:this.score, combo:this.maxCombo, lvl:this.levelReached }); while (runs.length>20) runs.pop(); localStorage.setItem(LS.runs, JSON.stringify(runs)); }catch(e){}
     this.renderGameOver(); if (TG){ try{ TG.sendData(JSON.stringify({ score:this.score, duration:CONFIG.runSeconds, version:VERSION })); }catch(e){} }
   }
-  uiStartFromTitle(){ if (this.state==='title'){ overlay.innerHTML=''; this.start(); } }
+  uiStartFromTitle(){ if (this.state==='title'){ hideMenuOverlays(); this.start(); } }
   renderTitle(){
-    overlay.innerHTML = `
+    showOverlayContent(`
       <div class="panel">
         <h1>Salt Droppee</h1>
         <p>Attrapez les bons tokens, évitez les malus. 75s, 3 vies.</p>
@@ -2216,18 +2438,15 @@ class Game{
           <button id="btnSettings">Paramètres</button>
           <button id="btnLB">Leaderboard local</button>
         </div>
-      </div>`;
+      </div>`);
     addEvent(document.getElementById('btnSettings'), INPUT.tap, ()=>{ playSound("click"); this.renderSettings(); });
     addEvent(document.getElementById('btnLB'), INPUT.tap, ()=>{ playSound("click"); this.renderLeaderboard(); });
-    addEvent(document.getElementById('btnPlay'), INPUT.tap, async (e)=>{
-      e.preventDefault(); e.stopPropagation();
-      playSound("click");
-      await new Promise(r=>requestAnimationFrame(r));
-      try{ const prev=ctx.imageSmoothingEnabled; ctx.imageSmoothingEnabled=false; const imgs=[walletImage, GoldImg, SilverImg, BronzeImg, DiamondImg, BombImg, Hand.open, Hand.pinch]; for (const im of imgs){ if (im && im.naturalWidth) ctx.drawImage(im,0,0,1,1); } ctx.save(); ctx.shadowColor='rgba(0,0,0,0.15)'; ctx.shadowBlur=4; ctx.shadowOffsetY=1; ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(4,4,2,0,Math.PI*2); ctx.fill(); ctx.restore(); ctx.imageSmoothingEnabled=prev; ctx.clearRect(0,0,8,8); }catch(_){ }
-      this.uiStartFromTitle();
-    }, { passive:false });
+    const playBtn = document.getElementById('btnPlay');
+    if (playBtn) {
+      playBtn.addEventListener('click', onClickPlay, { passive: false });
+    }
   }
-  renderSettings(){ const s=this.settings; overlay.innerHTML = `
+  renderSettings(){ const s=this.settings; showOverlayContent(`
     <div class="panel">
       <h1>Paramètres</h1>
       <p><label><input type="checkbox" id="sound" ${s.sound?'checked':''}/> Son</label></p>
@@ -2235,7 +2454,7 @@ class Game{
       <p><label><input type="checkbox" id="haptics" ${s.haptics?'checked':''}/> Vibrations</label></p>
       <p>Sensibilité: <input type="range" id="sens" min="0.5" max="1.5" step="0.05" value="${s.sensitivity}"></p>
       <div class="btnrow"><button id="back">Retour</button></div>
-    </div>`;
+    </div>`);
     addEvent(document.getElementById('sound'), 'change', e => {
       playSound("click");
       this.settings.sound = e.target.checked;
@@ -2261,7 +2480,7 @@ class Game{
   renderLeaderboard(){ let runs=[]; try{ runs = JSON.parse(localStorage.getItem(LS.runs)||'[]'); }catch(e){}
     const best = parseInt(localStorage.getItem(LS.bestScore)||'0',10);
     const bestC = parseInt(localStorage.getItem(LS.bestCombo)||'0',10);
-    overlay.innerHTML = `
+    showOverlayContent(`
     <div class="panel">
       <h1>Leaderboard (local)</h1>
       <p>Record: <b>${best}</b> | Combo max: <b>${bestC}</b></p>
@@ -2269,11 +2488,23 @@ class Game{
         ${runs.map((r,i)=>`#${i+1} — ${new Date(r.ts).toLocaleString()} — Score ${r.score} — Combo ${r.combo} — N${r.lvl}`).join('<br/>') || 'Aucune partie'}
       </div>
       <div class="btnrow"><button id="back">Retour</button></div>
-    </div>`;
+    </div>`);
     addEvent(document.getElementById('back'), INPUT.tap, ()=>{ playSound("click"); this.renderTitle(); });
   }
-  renderPause(){ overlay.innerHTML = `<div class="panel"><h1>Pause</h1><div class="btnrow"><button id="resume">Reprendre</button><button id="quit">Menu</button></div></div>`; addEvent(document.getElementById('resume'), INPUT.tap, ()=>{ playSound("click"); overlay.innerHTML=''; this.state='playing'; this.lastTime=performance.now(); this.loop(); }); addEvent(document.getElementById('quit'), INPUT.tap, ()=>{ playSound("click"); this.reset(); }); }
-  renderGameOver(){ const best=parseInt(localStorage.getItem(LS.bestScore)||'0',10); overlay.innerHTML = `
+  renderPause(){
+    showOverlayContent(`<div class="panel"><h1>Pause</h1><div class="btnrow"><button id="resume">Reprendre</button><button id="quit">Menu</button></div></div>`);
+    addEvent(document.getElementById('resume'), INPUT.tap, ()=>{
+      playSound("click");
+      hideMenuOverlays();
+      this.state='playing';
+      resumeGameplay();
+    });
+    addEvent(document.getElementById('quit'), INPUT.tap, ()=>{
+      playSound("click");
+      this.reset();
+    });
+  }
+  renderGameOver(){ const best=parseInt(localStorage.getItem(LS.bestScore)||'0',10); showOverlayContent(`
     <div class="panel">
       <h1>Fin de partie</h1>
       <p>Score: <b>${this.score}</b> | Record local: <b>${best}</b></p>
@@ -2283,8 +2514,8 @@ class Game{
         <button id="menu">Menu</button>
         ${TG? '<button id="share">Partager</button>': ''}
       </div>
-    </div>`;
-    addEvent(document.getElementById('again'), INPUT.tap, async ()=>{ playSound("click"); overlay.innerHTML=''; this.reset({showTitle:false}); await new Promise(r=>requestAnimationFrame(r)); this.start(); }, { passive:false });
+    </div>`);
+    addEvent(document.getElementById('again'), INPUT.tap, async ()=>{ playSound("click"); hideMenuOverlays(); this.reset({showTitle:false}); await new Promise(r=>requestAnimationFrame(r)); this.start(); }, { passive:false });
     addEvent(document.getElementById('menu'), INPUT.tap, ()=>{ playSound("click"); this.reset({showTitle:true}); });
     if (TG){ const sh=document.getElementById('share'); if (sh) addEvent(sh, INPUT.tap, ()=>{ playSound("click"); try{ TG.sendData(JSON.stringify({ score:this.score, duration:CONFIG.runSeconds, version:VERSION })); }catch(e){} }); }
   }
@@ -2364,9 +2595,9 @@ function startGame(){
 
   startLevel1();
 
-  addEvent(document, 'visibilitychange', ()=>{ if (document.hidden && game.state==='playing'){ const now = performance.now(); if (game.ignoreVisibilityUntil && now < game.ignoreVisibilityUntil) return; game.state='paused'; game.renderPause(); } });
+  addEvent(document, 'visibilitychange', ()=>{ if (document.hidden && game.state==='playing'){ const now = performance.now(); if (game.ignoreVisibilityUntil && now < game.ignoreVisibilityUntil) return; game.state='paused'; stopSpawningItems(); game.renderPause(); } });
 
-  addEvent(canvas, INPUT.tap, (e)=>{ if (game.state!=='playing') return; const now=performance.now(); if (game.ignoreClicksUntil && now < game.ignoreClicksUntil) return; const pt=getCanvasPoint(e); if (pt.y<40 && pt.x>BASE_W-80){ playSound("click"); game.state='paused'; game.renderPause(); } });
+  addEvent(canvas, INPUT.tap, (e)=>{ if (game.state!=='playing') return; const now=performance.now(); if (game.ignoreClicksUntil && now < game.ignoreClicksUntil) return; const pt=getCanvasPoint(e); if (pt.y<40 && pt.x>BASE_W-80){ playSound("click"); game.state='paused'; stopSpawningItems(); game.renderPause(); } });
 
   game.render();
 }

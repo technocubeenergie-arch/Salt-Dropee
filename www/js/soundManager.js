@@ -31,30 +31,29 @@ function isSoundEnabled() {
 }
 
 // --- Déverrouillage audio mobile ---
-function unlockAudioOnce() {
-  const tryUnlock = () => {
-    for (const k in sounds) {
-      try {
-        sounds[k].play().then(() => sounds[k].pause());
-      } catch (_) {}
-    }
-    const currentMusic = typeof window.getCurrentLevelMusic === "function"
-      ? window.getCurrentLevelMusic()
-      : null;
-    if (currentMusic && typeof window.safePlayMusic === "function") {
-      window.safePlayMusic(currentMusic);
-    }
-    window.removeEventListener("pointerdown", tryUnlock);
-    window.removeEventListener("touchstart", tryUnlock);
-    window.removeEventListener("mousedown", tryUnlock);
-  };
+function unlockSfxOnce() {
+  for (const k in sounds) {
+    const snd = sounds[k];
+    if (!snd) continue;
+    try {
+      const p = snd.play();
+      if (p && typeof p.then === "function") {
+        p.then(() => snd.pause()).catch(() => {});
+      } else {
+        snd.pause();
+      }
+    } catch (_) {}
+  }
 
-  window.addEventListener("pointerdown", tryUnlock, { once: true });
-  window.addEventListener("touchstart", tryUnlock, { once: true });
-  window.addEventListener("mousedown", tryUnlock, { once: true });
+  const currentMusic = typeof window.getCurrentLevelMusic === "function"
+    ? window.getCurrentLevelMusic()
+    : null;
+  if (currentMusic && typeof window.safePlayMusic === "function") {
+    window.safePlayMusic(currentMusic);
+  }
 }
 
 window.playSound = window.playSound || playSound;
-window.unlockAudioOnce = window.unlockAudioOnce || unlockAudioOnce;
+window.unlockSfxOnce = window.unlockSfxOnce || unlockSfxOnce;
 window.setSoundEnabled = window.setSoundEnabled || setSoundEnabled;
 window.isSoundEnabled = window.isSoundEnabled || isSoundEnabled;
