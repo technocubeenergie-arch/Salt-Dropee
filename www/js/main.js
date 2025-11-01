@@ -6,6 +6,49 @@
 const hasTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
 const gsap = window.gsap;
 
+if (typeof window.openSettings !== "function") {
+  window.openSettings = function openSettingsFallback() {
+    const instance = (typeof Game !== "undefined" && Game.instance)
+      ? Game.instance
+      : null;
+
+    if (instance && typeof instance.renderSettings === "function") {
+      if (typeof playSound === "function") {
+        playSound("click");
+      }
+      instance.renderSettings();
+      return;
+    }
+
+    throw new Error("No settings handler available");
+  };
+}
+
+console.info("[settings] listener initialized");
+document.addEventListener("click", (event) => {
+  const btn = event.target.closest('[data-action="open-settings"]');
+  if (!btn) return;
+
+  event.preventDefault();
+
+  if (
+    btn.closest("#interLevelScreen") &&
+    typeof hideInterLevelScreen === "function"
+  ) {
+    try {
+      hideInterLevelScreen();
+    } catch (err) {
+      console.error("[settings] failed to hide inter-level screen:", err);
+    }
+  }
+
+  try {
+    openSettings();
+  } catch (err) {
+    console.error("[settings] openSettings failed:", err);
+  }
+});
+
 // --- LEVELS: fichiers réels du projet ---
 const LEVELS = [
   {
@@ -1737,7 +1780,6 @@ function hideInterLevelScreen(){
 function bindInterLevelButtons(){
   const bNext = document.getElementById("btnNextLevel");
   const bSave = document.getElementById("btnSaveQuit");
-  const bSett = document.getElementById("btnSettings");
 
   if (bNext){
     bNext.onclick = () => {
@@ -1750,15 +1792,6 @@ function bindInterLevelButtons(){
     bSave.onclick = () => {
       hideInterLevelScreen();
       console.log("[InterLevel] save & quit stub");
-    };
-  }
-
-  if (bSett){
-    bSett.onclick = () => {
-      hideInterLevelScreen();
-      if (typeof openSettings === "function") {
-        openSettings();
-      }
     };
   }
 }
@@ -2421,13 +2454,12 @@ class Game{
         <h1>Salt Droppee</h1>
         <p>Attrapez les bons tokens, évitez les malus. 75s, 3 vies.</p>
         <div class="btnrow">
-          <button id="btnPlay">Jouer</button>
-          <button id="btnSettings">Paramètres</button>
-          <button id="btnLB">Leaderboard local</button>
+          <button id="btnPlay" type="button">Jouer</button>
+          <button type="button" class="btn-settings" data-action="open-settings">Paramètres</button>
+          <button id="btnLB" type="button">Leaderboard local</button>
         </div>
       </div>`;
     showOverlay(overlay);
-    addEvent(document.getElementById('btnSettings'), INPUT.tap, ()=>{ playSound("click"); this.renderSettings(); });
     addEvent(document.getElementById('btnLB'), INPUT.tap, ()=>{ playSound("click"); this.renderLeaderboard(); });
     addEvent(document.getElementById('btnPlay'), INPUT.tap, async (e)=>{
       e.preventDefault(); e.stopPropagation();
@@ -2469,7 +2501,7 @@ class Game{
     addEvent(document.getElementById('back'), INPUT.tap, ()=>{ playSound("click"); this.renderTitle(); });
   }
   renderPause(){
-    overlay.innerHTML = `<div class="panel"><h1>Pause</h1><div class="btnrow"><button id="resume">Reprendre</button><button id="quit">Menu</button></div></div>`;
+    overlay.innerHTML = `<div class="panel"><h1>Pause</h1><div class="btnrow"><button id="resume" type="button">Reprendre</button><button type="button" class="btn-settings" data-action="open-settings">Paramètres</button><button id="quit" type="button">Menu</button></div></div>`;
     showOverlay(overlay);
     addEvent(document.getElementById('resume'), INPUT.tap, ()=>{
       playSound("click");
