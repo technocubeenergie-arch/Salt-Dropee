@@ -91,11 +91,6 @@ html, body { height: 100%; margin: 0; background: var(--bg); color: var(--ui); f
   pointer-events: auto;
 }
 
-.btn-settings,
-.btn-back {
-  cursor: pointer;
-}
-
 #overlay {
   z-index: 1001;
 }
