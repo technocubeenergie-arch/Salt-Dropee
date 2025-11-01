@@ -6,49 +6,6 @@
 const hasTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
 const gsap = window.gsap;
 
-if (typeof window.openSettings !== "function") {
-  window.openSettings = function openSettingsFallback() {
-    const instance = (typeof Game !== "undefined" && Game.instance)
-      ? Game.instance
-      : null;
-
-    if (instance && typeof instance.renderSettings === "function") {
-      if (typeof playSound === "function") {
-        playSound("click");
-      }
-      instance.renderSettings();
-      return;
-    }
-
-    throw new Error("No settings handler available");
-  };
-}
-
-console.info("[settings] listener initialized");
-document.addEventListener("click", (event) => {
-  const btn = event.target.closest('[data-action="open-settings"]');
-  if (!btn) return;
-
-  event.preventDefault();
-
-  if (
-    btn.closest("#interLevelScreen") &&
-    typeof hideInterLevelScreen === "function"
-  ) {
-    try {
-      hideInterLevelScreen();
-    } catch (err) {
-      console.error("[settings] failed to hide inter-level screen:", err);
-    }
-  }
-
-  try {
-    openSettings();
-  } catch (err) {
-    console.error("[settings] openSettings failed:", err);
-  }
-});
-
 // --- LEVELS: fichiers réels du projet ---
 const LEVELS = [
   {
@@ -474,11 +431,18 @@ let currentLevelIndex = 0; // 0 → LEVELS[0] = niveau 1
 let levelState = { targetScore: 0, timeLimit: 0, lives: 0 };
 
 // --- Game state & guards ---
-let gameState = "playing";  // "playing" | "paused" | "inter"
+let gameState = (typeof window !== 'undefined' && typeof window.gameState !== 'undefined')
+  ? window.gameState
+  : 'title';
+window.gameState = gameState;
+
+// Origine mémorisée à l'ouverture des paramètres
+let settingsReturnTo = null;
 let levelEnded = false;
+let lastInterLevelResult = 'win';
 
 function canEndLevel(){
-  return !levelEnded && gameState === "playing";
+  return !levelEnded && gameState === 'running';
 }
 
 /* global */ let score = 0;   // nombre
@@ -517,6 +481,29 @@ function disablePlayerInput(){
 function resumeAllAnimations(){
   if (window.gsap?.globalTimeline) {
     gsap.globalTimeline.resume();
+  }
+}
+
+function freezeGame(shouldFreeze = true) {
+  if (shouldFreeze) {
+    pauseAllAnimations();
+    disablePlayerInput();
+    spawningEnabled = false;
+    if (game) {
+      game.state = 'paused';
+    }
+    return;
+  }
+
+  resumeAllAnimations();
+  enablePlayerInput();
+  spawningEnabled = true;
+  if (game) {
+    game.state = 'running';
+    game.lastTime = performance.now();
+    if (typeof game.loop === 'function') {
+      game.loop();
+    }
   }
 }
 
@@ -618,14 +605,16 @@ function checkEndConditions(){
 function endLevel(result){
   if (!canEndLevel()) return;
   levelEnded = true;
-  gameState = "inter";
+  gameState = 'interLevel';
+  window.gameState = gameState;
+  lastInterLevelResult = result;
 
   stopSpawningItems();
   pauseAllAnimations();
   disablePlayerInput();
 
   if (game) {
-    game.state = "inter";
+    game.state = 'interLevel';
     if (typeof game.render === "function") {
       game.render();
     }
@@ -836,7 +825,7 @@ function resetActiveBonuses() {
 
 function updateShieldHUD() {
   if (!game || typeof game.render !== "function") return;
-  if (game.state === "playing") return;
+  if (game.state === 'running') return;
   game.render();
 }
 
@@ -1677,7 +1666,7 @@ function positionHUD(){
 window.addEventListener('load', positionHUD);
 window.addEventListener('resize', positionHUD);
 
-function showOverlay(el){
+function showOverlayElement(el){
   if (!el) return;
   el.classList.add("show");
   if (typeof el.setAttribute === "function") {
@@ -1685,13 +1674,207 @@ function showOverlay(el){
   }
 }
 
-function hideOverlay(el){
+function hideOverlayElement(el){
   if (!el) return;
   el.classList.remove("show");
   if (typeof el.setAttribute === "function") {
     el.setAttribute("aria-hidden", "true");
   }
 }
+
+function hideAllOverlays() {
+  document.querySelectorAll('.overlay').forEach(el => {
+    el.classList.remove('show');
+    if (typeof el.setAttribute === 'function') {
+      el.setAttribute('aria-hidden', 'true');
+    }
+  });
+}
+
+function hideAllOverlaysExcept(id) {
+  document.querySelectorAll('.overlay').forEach(el => {
+    if (el.id === id) {
+      el.classList.add('show');
+      if (typeof el.setAttribute === 'function') {
+        el.setAttribute('aria-hidden', 'false');
+      }
+    } else {
+      el.classList.remove('show');
+      if (typeof el.setAttribute === 'function') {
+        el.setAttribute('aria-hidden', 'true');
+      }
+    }
+  });
+}
+
+function showOverlay(id) {
+  hideAllOverlays();
+  const el = document.getElementById(id);
+  if (el) {
+    el.classList.add('show');
+    if (typeof el.setAttribute === 'function') {
+      el.setAttribute('aria-hidden', 'false');
+    }
+  }
+}
+
+function openSettings(origin = gameState) {
+  settingsReturnTo = origin;
+  hideAllOverlaysExcept('settings');
+
+  if (origin === 'running' && typeof freezeGame === 'function') {
+    freezeGame(true);
+  }
+  const settingsRenderer = (Game?.instance && typeof Game.instance.renderSettings === 'function')
+    ? () => Game.instance.renderSettings()
+    : (typeof renderSettings === 'function' ? renderSettings : null);
+  if (settingsRenderer) {
+    settingsRenderer();
+  }
+}
+
+function closeSettings() {
+  const el = document.getElementById('settings');
+  if (el) {
+    hideOverlayElement(el);
+  }
+
+  switch (settingsReturnTo) {
+    case 'paused':
+      showOverlay('pause');
+      gameState = 'paused';
+      break;
+    case 'interLevel':
+      showOverlay('interLevel');
+      gameState = 'interLevel';
+      break;
+    case 'title':
+      showOverlay('title');
+      gameState = 'title';
+      break;
+    case 'running':
+      hideAllOverlays();
+      gameState = 'running';
+      if (typeof freezeGame === 'function') freezeGame(false);
+      break;
+    default:
+      showOverlay('title');
+      gameState = 'title';
+  }
+  window.gameState = gameState;
+  settingsReturnTo = null;
+}
+
+document.addEventListener('click', async (e) => {
+  const el = e.target.closest('[data-action]');
+  if (!el) return;
+
+  const act = el.getAttribute('data-action');
+  if (!act) return;
+
+  e.preventDefault();
+
+  if (typeof playSound === 'function') {
+    playSound('click');
+  }
+
+  if (act === 'open-settings') {
+    openSettings();
+    return;
+  }
+  if (act === 'close-settings') {
+    closeSettings();
+    return;
+  }
+  if (act === 'play') {
+    hideAllOverlays();
+    gameState = 'running';
+    window.gameState = gameState;
+    if (ctx) {
+      await new Promise(r => requestAnimationFrame(r));
+      try {
+        const prev = ctx.imageSmoothingEnabled;
+        ctx.imageSmoothingEnabled = false;
+        const imgs = [walletImage, GoldImg, SilverImg, BronzeImg, DiamondImg, BombImg, Hand.open, Hand.pinch];
+        for (const im of imgs) {
+          if (im && im.naturalWidth) ctx.drawImage(im, 0, 0, 1, 1);
+        }
+        ctx.save();
+        ctx.shadowColor = 'rgba(0,0,0,0.15)';
+        ctx.shadowBlur = 4;
+        ctx.shadowOffsetY = 1;
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(4, 4, 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+        ctx.imageSmoothingEnabled = prev;
+        ctx.clearRect(0, 0, 8, 8);
+      } catch (err) {
+        console.debug('[ui] prewarm assets failed', err);
+      }
+    }
+    if (game && typeof game.uiStartFromTitle === 'function') {
+      game.uiStartFromTitle();
+    } else if (typeof startLevel === 'function') {
+      startLevel(0);
+    }
+    return;
+  }
+  if (act === 'resume') {
+    hideAllOverlays();
+    gameState = 'running';
+    window.gameState = gameState;
+    if (typeof freezeGame === 'function') freezeGame(false);
+    return;
+  }
+  if (act === 'next-level') {
+    hideInterLevelScreen();
+    if (lastInterLevelResult === 'win') {
+      if (typeof goToNextLevel === 'function') {
+        await goToNextLevel();
+      }
+    } else {
+      if (typeof hardResetRuntime === 'function') {
+        hardResetRuntime();
+      }
+      if (typeof loadLevel === 'function') {
+        await loadLevel(currentLevelIndex);
+      }
+      resumeGameplay();
+    }
+    return;
+  }
+  if (act === 'save-quit') {
+    hideInterLevelScreen();
+    if (typeof saveProgress === 'function') {
+      try {
+        saveProgress({ level: currentLevelIndex + 1 });
+      } catch (err) {
+        console.warn('[save] failed to persist progress', err);
+      }
+    }
+    if (typeof goToMainMenu === 'function') {
+      goToMainMenu();
+    } else {
+      showOverlay('title');
+    }
+    gameState = 'title';
+    window.gameState = gameState;
+    return;
+  }
+  if (act === 'go-title') {
+    showOverlay('title');
+    gameState = 'title';
+    window.gameState = gameState;
+    if (game && typeof game.reset === 'function') {
+      game.reset({ showTitle: true });
+    }
+    return;
+  }
+});
+
+console.info('[ui] settings navigation wired');
 
 function resize(){
   if (!canvas) return;
@@ -1718,7 +1901,8 @@ async function goToNextLevel(){
 
 function resumeGameplay(){
   levelEnded = false;
-  gameState = "playing";
+  gameState = 'running';
+  window.gameState = gameState;
   spawningEnabled = true;
   resumeAllAnimations();
   enablePlayerInput();
@@ -1726,7 +1910,7 @@ function resumeGameplay(){
   rightPressed = false;
 
   if (game) {
-    game.state = "playing";
+    game.state = 'running';
     if (game.spawner) {
       game.spawner.acc = 0;
     }
@@ -1740,12 +1924,13 @@ function resumeGameplay(){
 }
 
 function showInterLevelScreen(result="win"){
-  const screen = document.getElementById("interLevelScreen");
+  const screen = document.getElementById('interLevel');
   const title  = document.getElementById("interTitle");
   const scoreText = document.getElementById("interScore");
   const btnNext = document.getElementById("btnNextLevel");
   if (!screen || !title || !scoreText) return;
 
+  lastInterLevelResult = result;
   title.textContent = (result === "win") ? "Niveau terminé 🎉" : "Game Over 💀";
   const numericScore = Number.isFinite(score) ? score : Number(window.score) || 0;
   const formattedScore = typeof formatScore === "function"
@@ -1755,54 +1940,23 @@ function showInterLevelScreen(result="win"){
 
   if (btnNext){
     btnNext.textContent = (result === "win") ? "Niveau suivant" : "Rejouer";
-    btnNext.onclick = async () => {
-      hideInterLevelScreen();
-      if (result === "win"){
-        await goToNextLevel();
-      } else {
-        hardResetRuntime();
-        await loadLevel(currentLevelIndex);
-        resumeGameplay();
-      }
-    };
   }
 
-  showOverlay(screen);
+  hideAllOverlaysExcept('interLevel');
+  gameState = 'interLevel';
+  window.gameState = gameState;
 }
 
 function hideInterLevelScreen(){
-  const screen = document.getElementById("interLevelScreen");
+  const screen = document.getElementById('interLevel');
   if (!screen) return;
-  hideOverlay(screen);
-}
-
-// --- Boutons ---
-function bindInterLevelButtons(){
-  const bNext = document.getElementById("btnNextLevel");
-  const bSave = document.getElementById("btnSaveQuit");
-
-  if (bNext){
-    bNext.onclick = () => {
-      hideInterLevelScreen();
-      goToNextLevel();
-    };
-  }
-
-  if (bSave){
-    bSave.onclick = () => {
-      hideInterLevelScreen();
-      console.log("[InterLevel] save & quit stub");
-    };
-  }
+  hideOverlayElement(screen);
 }
 
 // --- Test manuel temporaire : appuyer sur 'i' pour afficher l’écran ---
 window.addEventListener("keydown", (e) => {
   if (e.key === "i" || e.key === "I") showInterLevelScreen("win");
 });
-
-// Appeler le binding après chargement du DOM / init jeu
-window.addEventListener("load", bindInterLevelButtons);
 
 window.showInterLevelScreen = showInterLevelScreen;
 window.hideInterLevelScreen = hideInterLevelScreen;
@@ -2152,7 +2306,7 @@ function spawnItem(gameInstance, kind, subtype, x, y, extra = {}) {
 class Spawner{
   constructor(game){ this.g=game; this.acc=0; }
   update(dt){
-    if (!spawningEnabled || gameState !== "playing") return;
+    if (!spawningEnabled || gameState !== 'running') return;
     const diff=this.g.diffMult();
     this.acc += dt * (CONFIG.baseSpawnPerSec * diff);
     while (this.acc >= 1){
@@ -2287,7 +2441,8 @@ class Game{
   constructor(){ Game.instance=this; this.reset({ showTitle:true }); }
   reset({showTitle=true}={}){
     window.__saltDroppeeLoopStarted = false;
-    gameState = "paused";
+    gameState = showTitle ? 'title' : 'running';
+    window.gameState = gameState;
     levelEnded = false;
     spawningEnabled = false;
     enablePlayerInput();
@@ -2322,17 +2477,18 @@ class Game{
     }
 
     levelEnded = false;
-    gameState = "playing";
+    gameState = 'running';
+    window.gameState = gameState;
     spawningEnabled = true;
     enablePlayerInput();
-    this.state='playing';
+    this.state='running';
     this.lastTime=performance.now();
     this.ignoreClicksUntil=this.lastTime+500;
     this.ignoreVisibilityUntil=this.lastTime+1000;
     this.loop();
   }
   loop(){
-    if (this.state!=='playing'){
+    if (this.state!=='running'){
       window.__saltDroppeeLoopStarted = false;
       return;
     }
@@ -2345,7 +2501,7 @@ class Game{
     this.step(dt);
     this.render();
 
-    if (this.state!=='playing'){
+    if (this.state!=='running'){
       window.__saltDroppeeLoopStarted = false;
       return;
     }
@@ -2358,7 +2514,7 @@ class Game{
   step(dt){
     beginFrame();
 
-    if (gameState !== "playing"){
+    if (gameState !== 'running'){
       score = this.score;
       lives = this.lives;
       timeLeft = this.timeLeft;
@@ -2375,7 +2531,7 @@ class Game{
     timeLeft = this.timeLeft;
 
     checkEndConditions();
-    if (gameState !== "playing") return;
+    if (gameState !== 'running') return;
 
     this.arm.update(dt);
     this.wallet.update(dt);
@@ -2436,8 +2592,10 @@ class Game{
   }
   uiStartFromTitle(){
     if (this.state === 'title'){
-      overlay.innerHTML = '';
-      hideOverlay(overlay);
+      hideAllOverlays();
+      if (typeof freezeGame === 'function') {
+        freezeGame(false);
+      }
       this.start();
     }
   }
@@ -2449,45 +2607,86 @@ class Game{
     } else {
       setBackgroundImageSrc(MENU_BACKGROUND_SRC);
     }
-    overlay.innerHTML = `
-      <div class="panel">
-        <h1>Salt Droppee</h1>
-        <p>Attrapez les bons tokens, évitez les malus. 75s, 3 vies.</p>
-        <div class="btnrow">
-          <button id="btnPlay" type="button">Jouer</button>
-          <button type="button" class="btn-settings" data-action="open-settings">Paramètres</button>
-          <button id="btnLB" type="button">Leaderboard local</button>
-        </div>
-      </div>`;
-    showOverlay(overlay);
-    addEvent(document.getElementById('btnLB'), INPUT.tap, ()=>{ playSound("click"); this.renderLeaderboard(); });
-    addEvent(document.getElementById('btnPlay'), INPUT.tap, async (e)=>{
-      e.preventDefault(); e.stopPropagation();
-      playSound("click");
-      await new Promise(r=>requestAnimationFrame(r));
-      try{ const prev=ctx.imageSmoothingEnabled; ctx.imageSmoothingEnabled=false; const imgs=[walletImage, GoldImg, SilverImg, BronzeImg, DiamondImg, BombImg, Hand.open, Hand.pinch]; for (const im of imgs){ if (im && im.naturalWidth) ctx.drawImage(im,0,0,1,1); } ctx.save(); ctx.shadowColor='rgba(0,0,0,0.15)'; ctx.shadowBlur=4; ctx.shadowOffsetY=1; ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(4,4,2,0,Math.PI*2); ctx.fill(); ctx.restore(); ctx.imageSmoothingEnabled=prev; ctx.clearRect(0,0,8,8); }catch(_){ }
-      this.uiStartFromTitle();
-    }, { passive:false });
+    showOverlay('title');
+    this.state = 'title';
+    gameState = 'title';
+    window.gameState = gameState;
+
+    const btnLB = document.getElementById('btnLB');
+    if (btnLB && !btnLB.dataset.boundLeaderboard) {
+      btnLB.dataset.boundLeaderboard = '1';
+      addEvent(btnLB, INPUT.tap, () => {
+        if (typeof playSound === 'function') {
+          playSound('click');
+        }
+        this.renderLeaderboard();
+      });
+    }
   }
-  renderSettings(){ const s=this.settings; overlay.innerHTML = `
-    <div class="panel">
-      <h1>Paramètres</h1>
-      <p><label><input type="checkbox" id="sound" ${s.sound?'checked':''}/> Son</label></p>
-      <p><label><input type="checkbox" id="contrast" ${s.contrast?'checked':''}/> Contraste élevé</label></p>
-      <p><label><input type="checkbox" id="haptics" ${s.haptics?'checked':''}/> Vibrations</label></p>
-      <p>Sensibilité: <input type="range" id="sens" min="0.5" max="1.5" step="0.05" value="${s.sensitivity}"></p>
-      <div class="btnrow"><button id="back">Retour</button></div>
-    </div>`;
-    showOverlay(overlay);
-    addEvent(document.getElementById('sound'), 'change', e=>{ playSound("click"); this.settings.sound = e.target.checked; saveSettings(this.settings); if (typeof setSoundEnabled === "function") { setSoundEnabled(this.settings.sound); } });
-    addEvent(document.getElementById('contrast'), 'change', e=>{ playSound("click"); this.settings.contrast = e.target.checked; saveSettings(this.settings); this.reset(); });
-    addEvent(document.getElementById('haptics'), 'change', e=>{ playSound("click"); this.settings.haptics = e.target.checked; saveSettings(this.settings); });
-    addEvent(document.getElementById('sens'), 'input', e=>{ this.settings.sensitivity = parseFloat(e.target.value); saveSettings(this.settings); });
-    addEvent(document.getElementById('back'), INPUT.tap, ()=>{ playSound("click"); this.renderTitle(); });
+  renderSettings(){
+    const s = this.settings;
+    const settingsEl = document.getElementById('settings');
+    if (!settingsEl) return;
+
+    const sound = settingsEl.querySelector('#sound');
+    if (sound) {
+      sound.checked = !!s.sound;
+      if (!sound.dataset.bound) {
+        sound.dataset.bound = '1';
+        sound.addEventListener('change', (e) => {
+          if (typeof playSound === 'function') playSound('click');
+          this.settings.sound = e.target.checked;
+          saveSettings(this.settings);
+          if (typeof setSoundEnabled === 'function') {
+            setSoundEnabled(this.settings.sound);
+          }
+        });
+      }
+    }
+
+    const contrast = settingsEl.querySelector('#contrast');
+    if (contrast) {
+      contrast.checked = !!s.contrast;
+      if (!contrast.dataset.bound) {
+        contrast.dataset.bound = '1';
+        contrast.addEventListener('change', (e) => {
+          if (typeof playSound === 'function') playSound('click');
+          this.settings.contrast = e.target.checked;
+          saveSettings(this.settings);
+          this.reset({ showTitle: gameState === 'title' });
+        });
+      }
+    }
+
+    const haptics = settingsEl.querySelector('#haptics');
+    if (haptics) {
+      haptics.checked = !!s.haptics;
+      if (!haptics.dataset.bound) {
+        haptics.dataset.bound = '1';
+        haptics.addEventListener('change', (e) => {
+          if (typeof playSound === 'function') playSound('click');
+          this.settings.haptics = e.target.checked;
+          saveSettings(this.settings);
+        });
+      }
+    }
+
+    const sens = settingsEl.querySelector('#sens');
+    if (sens) {
+      sens.value = String(s.sensitivity ?? 1);
+      if (!sens.dataset.bound) {
+        sens.dataset.bound = '1';
+        sens.addEventListener('input', (e) => {
+          this.settings.sensitivity = parseFloat(e.target.value);
+          saveSettings(this.settings);
+        });
+      }
+    }
   }
   renderLeaderboard(){ let runs=[]; try{ runs = JSON.parse(localStorage.getItem(LS.runs)||'[]'); }catch(e){}
     const best = parseInt(localStorage.getItem(LS.bestScore)||'0',10);
     const bestC = parseInt(localStorage.getItem(LS.bestCombo)||'0',10);
+    hideAllOverlays();
     overlay.innerHTML = `
     <div class="panel">
       <h1>Leaderboard (local)</h1>
@@ -2497,28 +2696,19 @@ class Game{
       </div>
       <div class="btnrow"><button id="back">Retour</button></div>
     </div>`;
-    showOverlay(overlay);
+    showOverlayElement(overlay);
     addEvent(document.getElementById('back'), INPUT.tap, ()=>{ playSound("click"); this.renderTitle(); });
   }
   renderPause(){
-    overlay.innerHTML = `<div class="panel"><h1>Pause</h1><div class="btnrow"><button id="resume" type="button">Reprendre</button><button type="button" class="btn-settings" data-action="open-settings">Paramètres</button><button id="quit" type="button">Menu</button></div></div>`;
-    showOverlay(overlay);
-    addEvent(document.getElementById('resume'), INPUT.tap, ()=>{
-      playSound("click");
-      overlay.innerHTML='';
-      hideOverlay(overlay);
-      this.state='playing';
-      this.lastTime=performance.now();
-      this.loop();
-    });
-    addEvent(document.getElementById('quit'), INPUT.tap, ()=>{
-      playSound("click");
-      overlay.innerHTML='';
-      hideOverlay(overlay);
-      this.reset();
-    });
+    showOverlay('pause');
+    gameState = 'paused';
+    window.gameState = gameState;
+    if (typeof freezeGame === 'function') {
+      freezeGame(true);
+    }
+    this.state = 'paused';
   }
-  renderGameOver(){ const best=parseInt(localStorage.getItem(LS.bestScore)||'0',10); overlay.innerHTML = `
+  renderGameOver(){ const best=parseInt(localStorage.getItem(LS.bestScore)||'0',10); hideAllOverlays(); overlay.innerHTML = `
     <div class="panel">
       <h1>Fin de partie</h1>
       <p>Score: <b>${this.score}</b> | Record local: <b>${best}</b></p>
@@ -2529,9 +2719,9 @@ class Game{
         ${TG? '<button id="share">Partager</button>': ''}
       </div>
     </div>`;
-    showOverlay(overlay);
-    addEvent(document.getElementById('again'), INPUT.tap, async ()=>{ playSound("click"); overlay.innerHTML=''; hideOverlay(overlay); this.reset({showTitle:false}); await new Promise(r=>requestAnimationFrame(r)); this.start(); }, { passive:false });
-    addEvent(document.getElementById('menu'), INPUT.tap, ()=>{ playSound("click"); overlay.innerHTML=''; hideOverlay(overlay); this.reset({showTitle:true}); });
+    showOverlayElement(overlay);
+    addEvent(document.getElementById('again'), INPUT.tap, async ()=>{ playSound("click"); overlay.innerHTML=''; hideOverlayElement(overlay); this.reset({showTitle:false}); await new Promise(r=>requestAnimationFrame(r)); this.start(); }, { passive:false });
+    addEvent(document.getElementById('menu'), INPUT.tap, ()=>{ playSound("click"); overlay.innerHTML=''; hideOverlayElement(overlay); this.reset({showTitle:true}); });
     if (TG){ const sh=document.getElementById('share'); if (sh) addEvent(sh, INPUT.tap, ()=>{ playSound("click"); try{ TG.sendData(JSON.stringify({ score:this.score, duration:CONFIG.runSeconds, version:VERSION })); }catch(e){} }); }
   }
   drawBg(g){ const grad=g.createLinearGradient(0,0,0,BASE_H); const presets=[ ['#0f2027','#203a43','#2c5364'], ['#232526','#414345','#6b6e70'], ['#1e3c72','#2a5298','#6fa3ff'], ['#42275a','#734b6d','#b57ea7'], ['#355c7d','#6c5b7b','#c06c84'] ]; const cols=presets[this.bgIndex % presets.length]; grad.addColorStop(0,cols[0]); grad.addColorStop(0.5,cols[1]); grad.addColorStop(1,cols[2]); g.fillStyle=grad; g.fillRect(0,0,BASE_W,BASE_H); }
