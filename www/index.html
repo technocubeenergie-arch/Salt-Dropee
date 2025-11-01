@@ -56,22 +56,71 @@
         </div>
       </div>
 
-      <!-- Inter-level overlay (caché par défaut) -->
-      <div id="interLevelScreen" class="overlay" aria-hidden="true">
-        <div class="inter-content" role="dialog" aria-modal="true" aria-labelledby="interTitle">
-          <h2 id="interTitle">Niveau terminé !</h2>
-          <p id="interScore">Score : 0000</p>
-          <div class="inter-buttons">
-            <button id="btnNextLevel" type="button">Niveau suivant</button>
-            <button id="btnSaveQuit" type="button">Sauvegarder &amp; Quitter</button>
-            <button type="button" class="btn-settings" data-action="open-settings">
-              Paramètres
-            </button>
+      <!-- Overlays principaux -->
+      <div id="title" class="overlay show" aria-hidden="false">
+        <div class="panel">
+          <h1>Salt Droppee</h1>
+          <p>Attrapez les bons tokens, évitez les malus. 75s, 3 vies.</p>
+          <div class="actions btnrow">
+            <button type="button" data-action="play">Jouer</button>
+            <button type="button" class="btn-settings" data-action="open-settings">Paramètres</button>
+            <button type="button" id="btnLB">Leaderboard local</button>
           </div>
         </div>
       </div>
-      
-      <!-- Overlays dynamiques (menu, pause, fin) -->
+
+      <div id="pause" class="overlay" aria-hidden="true">
+        <div class="panel">
+          <h1>Pause</h1>
+          <div class="actions btnrow">
+            <button type="button" data-action="resume">Reprendre</button>
+            <button type="button" class="btn-settings" data-action="open-settings">Paramètres</button>
+            <button type="button" data-action="go-title">Menu</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="interLevel" class="overlay" aria-hidden="true">
+        <div class="inter-content" role="dialog" aria-modal="true" aria-labelledby="interTitle">
+          <h2 id="interTitle">Niveau terminé !</h2>
+          <p id="interScore">Score : 0000</p>
+          <div class="actions inter-buttons">
+            <button id="btnNextLevel" type="button" data-action="next-level">Niveau suivant</button>
+            <button id="btnSaveQuit" type="button" data-action="save-quit">Sauvegarder &amp; Quitter</button>
+            <button type="button" class="btn-settings" data-action="open-settings">Paramètres</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="settings" class="overlay" aria-hidden="true">
+        <div class="panel">
+          <h1>Paramètres</h1>
+          <p>
+            <label>
+              <input type="checkbox" id="sound" /> Son
+            </label>
+          </p>
+          <p>
+            <label>
+              <input type="checkbox" id="contrast" /> Contraste élevé
+            </label>
+          </p>
+          <p>
+            <label>
+              <input type="checkbox" id="haptics" /> Vibrations
+            </label>
+          </p>
+          <p>
+            Sensibilité:
+            <input type="range" id="sens" min="0.5" max="1.5" step="0.05" value="1" />
+          </p>
+          <div class="actions btnrow">
+            <button type="button" class="btn-back" data-action="close-settings">Retour</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Overlay dynamique générique -->
       <div id="overlay" class="overlay" aria-live="polite" aria-hidden="true"></div>
     </div>
   </div>
