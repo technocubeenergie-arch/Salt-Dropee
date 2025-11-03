@@ -573,7 +573,10 @@ function hardResetRuntime(){
 async function loadLevel(index, options = {}) {
   if (index < 0 || index >= LEVELS.length) return;
 
-  const { applyBackground = true } = options;
+  const {
+    applyBackground = true,
+    playMusic = true,
+  } = options;
 
   const L = LEVELS[index];
   currentLevelIndex = index;
@@ -609,7 +612,9 @@ async function loadLevel(index, options = {}) {
       applyLevelBackground(bgSrc);
     }
   }
-  setLevelMusic(music);
+  if (playMusic) {
+    setLevelMusic(music);
+  }
   setWalletSprite(wallet);
 
   if (index + 1 < LEVELS.length) {
@@ -2331,6 +2336,9 @@ class Game{
     if (typeof setSoundEnabled === "function") {
       setSoundEnabled(!!this.settings.sound);
     }
+    if (showTitle) {
+      setLevelMusic(null);
+    }
     this.timeLeft=CONFIG.runSeconds; this.timeElapsed=0; this.lives=CONFIG.lives; this.score=0; this.comboStreak=0; this.comboMult=comboTiers[0].mult; this.maxCombo=0; this.levelReached=1;
     if (gsap?.killTweensOf) {
       gsap.killTweensOf(comboVis);
@@ -2340,7 +2348,7 @@ class Game{
     this.arm=new Arm(this); this.arm.applyCaps(); this.wallet=new Wallet(this); this.wallet.applyCaps(); applyWalletForLevel(1); this.hud=new HUD(this); this.spawner=new Spawner(this);
     this.items=[]; this.effects={freeze:0}; this.fx = new FxManager(this);
     this.shake=0; this.bgIndex=0; this.didFirstCatch=false; this.updateBgByScore();
-    loadLevel(currentLevelIndex, { applyBackground: !showTitle });
+    loadLevel(currentLevelIndex, { applyBackground: !showTitle, playMusic: !showTitle });
     if (showTitle) this.renderTitle(); else this.render();
   }
   diffMult(){ return Math.pow(CONFIG.spawnRampFactor, Math.floor(this.timeElapsed/CONFIG.spawnRampEverySec)); }
@@ -2349,6 +2357,17 @@ class Game{
     const levelCfg = LEVELS[currentLevelIndex];
     if (levelCfg?.background) {
       applyLevelBackground(levelCfg.background);
+    }
+
+    const cachedAssets = levelAssets[currentLevelIndex];
+    if (cachedAssets?.music) {
+      setLevelMusic(cachedAssets.music);
+    } else {
+      ensureLevelAssets(currentLevelIndex).then(({ music }) => {
+        if (this.state === 'playing') {
+          setLevelMusic(music);
+        }
+      }).catch(() => {});
     }
 
     levelEnded = false;
