@@ -626,7 +626,9 @@ async function loadLevel(index, options = {}) {
   if (typeof setHUDTime  === "function") setHUDTime(timeLeft);
 }
 
-async function startLevel1() { await loadLevel(0, { applyBackground: false }); }
+async function startLevel1() {
+  await loadLevel(0, { applyBackground: false, playMusic: false });
+}
 
 function checkEndConditions(){
   if (!canEndLevel()) return;
