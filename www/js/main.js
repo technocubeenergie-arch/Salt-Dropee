@@ -31,6 +31,28 @@ document.addEventListener("click", (event) => {
 
   event.preventDefault();
 
+  const instance = (typeof Game !== "undefined" && Game.instance)
+    ? Game.instance
+    : null;
+
+  if (instance) {
+    let returnView = "title";
+
+    if (btn.closest("#interLevelScreen")) {
+      returnView = "inter";
+    } else if (instance.state === "paused") {
+      returnView = "pause";
+    } else if (instance.state === "inter") {
+      returnView = "inter";
+    } else if (instance.state === "over") {
+      returnView = "over";
+    } else if (instance.state === "title") {
+      returnView = "title";
+    }
+
+    instance.settingsReturnView = returnView;
+  }
+
   if (
     btn.closest("#interLevelScreen") &&
     typeof hideInterLevelScreen === "function"
@@ -1739,12 +1761,19 @@ function resumeGameplay(){
   }
 }
 
+let lastInterLevelResult = "win";
+
 function showInterLevelScreen(result="win"){
+  lastInterLevelResult = result;
   const screen = document.getElementById("interLevelScreen");
   const title  = document.getElementById("interTitle");
   const scoreText = document.getElementById("interScore");
   const btnNext = document.getElementById("btnNextLevel");
   if (!screen || !title || !scoreText) return;
+
+  if (typeof Game !== "undefined" && Game.instance) {
+    Game.instance.settingsReturnView = "inter";
+  }
 
   title.textContent = (result === "win") ? "Niveau terminé 🎉" : "Game Over 💀";
   const numericScore = Number.isFinite(score) ? score : Number(window.score) || 0;
@@ -2298,6 +2327,7 @@ class Game{
     this.palette = CONFIG.palette.slice(); if (this.settings.contrast){ this.palette = ['#000','#444','#ff0044','#ffaa00','#ffffff','#00ffea','#00ff66','#66a6ff']; }
     const u=new URLSearchParams(location.search); const seed=u.get('seed'); this.random = seed? (function(seed){ let t=seed>>>0; return function(){ t += 0x6D2B79F5; let r = Math.imul(t ^ t >>> 15, 1 | t); r ^= r + Math.imul(r ^ r >>> 7, 61 | r); return ((r ^ r >>> 14) >>> 0) / 4294967296; };})(parseInt(seed)||1) : Math.random;
     this.state='title';
+    this.settingsReturnView = "title";
     if (typeof setSoundEnabled === "function") {
       setSoundEnabled(!!this.settings.sound);
     }
@@ -2442,6 +2472,7 @@ class Game{
     }
   }
   renderTitle(){
+    this.settingsReturnView = "title";
     if (currentBackgroundSrc === MENU_BACKGROUND_SRC) {
       setBackgroundImageSrc(MENU_BACKGROUND_SRC);
     } else if (hasBackgroundImage) {
@@ -2483,7 +2514,30 @@ class Game{
     addEvent(document.getElementById('contrast'), 'change', e=>{ playSound("click"); this.settings.contrast = e.target.checked; saveSettings(this.settings); this.reset(); });
     addEvent(document.getElementById('haptics'), 'change', e=>{ playSound("click"); this.settings.haptics = e.target.checked; saveSettings(this.settings); });
     addEvent(document.getElementById('sens'), 'input', e=>{ this.settings.sensitivity = parseFloat(e.target.value); saveSettings(this.settings); });
-    addEvent(document.getElementById('back'), INPUT.tap, ()=>{ playSound("click"); this.renderTitle(); });
+    addEvent(document.getElementById('back'), INPUT.tap, ()=>{
+      playSound("click");
+      const returnView = this.settingsReturnView || this.state || "title";
+      this.settingsReturnView = "title";
+      overlay.innerHTML='';
+
+      if (returnView === "pause" || returnView === "paused") {
+        this.renderPause();
+        return;
+      }
+
+      if (returnView === "inter") {
+        hideOverlay(overlay);
+        showInterLevelScreen(lastInterLevelResult || "win");
+        return;
+      }
+
+      if (returnView === "over") {
+        this.renderGameOver();
+        return;
+      }
+
+      this.renderTitle();
+    });
   }
   renderLeaderboard(){ let runs=[]; try{ runs = JSON.parse(localStorage.getItem(LS.runs)||'[]'); }catch(e){}
     const best = parseInt(localStorage.getItem(LS.bestScore)||'0',10);
@@ -2501,6 +2555,7 @@ class Game{
     addEvent(document.getElementById('back'), INPUT.tap, ()=>{ playSound("click"); this.renderTitle(); });
   }
   renderPause(){
+    this.settingsReturnView = "pause";
     overlay.innerHTML = `<div class="panel"><h1>Pause</h1><div class="btnrow"><button id="resume" type="button">Reprendre</button><button type="button" class="btn-settings" data-action="open-settings">Paramètres</button><button id="quit" type="button">Menu</button></div></div>`;
     showOverlay(overlay);
     addEvent(document.getElementById('resume'), INPUT.tap, ()=>{
@@ -2518,7 +2573,7 @@ class Game{
       this.reset();
     });
   }
-  renderGameOver(){ const best=parseInt(localStorage.getItem(LS.bestScore)||'0',10); overlay.innerHTML = `
+  renderGameOver(){ const best=parseInt(localStorage.getItem(LS.bestScore)||'0',10); this.settingsReturnView = "over"; overlay.innerHTML = `
     <div class="panel">
       <h1>Fin de partie</h1>
       <p>Score: <b>${this.score}</b> | Record local: <b>${best}</b></p>
