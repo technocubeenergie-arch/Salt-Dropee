@@ -606,6 +606,9 @@ async function loadLevel(index, options = {}) {
     instance.timeElapsed = 0;
     instance.lives = L.lives;
     instance.targetScore = L.targetScore;
+    if (instance.arm && typeof instance.arm.applyLevelSpeed === "function") {
+      instance.arm.applyLevelSpeed(index + 1);
+    }
   }
 
   if (applyBackground) {
@@ -2043,8 +2046,15 @@ class Wallet{
 }
 
 class Arm{
-  constructor(game){ this.g=game; this.t=0; this.frame=0; this.handX=BASE_W/2; this.spriteHCapPx=0; this.targetX=BASE_W/2; this.moveSpeed=120; this.retarget=0; this.jitterAmt=0.05; this._drawW=90; this._drawH=90; this._x=0; this._y=0; }
+  constructor(game){ this.g=game; this.t=0; this.frame=0; this.handX=BASE_W/2; this.spriteHCapPx=0; this.targetX=BASE_W/2; this.baseMoveSpeed=120; this.moveSpeed=this.baseMoveSpeed; this.level=1; this.retarget=0; this.jitterAmt=0.05; this._drawW=90; this._drawH=90; this._x=0; this._y=0; }
   applyCaps(){ const maxH = Math.floor(BASE_H * CONFIG.maxTopActorH); this.h = Math.min(Math.floor(BASE_H * 0.19), maxH); }
+  applyLevelSpeed(levelNumber){
+    const numeric = Number(levelNumber);
+    const lvl = Number.isFinite(numeric) ? Math.max(1, Math.floor(numeric)) : 1;
+    const multiplier = 1 + 0.05 * (lvl - 1);
+    this.moveSpeed = this.baseMoveSpeed * multiplier;
+    this.level = lvl;
+  }
   update(dt){ this.t += dt; if (this.t > 0.2){ this.t=0; this.frame=(this.frame+1)%2; } this.retarget -= dt; const padding=16; const approxW=this._drawW||90; const halfW=approxW/2; const minX=padding+halfW; const maxX=BASE_W-(padding+halfW); if (this.retarget<=0){ const maxStep=140; const next=clamp(this.handX + rand(-maxStep, maxStep), minX, maxX); this.targetX=next; this.retarget=rand(0.6,1.8); } const dir=Math.sign(this.targetX - this.handX); this.handX += dir * this.moveSpeed * dt; this.handX = clamp(this.handX + rand(-this.jitterAmt, this.jitterAmt), minX, maxX); if (Math.abs(this.targetX - this.handX) < 2) this.handX = this.targetX; }
   draw(g){ const maxH = Math.floor(BASE_H * CONFIG.maxTopActorH); const targetH = Math.min(this.h, maxH); const y=13; const img=(this.frame===0?Hand.open:Hand.pinch); if (!Hand.ready || !img || !(img.naturalWidth>0)){ this._drawW=90; this._drawH=targetH; const w=this._drawW; const x=clamp(this.handX - w/2, 10, BASE_W - w - 10); this._x=x; this._y=y; return; }
     const natW=img.naturalWidth, natH=img.naturalHeight; const scale=targetH/natH; const drawW=natW*scale, drawH=natH*scale; const x = clamp(this.handX - drawW/2, 10, BASE_W - drawW - 10);
