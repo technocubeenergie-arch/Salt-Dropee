@@ -1,10 +1,10 @@
 :root {
---bg: #0d0f1a; /* hors zone (letterbox) */
---ui: #ffcd75; /* texte UI principal */
---ui2: #a7f070; /* accents */
---danger: #b13e53;
---ok: #38b764;
---ink: #1a1c2c;
+  --bg: #0d0f1a; /* hors zone (letterbox) */
+  --ui: #ffcd75; /* texte UI principal */
+  --ui2: #a7f070; /* accents */
+  --danger: #b13e53;
+  --ok: #38b764;
+  --ink: #1a1c2c;
 }
 
 
@@ -19,7 +19,12 @@ html, body { height: 100%; margin: 0; background: var(--bg); color: var(--ui); f
   display: grid;
   place-items: center; /* centre horizontal + vertical */
   width: 100vw; /* explicite */
-  height: 100vh; /* explicite */
+  height: 100vh;
+  height: 100dvh;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+    env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
 /* Référence de position */
@@ -31,8 +36,13 @@ html, body { height: 100%; margin: 0; background: var(--bg); color: var(--ui); f
 
 /* Calques de base */
 #bgLayer {
-  position: absolute;
+  position: fixed;
   inset: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 100vh;
+  min-height: 100dvh;
   background-size: cover;
   background-position: center;
   opacity: 0;
