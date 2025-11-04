@@ -2082,27 +2082,33 @@ class FallingItem{
     this.vx = 0;
     this.isNegative = NEGATIVE_TYPES.has(subtype);
 
-    const endY = BASE_H - 80;
-    const duration = CONFIG.fallDuration ?? 2.5;
-
-    if (gsap && typeof gsap.to === 'function'){
-      this._tween = gsap.to(this, {
-        y: endY,
-        scale: 1,
-        duration,
-        ease: "power2.in",
-        onComplete: () => {
-          this.dead = true;
-        }
-      });
-    } else {
-      this.y = endY;
-      this.scale = 1;
-    }
+    this.startY = y;
+    this.endY = BASE_H - 80;
+    this.fallDuration = Math.max(0.35, CONFIG.fallDuration ?? 2.5);
+    this.elapsed = 0;
+    this.progress = 0;
   }
 
   update(dt){
     if (!this.alive || this.dead) return;
+
+    const freezeSlowdown = CONFIG?.items?.freezeSlowdown ?? 0.25;
+    const freezeActive = (this.g?.effects?.freeze ?? 0) > 0;
+    const effectiveDt = freezeActive ? dt * freezeSlowdown : dt;
+
+    this.elapsed += effectiveDt;
+    const duration = this.fallDuration || 1;
+    const linearProgress = clamp(this.elapsed / duration, 0, 1);
+    this.progress = linearProgress;
+
+    const eased = linearProgress * linearProgress;
+    this.y = this.startY + (this.endY - this.startY) * eased;
+    this.updateScaleFromVerticalPosition(linearProgress);
+
+    if (linearProgress >= 1){
+      this.dead = true;
+      return;
+    }
 
     const damping = Math.exp(-8 * dt);
     this.vx *= damping;
@@ -2129,8 +2135,10 @@ class FallingItem{
     }
   }
 
-  updateScaleFromVerticalPosition(){
-    const progress = clamp(this.y / BASE_H, 0, 1);
+  updateScaleFromVerticalPosition(progressOverride){
+    const denom = Math.max(0.0001, (this.endY ?? BASE_H) - (this.startY ?? 0));
+    const fallbackProgress = (this.y - (this.startY ?? 0)) / denom;
+    const progress = clamp(progressOverride ?? fallbackProgress, 0, 1);
     const startScale = this.spawnScale ?? 0.3;
     const endScale = this.maxScale ?? 1;
     this.scale = startScale + (endScale - startScale) * progress;
