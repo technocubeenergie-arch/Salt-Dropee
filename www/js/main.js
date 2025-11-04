@@ -582,6 +582,8 @@ async function loadLevel(index, options = {}) {
   currentLevelIndex = index;
   window.currentLevelIndex = currentLevelIndex;
 
+  updateFallSpeedForLevel(index);
+
   levelState.targetScore = L.targetScore;
   levelState.timeLimit   = L.timeLimit;
   levelState.lives       = L.lives;
@@ -1400,6 +1402,22 @@ const CONFIG = {
     }
   }
 };
+
+const BASE_FALL_DURATION = CONFIG.fallDuration ?? 3;
+let currentFallDuration = BASE_FALL_DURATION;
+
+function getLevelSpeedMultiplier(levelIndex) {
+  const numericIndex = Number(levelIndex);
+  const safeIndex = Number.isFinite(numericIndex) ? numericIndex : 0;
+  const clampedIndex = Math.max(0, Math.floor(safeIndex));
+  return 1 + 0.05 * clampedIndex;
+}
+
+function updateFallSpeedForLevel(levelIndex) {
+  const multiplier = getLevelSpeedMultiplier(levelIndex);
+  currentFallDuration = BASE_FALL_DURATION / multiplier;
+  CONFIG.fallDuration = currentFallDuration;
+}
 
 class FxManager {
   constructor(game) {
