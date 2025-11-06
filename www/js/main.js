@@ -588,6 +588,8 @@ async function loadLevel(index, options = {}) {
   levelState.timeLimit   = L.timeLimit;
   levelState.lives       = L.lives;
 
+  resetIntraLevelSpeedRamp(levelState.timeLimit);
+
   const instance = game || Game.instance || null;
   const { bg, wallet, music } = await ensureLevelAssets(index);
 
@@ -1409,6 +1411,60 @@ const CONFIG = {
 const BASE_FALL_DURATION = CONFIG.fallDuration ?? 3;
 let currentFallDuration = BASE_FALL_DURATION;
 
+const INTRA_LEVEL_SPEED_RAMP_TARGET = 0.20;
+const levelSpeedRampState = {
+  progress: 0,
+  multiplier: 1,
+  duration: 0,
+};
+
+function resetIntraLevelSpeedRamp(duration){
+  levelSpeedRampState.progress = 0;
+  levelSpeedRampState.multiplier = 1;
+
+  if (Number.isFinite(duration) && duration > 0){
+    levelSpeedRampState.duration = duration;
+    return;
+  }
+
+  if (Number.isFinite(levelState?.timeLimit) && levelState.timeLimit > 0){
+    levelSpeedRampState.duration = levelState.timeLimit;
+    return;
+  }
+
+  const fallback = Number(LEVELS?.[currentLevelIndex]?.timeLimit);
+  const defaultDuration = (Number.isFinite(CONFIG?.runSeconds) && CONFIG.runSeconds > 0)
+    ? CONFIG.runSeconds
+    : 60;
+  levelSpeedRampState.duration = (Number.isFinite(fallback) && fallback > 0) ? fallback : defaultDuration;
+}
+
+function updateIntraLevelSpeedRamp(gameInstance){
+  if (!gameInstance){
+    return levelSpeedRampState.multiplier;
+  }
+
+  const elapsed = Math.max(0, Number(gameInstance.timeElapsed) || 0);
+  const baseDuration = (Number.isFinite(levelSpeedRampState.duration) && levelSpeedRampState.duration > 0)
+    ? levelSpeedRampState.duration
+    : Math.max(
+        1,
+        Number(levelState?.timeLimit)
+        || Number(LEVELS?.[currentLevelIndex]?.timeLimit)
+        || Number(CONFIG?.runSeconds)
+        || 60
+      );
+
+  const progress = clamp(baseDuration > 0 ? elapsed / baseDuration : 1, 0, 1);
+  levelSpeedRampState.progress = progress;
+  levelSpeedRampState.multiplier = 1 + INTRA_LEVEL_SPEED_RAMP_TARGET * progress;
+  return levelSpeedRampState.multiplier;
+}
+
+function getCurrentIntraLevelSpeedMultiplier(){
+  return levelSpeedRampState.multiplier || 1;
+}
+
 function getLevelSpeedMultiplier(levelIndex) {
   const numericIndex = Number(levelIndex);
   const safeIndex = Number.isFinite(numericIndex) ? numericIndex : 0;
@@ -2134,7 +2190,10 @@ class FallingItem{
     const freezeActive = (this.g?.effects?.freeze ?? 0) > 0;
     const effectiveDt = freezeActive ? dt * freezeSlowdown : dt;
 
-    this.elapsed += effectiveDt;
+    const fallSpeedMultiplier = getCurrentIntraLevelSpeedMultiplier();
+    const fallDt = effectiveDt * fallSpeedMultiplier;
+
+    this.elapsed += fallDt;
     const duration = this.fallDuration || 1;
     const linearProgress = clamp(this.elapsed / duration, 0, 1);
     this.progress = linearProgress;
@@ -2472,6 +2531,7 @@ class Game{
     }
 
     this.timeElapsed += dt;
+    updateIntraLevelSpeedRamp(this);
     if (this.timeLeft > 0){
       this.timeLeft = Math.max(0, this.timeLeft - dt);
     }
