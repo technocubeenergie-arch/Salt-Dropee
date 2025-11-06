@@ -565,6 +565,7 @@ function hardResetRuntime(){
   }
   resetActiveBonuses();
   resetShieldState({ silent: true });
+  resetControlInversion({ silent: true });
   if (window.gsap) {
     gsap.killTweensOf("*");
   }
@@ -721,6 +722,206 @@ let shield = {
 };
 
 let shieldConsumedThisFrame = false;
+
+// --- Control inversion state (Fake Airdrop malus) ---
+const controlInversionState = {
+  active: false,
+  timeLeft: 0,
+  indicator: null,
+  hideTimeout: null,
+  lastDisplayed: null,
+};
+
+function safePlaySound(name) {
+  if (typeof playSound !== "function") return;
+  try {
+    playSound(name);
+  } catch (_) {}
+}
+
+function getControlInversionDuration(duration) {
+  const custom = Number(duration);
+  if (Number.isFinite(custom) && custom > 0) {
+    return custom;
+  }
+  const configValue = Number(CONFIG?.malus?.fakeAirdropDuration);
+  if (Number.isFinite(configValue) && configValue > 0) {
+    return configValue;
+  }
+  return 5;
+}
+
+function ensureControlIndicatorElement() {
+  let el = controlInversionState.indicator;
+  if (el && el.isConnected) return el;
+  el = document.createElement("div");
+  el.id = "controlInversionIndicator";
+  el.className = "control-inversion-indicator";
+  el.setAttribute("role", "status");
+  el.setAttribute("aria-live", "polite");
+  const wrapper = document.getElementById("gameWrapper") || document.body;
+  wrapper.appendChild(el);
+  controlInversionState.indicator = el;
+  return el;
+}
+
+function triggerIndicatorFlash(el) {
+  if (!el) return;
+  el.classList.remove("flash");
+  void el.offsetWidth;
+  el.classList.add("flash");
+  window.setTimeout(() => {
+    el.classList.remove("flash");
+  }, 400);
+}
+
+function formatInversionTime(seconds) {
+  const clamped = Math.max(0, Number(seconds) || 0);
+  if (clamped >= 3) return `${Math.ceil(clamped)}s`;
+  if (clamped >= 1) return `${clamped.toFixed(1)}s`;
+  return `${clamped.toFixed(1)}s`;
+}
+
+function updateControlIndicator(timeLeft) {
+  const el = ensureControlIndicatorElement();
+  if (!el) return;
+  if (controlInversionState.hideTimeout) {
+    clearTimeout(controlInversionState.hideTimeout);
+    controlInversionState.hideTimeout = null;
+  }
+  const formatted = formatInversionTime(timeLeft);
+  el.textContent = `Contrôles inversés · ${formatted}`;
+  el.dataset.mode = "active";
+  el.classList.add("show");
+  controlInversionState.lastDisplayed = timeLeft;
+}
+
+function announceControlInversionStart({ refreshed = false } = {}) {
+  updateControlIndicator(controlInversionState.timeLeft);
+  const el = controlInversionState.indicator;
+  if (!el) return;
+  if (!refreshed) {
+    safePlaySound("wrong");
+  }
+  triggerIndicatorFlash(el);
+}
+
+function announceControlsRestored({ silent = false } = {}) {
+  const el = ensureControlIndicatorElement();
+  if (!el) return;
+  if (controlInversionState.hideTimeout) {
+    clearTimeout(controlInversionState.hideTimeout);
+    controlInversionState.hideTimeout = null;
+  }
+  controlInversionState.lastDisplayed = null;
+  if (silent) {
+    el.classList.remove("show");
+    el.dataset.mode = "";
+    return;
+  }
+  el.textContent = "Contrôles normaux";
+  el.dataset.mode = "restored";
+  el.classList.add("show");
+  triggerIndicatorFlash(el);
+  safePlaySound("off");
+  controlInversionState.hideTimeout = window.setTimeout(() => {
+    el.classList.remove("show");
+    el.dataset.mode = "";
+    controlInversionState.hideTimeout = null;
+  }, 1100);
+}
+
+function hideControlIndicatorImmediate() {
+  const el = controlInversionState.indicator;
+  if (!el) return;
+  el.classList.remove("show");
+  el.dataset.mode = "";
+}
+
+function resetControlInversion(options = {}) {
+  const { silent = false } = options;
+  if (controlInversionState.hideTimeout) {
+    clearTimeout(controlInversionState.hideTimeout);
+    controlInversionState.hideTimeout = null;
+  }
+  const instance = game || Game.instance || null;
+  if (instance?.effects) {
+    instance.effects.invert = 0;
+  }
+  const wasActive = controlInversionState.active;
+  controlInversionState.active = false;
+  controlInversionState.timeLeft = 0;
+  controlInversionState.lastDisplayed = null;
+  if (wasActive) {
+    announceControlsRestored({ silent });
+  } else if (silent) {
+    hideControlIndicatorImmediate();
+  }
+}
+
+function applyControlInversion(gameInstance, duration) {
+  const instance = gameInstance || game || Game.instance || null;
+  if (!instance) return;
+
+  if (!instance.effects) {
+    instance.effects = {};
+  }
+
+  const totalDuration = getControlInversionDuration(duration);
+  const wasActive = (Number(instance.effects.invert) || 0) > 0;
+
+  instance.effects.invert = totalDuration;
+  controlInversionState.timeLeft = totalDuration;
+  controlInversionState.active = true;
+  controlInversionState.lastDisplayed = null;
+
+  updateControlIndicator(totalDuration);
+  announceControlInversionStart({ refreshed: wasActive });
+}
+
+function controlsAreInverted() {
+  const instance = game || Game.instance || null;
+  if (!instance?.effects) return false;
+  return (Number(instance.effects.invert) || 0) > 0;
+}
+
+function updateControlInversionTimer(gameInstance, dt) {
+  if (!gameInstance?.effects) return;
+
+  let remaining = Number(gameInstance.effects.invert) || 0;
+  if (remaining <= 0) {
+    gameInstance.effects.invert = 0;
+    if (controlInversionState.active) {
+      controlInversionState.active = false;
+      controlInversionState.timeLeft = 0;
+      controlInversionState.lastDisplayed = null;
+      announceControlsRestored({ silent: false });
+    }
+    return;
+  }
+
+  remaining = Math.max(0, remaining - dt);
+  gameInstance.effects.invert = remaining;
+  controlInversionState.timeLeft = remaining;
+
+  if (remaining > 0) {
+    const last = controlInversionState.lastDisplayed;
+    if (!controlInversionState.active) {
+      controlInversionState.active = true;
+      updateControlIndicator(remaining);
+    } else if (!Number.isFinite(last) || Math.abs(last - remaining) >= 0.05) {
+      updateControlIndicator(remaining);
+    }
+  } else if (controlInversionState.active) {
+    controlInversionState.active = false;
+    controlInversionState.timeLeft = 0;
+    controlInversionState.lastDisplayed = null;
+    announceControlsRestored({ silent: false });
+  } else {
+    controlInversionState.timeLeft = 0;
+    controlInversionState.lastDisplayed = null;
+  }
+}
 
 function startBonusEffect(type) {
   const walletRef = game?.wallet;
@@ -1107,7 +1308,7 @@ function applyNegativeEffect(item, gameInstance, firstCatch) {
     const delta = Math.floor(gameInstance.score * CONFIG.score.rugpullPct);
     gameInstance.score = Math.max(0, gameInstance.score + delta);
   } else if (subtype === "fakeAirdrop") {
-    gameInstance.effects.freeze = 3.0;
+    applyControlInversion(gameInstance, CONFIG?.malus?.fakeAirdropDuration);
   }
 }
 
@@ -1121,13 +1322,6 @@ function resolvePositiveCollision(item, gameInstance, firstCatch) {
 
   if (item.kind === "good") {
     gameInstance.wallet?.bump(0.35, "vertical");
-
-    if (gameInstance.effects.freeze > 0) {
-      gameInstance.fx?.add(new FxNegativeImpact(itemX, itemY));
-      playSound("wrong");
-      removeItem(item);
-      return;
-    }
 
     let pts = CONFIG.score[item.subtype] || 0;
     if (activeBonuses.x2?.active) pts *= 2;
@@ -1350,6 +1544,7 @@ const CONFIG = {
   evolveThresholds: [0,150,400,800,1400],
 
   powerups: { magnet:3, x2:5, shield:6, timeShard:0 },
+  malus: { fakeAirdropDuration: 5 },
 
   rarity: { bronze:0.45, silver:0.30, gold:0.20, diamond:0.05 },
   badWeights: { bomb:0.35, shitcoin:0.25, anvil:0.20, rugpull:0.10, fakeAirdrop:0.10 },
@@ -1926,6 +2121,26 @@ window.hideInterLevelScreen = hideInterLevelScreen;
 const input = { dash:false, dragging:false };
 let leftPressed = false;
 let rightPressed = false;
+
+function getRawHorizontalAxis() {
+  if (leftPressed && !rightPressed) return -1;
+  if (rightPressed && !leftPressed) return 1;
+  return 0;
+}
+
+function getEffectiveHorizontalAxis() {
+  const axis = getRawHorizontalAxis();
+  return controlsAreInverted() ? -axis : axis;
+}
+
+function getEffectivePointerTarget(x) {
+  if (!controlsAreInverted()) return x;
+  const walletRef = game?.wallet;
+  if (!walletRef) return BASE_W - x;
+  const center = walletRef.x + walletRef.w / 2;
+  const delta = x - center;
+  return center - delta;
+}
 function onKeyDown(e){
   const allowTitleStart = (e.code === 'Enter');
   if (!inputEnabled && !allowTitleStart) return;
@@ -1963,12 +2178,18 @@ function onPointerDown(e){
   if (!inputEnabled) return;
   const point = getCanvasPoint(e);
   input.dragging = true;
-  if (game && game.wallet) animateWalletToCenter(game.wallet, point.x);
+  if (game && game.wallet) {
+    const target = getEffectivePointerTarget(point.x);
+    animateWalletToCenter(game.wallet, target);
+  }
 }
 function onPointerMove(e){
   if (!inputEnabled || !input.dragging) return;
   const point = getCanvasPoint(e);
-  if (game && game.wallet) animateWalletToCenter(game.wallet, point.x);
+  if (game && game.wallet) {
+    const target = getEffectivePointerTarget(point.x);
+    animateWalletToCenter(game.wallet, target);
+  }
 }
 function onPointerUp(){
   input.dragging = false;
@@ -2031,14 +2252,13 @@ class Wallet{
   update(dt){
     const sens = this.g.settings.sensitivity || 1.0;
     const bounds = computeWalletCenterBounds(this);
-    let dir = 0;
-    if (leftPressed && !rightPressed) dir = -1;
-    else if (rightPressed && !leftPressed) dir = 1;
+    const axis = getEffectiveHorizontalAxis();
+    const moveDir = Math.sign(axis);
 
-    if (input.dash && this.dashCD <= 0 && dir !== 0){
+    if (input.dash && this.dashCD <= 0 && moveDir !== 0){
       const effectiveSpeed = CONFIG.wallet.dashSpeed * (this.slowTimer>0 ? 0.6 : 1.0) * sens;
       const dashDuration = Math.max(0.08, CONFIG.control.easeDuration * 0.5);
-      const dashDistance = dir * effectiveSpeed * dashDuration;
+      const dashDistance = moveDir * effectiveSpeed * dashDuration;
       const desiredCenter = clamp(this.x + this.w / 2 + dashDistance, bounds.minCenter, bounds.maxCenter);
       animateWalletToCenter(this, desiredCenter, dashDuration);
       this.dashCD = CONFIG.wallet.dashCD;
@@ -2050,8 +2270,9 @@ class Wallet{
     this.impact = Math.max(0, this.impact - 3 * dt);
     const slowMul = this.slowTimer>0 ? 0.6 : 1.0;
     const moveSpeed = CONFIG.wallet.speed * slowMul * sens;
-    if (leftPressed) this.x -= moveSpeed * dt;
-    if (rightPressed) this.x += moveSpeed * dt;
+    if (axis !== 0) {
+      this.x += axis * moveSpeed * dt;
+    }
     const overflow = 60;
     this.x = clamp(this.x, -overflow, BASE_W - this.w + overflow);
     if (this.slowTimer>0) this.slowTimer -= dt;
@@ -2186,12 +2407,8 @@ class FallingItem{
   update(dt){
     if (!this.alive || this.dead) return;
 
-    const freezeSlowdown = CONFIG?.items?.freezeSlowdown ?? 0.25;
-    const freezeActive = (this.g?.effects?.freeze ?? 0) > 0;
-    const effectiveDt = freezeActive ? dt * freezeSlowdown : dt;
-
     const fallSpeedMultiplier = getCurrentIntraLevelSpeedMultiplier();
-    const fallDt = effectiveDt * fallSpeedMultiplier;
+    const fallDt = dt * fallSpeedMultiplier;
 
     this.elapsed += fallDt;
     const duration = this.fallDuration || 1;
@@ -2444,6 +2661,7 @@ class Game{
     if (this.fx) this.fx.clearAll();
     resetActiveBonuses();
     resetShieldState({ silent: true });
+    resetControlInversion({ silent: true });
     this.settings = loadSettings(); document.documentElement.classList.toggle('contrast-high', !!this.settings.contrast);
     this.palette = CONFIG.palette.slice(); if (this.settings.contrast){ this.palette = ['#000','#444','#ff0044','#ffaa00','#ffffff','#00ffea','#00ff66','#66a6ff']; }
     const u=new URLSearchParams(location.search); const seed=u.get('seed'); this.random = seed? (function(seed){ let t=seed>>>0; return function(){ t += 0x6D2B79F5; let r = Math.imul(t ^ t >>> 15, 1 | t); r ^= r + Math.imul(r ^ r >>> 7, 61 | r); return ((r ^ r >>> 14) >>> 0) / 4294967296; };})(parseInt(seed)||1) : Math.random;
@@ -2462,7 +2680,7 @@ class Game{
     comboVis.scale = 1;
     comboVis.flash = 0;
     this.arm=new Arm(this); this.arm.applyCaps(); this.wallet=new Wallet(this); this.wallet.applyCaps(); applyWalletForLevel(1); this.hud=new HUD(this); this.spawner=new Spawner(this);
-    this.items=[]; this.effects={freeze:0}; this.fx = new FxManager(this);
+    this.items=[]; this.effects={invert:0}; this.fx = new FxManager(this);
     this.shake=0; this.bgIndex=0; this.didFirstCatch=false; this.updateBgByScore();
     loadLevel(currentLevelIndex, { applyBackground: !showTitle, playMusic: !showTitle });
     if (showTitle) this.renderTitle(); else this.render();
@@ -2583,10 +2801,7 @@ class Game{
     }
     this.items = remaining;
     updateActiveBonuses(dt);
-    if (this.effects.freeze>0){
-      this.effects.freeze -= dt;
-      if (this.effects.freeze<0) this.effects.freeze = 0;
-    }
+    updateControlInversionTimer(this, dt);
     this.updateBgByScore(); if (this.shake>0) this.shake = Math.max(0, this.shake - dt*6);
 
     score = this.score;
@@ -2597,7 +2812,7 @@ class Game{
   onCatch(it){
     handleCollision(it);
   }
-  endGame(){ this.fx?.clearAll(); resetActiveBonuses(); resetShieldState({ silent: true }); this.state='over'; this.render(); try{ const best=parseInt(localStorage.getItem(LS.bestScore)||'0',10); if (this.score>best) localStorage.setItem(LS.bestScore, String(this.score)); const bestC=parseInt(localStorage.getItem(LS.bestCombo)||'0',10); if (this.maxCombo>bestC) localStorage.setItem(LS.bestCombo, String(this.maxCombo)); const runs=JSON.parse(localStorage.getItem(LS.runs)||'[]'); runs.unshift({ ts:Date.now(), score:this.score, combo:this.maxCombo, lvl:this.levelReached }); while (runs.length>20) runs.pop(); localStorage.setItem(LS.runs, JSON.stringify(runs)); }catch(e){}
+  endGame(){ this.fx?.clearAll(); resetActiveBonuses(); resetShieldState({ silent: true }); resetControlInversion({ silent: true }); this.state='over'; this.render(); try{ const best=parseInt(localStorage.getItem(LS.bestScore)||'0',10); if (this.score>best) localStorage.setItem(LS.bestScore, String(this.score)); const bestC=parseInt(localStorage.getItem(LS.bestCombo)||'0',10); if (this.maxCombo>bestC) localStorage.setItem(LS.bestCombo, String(this.maxCombo)); const runs=JSON.parse(localStorage.getItem(LS.runs)||'[]'); runs.unshift({ ts:Date.now(), score:this.score, combo:this.maxCombo, lvl:this.levelReached }); while (runs.length>20) runs.pop(); localStorage.setItem(LS.runs, JSON.stringify(runs)); }catch(e){}
     this.renderGameOver(); if (TG){ try{ TG.sendData(JSON.stringify({ score:this.score, duration:CONFIG.runSeconds, version:VERSION })); }catch(e){} }
   }
   uiStartFromTitle(){

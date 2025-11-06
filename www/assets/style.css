@@ -81,6 +81,51 @@ html, body { height: 100%; margin: 0; background: var(--bg); color: var(--ui); f
   pointer-events: none; /* HUD non interactif */
 }
 
+.control-inversion-indicator {
+  position: absolute;
+  left: 50%;
+  top: calc(var(--hud-top, 14vh) - 44px);
+  transform: translate(-50%, -10px);
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(177, 62, 83, 0.92);
+  color: #fff;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.22);
+  opacity: 0;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  pointer-events: none;
+  z-index: 6;
+}
+
+.control-inversion-indicator.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.control-inversion-indicator[data-mode="restored"] {
+  background: rgba(56, 183, 100, 0.92);
+}
+
+.control-inversion-indicator.flash {
+  animation: indicatorFlash 0.4s ease;
+}
+
+@keyframes indicatorFlash {
+  0% {
+    transform: translate(-50%, 0) scale(1);
+  }
+  50% {
+    transform: translate(-50%, 0) scale(1.08);
+  }
+  100% {
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+
 
 /* Overlays (titre, pause, fin, inter-niveau) */
 .overlay {
