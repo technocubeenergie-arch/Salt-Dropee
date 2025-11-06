@@ -2244,10 +2244,19 @@ class Spawner{
   }
   spawnOne(){
     const x = this.g.arm.spawnX(); const y = this.g.arm.spawnY();
-    let pGood=0.7, pBad=0.2, pPow=0.1; if (this.g.timeElapsed>30){ pGood=0.6; pBad=0.3; pPow=0.1; }
+    const basePow = 0.1;
+    const minGood = 0.05;
+    const isLate = this.g.timeElapsed > 30;
+    const baseBad = isLate ? 0.3 : 0.2;
+    const baseGood = 1 - basePow - baseBad;
+    const rawBonus = (typeof currentLevelIndex === 'number' ? currentLevelIndex : 0) * 0.05;
+    const bonusLimit = Math.max(0, baseGood - minGood); // keep at least a small share of good drops
+    const bonus = clamp(rawBonus, 0, bonusLimit);
+    const pGood = clamp(baseGood - bonus, minGood, 1 - basePow);
+    const pBad = 1 - basePow - pGood;
     const r=Math.random();
     if (r < pGood){ const rar = CONFIG.rarity; const sub = choiceWeighted([{k:'bronze',w:rar.bronze},{k:'silver',w:rar.silver},{k:'gold',w:rar.gold},{k:'diamond',w:rar.diamond}]); spawnItem(this.g,'good',sub,x,y); }
-    else if (r < pGood + pBad){ const bw = CONFIG.badWeights; const sub = choiceWeighted([{k:'bomb',w:bw.bomb*(this.g.timeElapsed>30?1.2:1)},{k:'shitcoin',w:bw.shitcoin},{k:'anvil',w:bw.anvil},{k:'rugpull',w:bw.rugpull},{k:'fakeAirdrop',w:bw.fakeAirdrop}]); spawnItem(this.g,'bad',sub,x,y); }
+    else if (r < pGood + pBad){ const bw = CONFIG.badWeights; const sub = choiceWeighted([{k:'bomb',w:bw.bomb*(isLate?1.2:1)},{k:'shitcoin',w:bw.shitcoin},{k:'anvil',w:bw.anvil},{k:'rugpull',w:bw.rugpull},{k:'fakeAirdrop',w:bw.fakeAirdrop}]); spawnItem(this.g,'bad',sub,x,y); }
     else { const pu = choiceWeighted([{k:'magnet',w:1},{k:'x2',w:1},{k:'shield',w:1},{k:'timeShard',w:1}]); spawnItem(this.g,'power',pu,x,y); }
   }
 }
