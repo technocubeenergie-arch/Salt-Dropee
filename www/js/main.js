@@ -727,17 +727,7 @@ let shieldConsumedThisFrame = false;
 const controlInversionState = {
   active: false,
   timeLeft: 0,
-  indicator: null,
-  hideTimeout: null,
-  lastDisplayed: null,
 };
-
-function safePlaySound(name) {
-  if (typeof playSound !== "function") return;
-  try {
-    playSound(name);
-  } catch (_) {}
-}
 
 function getControlInversionDuration(duration) {
   const custom = Number(duration);
@@ -751,112 +741,14 @@ function getControlInversionDuration(duration) {
   return 5;
 }
 
-function ensureControlIndicatorElement() {
-  let el = controlInversionState.indicator;
-  if (el && el.isConnected) return el;
-  el = document.createElement("div");
-  el.id = "controlInversionIndicator";
-  el.className = "control-inversion-indicator";
-  el.setAttribute("role", "status");
-  el.setAttribute("aria-live", "polite");
-  const wrapper = document.getElementById("gameWrapper") || document.body;
-  wrapper.appendChild(el);
-  controlInversionState.indicator = el;
-  return el;
-}
-
-function triggerIndicatorFlash(el) {
-  if (!el) return;
-  el.classList.remove("flash");
-  void el.offsetWidth;
-  el.classList.add("flash");
-  window.setTimeout(() => {
-    el.classList.remove("flash");
-  }, 400);
-}
-
-function formatInversionTime(seconds) {
-  const clamped = Math.max(0, Number(seconds) || 0);
-  if (clamped >= 3) return `${Math.ceil(clamped)}s`;
-  if (clamped >= 1) return `${clamped.toFixed(1)}s`;
-  return `${clamped.toFixed(1)}s`;
-}
-
-function updateControlIndicator(timeLeft) {
-  const el = ensureControlIndicatorElement();
-  if (!el) return;
-  if (controlInversionState.hideTimeout) {
-    clearTimeout(controlInversionState.hideTimeout);
-    controlInversionState.hideTimeout = null;
-  }
-  const formatted = formatInversionTime(timeLeft);
-  el.textContent = `Contrôles inversés · ${formatted}`;
-  el.dataset.mode = "active";
-  el.classList.add("show");
-  controlInversionState.lastDisplayed = timeLeft;
-}
-
-function announceControlInversionStart({ refreshed = false } = {}) {
-  updateControlIndicator(controlInversionState.timeLeft);
-  const el = controlInversionState.indicator;
-  if (!el) return;
-  if (!refreshed) {
-    safePlaySound("wrong");
-  }
-  triggerIndicatorFlash(el);
-}
-
-function announceControlsRestored({ silent = false } = {}) {
-  const el = ensureControlIndicatorElement();
-  if (!el) return;
-  if (controlInversionState.hideTimeout) {
-    clearTimeout(controlInversionState.hideTimeout);
-    controlInversionState.hideTimeout = null;
-  }
-  controlInversionState.lastDisplayed = null;
-  if (silent) {
-    el.classList.remove("show");
-    el.dataset.mode = "";
-    return;
-  }
-  el.textContent = "Contrôles normaux";
-  el.dataset.mode = "restored";
-  el.classList.add("show");
-  triggerIndicatorFlash(el);
-  safePlaySound("off");
-  controlInversionState.hideTimeout = window.setTimeout(() => {
-    el.classList.remove("show");
-    el.dataset.mode = "";
-    controlInversionState.hideTimeout = null;
-  }, 1100);
-}
-
-function hideControlIndicatorImmediate() {
-  const el = controlInversionState.indicator;
-  if (!el) return;
-  el.classList.remove("show");
-  el.dataset.mode = "";
-}
-
 function resetControlInversion(options = {}) {
-  const { silent = false } = options;
-  if (controlInversionState.hideTimeout) {
-    clearTimeout(controlInversionState.hideTimeout);
-    controlInversionState.hideTimeout = null;
-  }
+  void options;
   const instance = game || Game.instance || null;
   if (instance?.effects) {
     instance.effects.invert = 0;
   }
-  const wasActive = controlInversionState.active;
   controlInversionState.active = false;
   controlInversionState.timeLeft = 0;
-  controlInversionState.lastDisplayed = null;
-  if (wasActive) {
-    announceControlsRestored({ silent });
-  } else if (silent) {
-    hideControlIndicatorImmediate();
-  }
 }
 
 function applyControlInversion(gameInstance, duration) {
@@ -868,15 +760,9 @@ function applyControlInversion(gameInstance, duration) {
   }
 
   const totalDuration = getControlInversionDuration(duration);
-  const wasActive = (Number(instance.effects.invert) || 0) > 0;
-
   instance.effects.invert = totalDuration;
   controlInversionState.timeLeft = totalDuration;
   controlInversionState.active = true;
-  controlInversionState.lastDisplayed = null;
-
-  updateControlIndicator(totalDuration);
-  announceControlInversionStart({ refreshed: wasActive });
 }
 
 function controlsAreInverted() {
@@ -894,8 +780,6 @@ function updateControlInversionTimer(gameInstance, dt) {
     if (controlInversionState.active) {
       controlInversionState.active = false;
       controlInversionState.timeLeft = 0;
-      controlInversionState.lastDisplayed = null;
-      announceControlsRestored({ silent: false });
     }
     return;
   }
@@ -903,23 +787,9 @@ function updateControlInversionTimer(gameInstance, dt) {
   remaining = Math.max(0, remaining - dt);
   gameInstance.effects.invert = remaining;
   controlInversionState.timeLeft = remaining;
-
-  if (remaining > 0) {
-    const last = controlInversionState.lastDisplayed;
-    if (!controlInversionState.active) {
-      controlInversionState.active = true;
-      updateControlIndicator(remaining);
-    } else if (!Number.isFinite(last) || Math.abs(last - remaining) >= 0.05) {
-      updateControlIndicator(remaining);
-    }
-  } else if (controlInversionState.active) {
+  if (remaining <= 0 && controlInversionState.active) {
     controlInversionState.active = false;
     controlInversionState.timeLeft = 0;
-    controlInversionState.lastDisplayed = null;
-    announceControlsRestored({ silent: false });
-  } else {
-    controlInversionState.timeLeft = 0;
-    controlInversionState.lastDisplayed = null;
   }
 }
 
@@ -2118,7 +1988,13 @@ window.hideInterLevelScreen = hideInterLevelScreen;
 // =====================
 // INPUT
 // =====================
-const input = { dash:false, dragging:false };
+const input = {
+  dash: false,
+  dragging: false,
+  pointerLastX: null,
+  pointerVirtualX: null,
+  pointerInvertState: false,
+};
 let leftPressed = false;
 let rightPressed = false;
 
@@ -2133,13 +2009,9 @@ function getEffectiveHorizontalAxis() {
   return controlsAreInverted() ? -axis : axis;
 }
 
-function getEffectivePointerTarget(x) {
-  if (!controlsAreInverted()) return x;
-  const walletRef = game?.wallet;
-  if (!walletRef) return BASE_W - x;
-  const center = walletRef.x + walletRef.w / 2;
-  const delta = x - center;
-  return center - delta;
+function getWalletCenter(walletRef) {
+  if (!walletRef) return BASE_W / 2;
+  return walletRef.x + walletRef.w / 2;
 }
 function onKeyDown(e){
   const allowTitleStart = (e.code === 'Enter');
@@ -2178,21 +2050,46 @@ function onPointerDown(e){
   if (!inputEnabled) return;
   const point = getCanvasPoint(e);
   input.dragging = true;
+  input.pointerLastX = point.x;
+  input.pointerInvertState = controlsAreInverted();
   if (game && game.wallet) {
-    const target = getEffectivePointerTarget(point.x);
-    animateWalletToCenter(game.wallet, target);
+    input.pointerVirtualX = point.x;
+    animateWalletToCenter(game.wallet, input.pointerVirtualX);
+  } else {
+    input.pointerVirtualX = point.x;
   }
 }
 function onPointerMove(e){
   if (!inputEnabled || !input.dragging) return;
   const point = getCanvasPoint(e);
-  if (game && game.wallet) {
-    const target = getEffectivePointerTarget(point.x);
-    animateWalletToCenter(game.wallet, target);
+  if (!game || !game.wallet) return;
+
+  const inverted = controlsAreInverted();
+  if (!Number.isFinite(input.pointerVirtualX)) {
+    input.pointerVirtualX = Number.isFinite(targetX)
+      ? targetX
+      : getWalletCenter(game.wallet);
   }
+
+  if (inverted !== input.pointerInvertState || !Number.isFinite(input.pointerLastX)) {
+    input.pointerInvertState = inverted;
+    input.pointerLastX = point.x;
+    input.pointerVirtualX = Number.isFinite(targetX)
+      ? targetX
+      : getWalletCenter(game.wallet);
+  }
+
+  const delta = point.x - input.pointerLastX;
+  input.pointerLastX = point.x;
+
+  const direction = inverted ? -1 : 1;
+  input.pointerVirtualX += direction * delta;
+  animateWalletToCenter(game.wallet, input.pointerVirtualX);
 }
 function onPointerUp(){
   input.dragging = false;
+  input.pointerLastX = null;
+  input.pointerVirtualX = null;
 }
 
 const TG = window.Telegram?.WebApp; if (TG){ try{ TG.ready(); TG.expand(); }catch(e){} }
