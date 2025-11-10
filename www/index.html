@@ -73,7 +73,18 @@
           </div>
         </div>
       </div>
-      
+
+      <div id="legendResultScreen" class="overlay" aria-hidden="true">
+        <div class="inter-content" role="dialog" aria-modal="true" aria-labelledby="legendTitle">
+          <h2 id="legendTitle">Mode Légende</h2>
+          <p id="legendMessage">Félicitations, votre score est de 0.</p>
+          <div class="inter-buttons legend-buttons">
+            <button id="legendHomeButton" type="button">Retour à l’accueil</button>
+            <button id="legendRetryButton" type="button">Recommencer</button>
+          </div>
+        </div>
+      </div>
+
       <!-- Overlays dynamiques (menu, pause, fin) -->
       <div id="overlay" class="overlay" aria-live="polite" aria-hidden="true"></div>
     </div>
