@@ -2676,7 +2676,19 @@ class Game{
     gameState = "paused";
     levelEnded = false;
     spawningEnabled = false;
+    resumeAllAnimations();
+    if (window.gsap?.killTweensOf) {
+      gsap.killTweensOf("*");
+    }
     enablePlayerInput();
+    leftPressed = false;
+    rightPressed = false;
+    if (typeof input !== "undefined") {
+      input.dragging = false;
+      input.pointerLastX = null;
+      input.pointerVirtualX = null;
+      input.pointerInvertState = false;
+    }
     if (this.fx) this.fx.clearAll();
     resetActiveBonuses();
     resetShieldState({ silent: true });
