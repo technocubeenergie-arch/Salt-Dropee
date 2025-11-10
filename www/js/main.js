@@ -523,6 +523,55 @@ function canEndLevel(){
 let spawningEnabled = true;
 let inputEnabled = true;
 
+const directionalSourceState = {
+  keyboardLeft: false,
+  keyboardRight: false,
+  touchLeft: false,
+  touchRight: false,
+};
+
+let leftPressed = false;
+let rightPressed = false;
+let activeControlMode = hasTouch ? 'swipe' : 'swipe';
+
+function recomputeDirectionalState() {
+  leftPressed = directionalSourceState.keyboardLeft || directionalSourceState.touchLeft;
+  rightPressed = directionalSourceState.keyboardRight || directionalSourceState.touchRight;
+}
+
+function resetDirectionalInputs() {
+  directionalSourceState.keyboardLeft = false;
+  directionalSourceState.keyboardRight = false;
+  directionalSourceState.touchLeft = false;
+  directionalSourceState.touchRight = false;
+  leftPressed = false;
+  rightPressed = false;
+}
+
+function setActiveControlMode(mode) {
+  const normalized = (mode === 'zones' && hasTouch) ? 'zones' : 'swipe';
+  activeControlMode = normalized;
+
+  if (normalized === 'zones') {
+    directionalSourceState.touchLeft = false;
+    directionalSourceState.touchRight = false;
+    recomputeDirectionalState();
+    if (typeof input !== 'undefined') {
+      input.dragging = false;
+      input.pointerLastX = null;
+      input.pointerVirtualX = null;
+    }
+  } else if (directionalSourceState.touchLeft || directionalSourceState.touchRight) {
+    directionalSourceState.touchLeft = false;
+    directionalSourceState.touchRight = false;
+    recomputeDirectionalState();
+  }
+}
+
+function isTouchZoneModeActive() {
+  return hasTouch && activeControlMode === 'zones';
+}
+
 function stopSpawningItems(){
   spawningEnabled = false;
   if (game?.spawner) {
@@ -542,8 +591,7 @@ function disablePlayerInput(){
     input.dragging = false;
     input.dash = false;
   }
-  leftPressed = false;
-  rightPressed = false;
+  resetDirectionalInputs();
 }
 
 function resumeAllAnimations(){
@@ -1948,8 +1996,7 @@ function resumeGameplay(){
   spawningEnabled = true;
   resumeAllAnimations();
   enablePlayerInput();
-  leftPressed = false;
-  rightPressed = false;
+  resetDirectionalInputs();
 
   if (game) {
     game.state = "playing";
@@ -2117,8 +2164,6 @@ const input = {
   pointerVirtualX: null,
   pointerInvertState: false,
 };
-let leftPressed = false;
-let rightPressed = false;
 
 function getRawHorizontalAxis() {
   if (leftPressed && !rightPressed) return -1;
@@ -2135,6 +2180,65 @@ function getWalletCenter(walletRef) {
   if (!walletRef) return BASE_W / 2;
   return walletRef.x + walletRef.w / 2;
 }
+
+function handleTouchZoneEvent(evt) {
+  if (!isTouchZoneModeActive()) {
+    if (directionalSourceState.touchLeft || directionalSourceState.touchRight) {
+      directionalSourceState.touchLeft = false;
+      directionalSourceState.touchRight = false;
+      recomputeDirectionalState();
+    }
+    return false;
+  }
+
+  if (!inputEnabled) {
+    if (directionalSourceState.touchLeft || directionalSourceState.touchRight) {
+      directionalSourceState.touchLeft = false;
+      directionalSourceState.touchRight = false;
+      recomputeDirectionalState();
+    }
+    return true;
+  }
+
+  const wallet = game?.wallet;
+  const touches = evt?.touches;
+  if (!wallet || !touches) {
+    if (directionalSourceState.touchLeft || directionalSourceState.touchRight) {
+      directionalSourceState.touchLeft = false;
+      directionalSourceState.touchRight = false;
+      recomputeDirectionalState();
+    }
+    return true;
+  }
+
+  const zoneTop = clamp(wallet.y + wallet.h, 0, BASE_H);
+  const zoneBottom = BASE_H;
+  const zoneHeight = zoneBottom - zoneTop;
+
+  let leftActive = false;
+  let rightActive = false;
+
+  if (zoneHeight > 0 && canvas) {
+    for (let i = 0; i < touches.length; i += 1) {
+      const touch = touches[i];
+      if (!touch) continue;
+      const point = projectClientToCanvas(touch.clientX, touch.clientY);
+      if (point.y < zoneTop || point.y > zoneBottom) continue;
+      if (point.x < BASE_W / 2) {
+        leftActive = true;
+      } else {
+        rightActive = true;
+      }
+      if (leftActive && rightActive) break;
+    }
+  }
+
+  directionalSourceState.touchLeft = leftActive;
+  directionalSourceState.touchRight = rightActive;
+  recomputeDirectionalState();
+
+  return true;
+}
 function onKeyDown(e){
   const allowTitleStart = (e.code === 'Enter');
   if (!inputEnabled && !allowTitleStart) return;
@@ -2148,12 +2252,16 @@ function onKeyDown(e){
     return;
   }
 
+  let changed = false;
   if (e.code === 'ArrowLeft' || e.code === 'KeyA'){
-    leftPressed = true;
+    directionalSourceState.keyboardLeft = true;
+    changed = true;
   }
   if (e.code === 'ArrowRight' || e.code === 'KeyD'){
-    rightPressed = true;
+    directionalSourceState.keyboardRight = true;
+    changed = true;
   }
+  if (changed) recomputeDirectionalState();
   if (e.code === 'Space') input.dash = true;
   if (allowTitleStart){
     const g = Game.instance;
@@ -2164,11 +2272,20 @@ function onKeyDown(e){
   }
 }
 function onKeyUp(e){
-  if (e.code === 'ArrowLeft' || e.code === 'KeyA') leftPressed = false;
-  if (e.code === 'ArrowRight' || e.code === 'KeyD') rightPressed = false;
+  let changed = false;
+  if (e.code === 'ArrowLeft' || e.code === 'KeyA') {
+    directionalSourceState.keyboardLeft = false;
+    changed = true;
+  }
+  if (e.code === 'ArrowRight' || e.code === 'KeyD') {
+    directionalSourceState.keyboardRight = false;
+    changed = true;
+  }
+  if (changed) recomputeDirectionalState();
   if (e.code === 'Space') input.dash = false;
 }
 function onPointerDown(e){
+  if (e?.type?.startsWith('touch') && handleTouchZoneEvent(e)) return;
   if (!inputEnabled) return;
   const point = getCanvasPoint(e);
   input.dragging = true;
@@ -2182,6 +2299,7 @@ function onPointerDown(e){
   }
 }
 function onPointerMove(e){
+  if (e?.type?.startsWith('touch') && handleTouchZoneEvent(e)) return;
   if (!inputEnabled || !input.dragging) return;
   const point = getCanvasPoint(e);
   if (!game || !game.wallet) return;
@@ -2208,7 +2326,8 @@ function onPointerMove(e){
   input.pointerVirtualX += direction * delta;
   animateWalletToCenter(game.wallet, input.pointerVirtualX);
 }
-function onPointerUp(){
+function onPointerUp(e){
+  if (e?.type?.startsWith('touch') && handleTouchZoneEvent(e)) return;
   input.dragging = false;
   input.pointerLastX = null;
   input.pointerVirtualX = null;
@@ -2220,8 +2339,8 @@ const TG = window.Telegram?.WebApp; if (TG){ try{ TG.ready(); TG.expand(); }catc
 // SETTINGS & STORAGE
 // =====================
 const LS = { bestScore:'sd_bestScore', bestCombo:'sd_bestCombo', settings:'sd_settings', runs:'sd_runs' };
-const DefaultSettings = { sound:true, contrast:false, haptics:true, sensitivity:1.0 };
-function loadSettings(){ try{ return { ...DefaultSettings, ...(JSON.parse(localStorage.getItem(LS.settings))||{}) }; }catch(e){ return {...DefaultSettings}; } }
+const DefaultSettings = { sound:true, contrast:false, haptics:true, sensitivity:1.0, controlMode:'swipe' };
+function loadSettings(){ try{ const raw = JSON.parse(localStorage.getItem(LS.settings))||{}; const merged = { ...DefaultSettings, ...raw }; merged.controlMode = (merged.controlMode === 'zones' && hasTouch) ? 'zones' : 'swipe'; return merged; }catch(e){ return {...DefaultSettings}; } }
 function saveSettings(s){ try{ localStorage.setItem(LS.settings, JSON.stringify(s)); }catch(e){} }
 
 // =====================
@@ -2681,8 +2800,7 @@ class Game{
       gsap.killTweensOf("*");
     }
     enablePlayerInput();
-    leftPressed = false;
-    rightPressed = false;
+    resetDirectionalInputs();
     if (typeof input !== "undefined") {
       input.dragging = false;
       input.pointerLastX = null;
@@ -2694,6 +2812,7 @@ class Game{
     resetShieldState({ silent: true });
     resetControlInversion({ silent: true });
     this.settings = loadSettings(); document.documentElement.classList.toggle('contrast-high', !!this.settings.contrast);
+    setActiveControlMode(this.settings.controlMode);
     this.palette = CONFIG.palette.slice(); if (this.settings.contrast){ this.palette = ['#000','#444','#ff0044','#ffaa00','#ffffff','#00ffea','#00ff66','#66a6ff']; }
     const u=new URLSearchParams(location.search); const seed=u.get('seed'); this.random = seed? (function(seed){ let t=seed>>>0; return function(){ t += 0x6D2B79F5; let r = Math.imul(t ^ t >>> 15, 1 | t); r ^= r + Math.imul(r ^ r >>> 7, 61 | r); return ((r ^ r >>> 14) >>> 0) / 4294967296; };})(parseInt(seed)||1) : Math.random;
     this.state='title';
@@ -2889,12 +3008,20 @@ class Game{
       this.uiStartFromTitle();
     }, { passive:false });
   }
-  renderSettings(){ const s=this.settings; overlay.innerHTML = `
+  renderSettings(){ const s=this.settings; const controlMode = (s.controlMode === 'zones') ? 'zones' : 'swipe'; s.controlMode = controlMode; overlay.innerHTML = `
     <div class="panel">
       <h1>Paramètres</h1>
       <p><label><input type="checkbox" id="sound" ${s.sound?'checked':''}/> Son</label></p>
       <p><label><input type="checkbox" id="contrast" ${s.contrast?'checked':''}/> Contraste élevé</label></p>
       <p><label><input type="checkbox" id="haptics" ${s.haptics?'checked':''}/> Vibrations</label></p>
+      ${hasTouch ? `
+      <p>
+        <label for="controlMode">Mode de contrôle (mobile)</label>
+        <select id="controlMode">
+          <option value="swipe"${controlMode==='zones'?'':' selected'}>Swipe</option>
+          <option value="zones"${controlMode==='zones'?' selected':''}>Zones tactiles</option>
+        </select>
+      </p>` : ''}
       <p>Sensibilité: <input type="range" id="sens" min="0.5" max="1.5" step="0.05" value="${s.sensitivity}"></p>
       <div class="btnrow"><button id="back">Retour</button></div>
     </div>`;
@@ -2902,6 +3029,18 @@ class Game{
     addEvent(document.getElementById('sound'), 'change', e=>{ playSound("click"); this.settings.sound = e.target.checked; saveSettings(this.settings); if (typeof setSoundEnabled === "function") { setSoundEnabled(this.settings.sound); } });
     addEvent(document.getElementById('contrast'), 'change', e=>{ playSound("click"); this.settings.contrast = e.target.checked; saveSettings(this.settings); this.reset(); });
     addEvent(document.getElementById('haptics'), 'change', e=>{ playSound("click"); this.settings.haptics = e.target.checked; saveSettings(this.settings); });
+    if (hasTouch) {
+      const controlSelect = document.getElementById('controlMode');
+      if (controlSelect) {
+        addEvent(controlSelect, 'change', e=>{
+          playSound("click");
+          const value = e.target.value === 'zones' ? 'zones' : 'swipe';
+          this.settings.controlMode = value;
+          saveSettings(this.settings);
+          setActiveControlMode(value);
+        });
+      }
+    }
     addEvent(document.getElementById('sens'), 'input', e=>{ this.settings.sensitivity = parseFloat(e.target.value); saveSettings(this.settings); });
     addEvent(document.getElementById('back'), INPUT.tap, ()=>{
       playSound("click");
@@ -3064,14 +3203,28 @@ class Game{
 
 function checkAABB(a,b){ return a.x<b.x+b.w && a.x+a.w>b.x && a.y<b.y+b.h && a.y+a.h>b.y; }
 
+function projectClientToCanvas(clientX, clientY) {
+  if (!canvas) return { x: 0, y: 0 };
+  const rect = canvas.getBoundingClientRect();
+  const width = rect.width || 0;
+  const height = rect.height || 0;
+  if (width === 0 || height === 0) {
+    return { x: BASE_W / 2, y: BASE_H / 2 };
+  }
+  if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) {
+    return { x: BASE_W / 2, y: BASE_H / 2 };
+  }
+  return {
+    x: ((clientX - rect.left) / width) * BASE_W,
+    y: ((clientY - rect.top) / height) * BASE_H,
+  };
+}
+
 function getCanvasPoint(evt){
   if (!canvas) return { x:0, y:0 };
-  const rect = canvas.getBoundingClientRect();
   const point = getPrimaryPoint(evt);
-  return {
-    x: ((point.clientX - rect.left) / rect.width) * BASE_W,
-    y: ((point.clientY - rect.top) / rect.height) * BASE_H,
-  };
+  if (!point) return { x:0, y:0 };
+  return projectClientToCanvas(point.clientX, point.clientY);
 }
 
 function startGame(){
