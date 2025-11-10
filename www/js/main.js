@@ -108,9 +108,19 @@ const LEVELS = [
     music: "assets/sounds/audioniveau5.mp3",
     targetScore: 2500, timeLimit: 60, lives: 3,
   },
+  {
+    id: 6, name: "Level 6",
+    background: "assets/fondniveau6.png",
+    walletSprite: "assets/walletniveau6.png",
+    music: "assets/sounds/audioniveau6.mp3",
+    targetScore: Infinity, timeLimit: 60, lives: 3,
+    endless: true,
+  },
 ];
 
 const MENU_BACKGROUND_SRC = "assets/fondaccueil.png";
+
+const LEGEND_LEVEL_INDEX = LEVELS.findIndex(level => level?.id === 6);
 
 // --- Cache d'assets par niveau ---
 const levelAssets = {}; // index -> { bg:Image, wallet:Image, music:HTMLAudioElement|null }
@@ -585,7 +595,11 @@ async function loadLevel(index, options = {}) {
 
   updateFallSpeedForLevel(index);
 
-  levelState.targetScore = L.targetScore;
+  const endless = !!L.endless;
+
+  levelState.targetScore = endless
+    ? Number.POSITIVE_INFINITY
+    : (Number.isFinite(L.targetScore) ? L.targetScore : 0);
   levelState.timeLimit   = L.timeLimit;
   levelState.lives       = L.lives;
 
@@ -608,7 +622,9 @@ async function loadLevel(index, options = {}) {
     instance.timeLeft = L.timeLimit;
     instance.timeElapsed = 0;
     instance.lives = L.lives;
-    instance.targetScore = L.targetScore;
+    instance.targetScore = endless
+      ? Number.POSITIVE_INFINITY
+      : L.targetScore;
     if (instance.arm && typeof instance.arm.applyLevelSpeed === "function") {
       instance.arm.applyLevelSpeed(index + 1);
     }
@@ -629,6 +645,8 @@ async function loadLevel(index, options = {}) {
     ensureLevelAssets(index + 1);
   }
 
+  hideLegendResultScreen();
+
   if (typeof setHUDScore === "function") setHUDScore(score);
   if (typeof setHUDLives === "function") setHUDLives(lives);
   if (typeof setHUDTime  === "function") setHUDTime(timeLeft);
@@ -641,7 +659,14 @@ async function startLevel1() {
 function checkEndConditions(){
   if (!canEndLevel()) return;
 
-  if (score >= levelState.targetScore && lives > 0 && timeLeft > 0){
+  if (isLegendLevel()) {
+    if (timeLeft <= 0 || lives <= 0) {
+      endLegendRun(timeLeft <= 0 ? "time" : "lives");
+    }
+    return;
+  }
+
+  if (Number.isFinite(levelState.targetScore) && score >= levelState.targetScore && lives > 0 && timeLeft > 0){
     endLevel("win");
     return;
   }
@@ -671,6 +696,34 @@ function endLevel(result){
   window.__saltDroppeeLoopStarted = false;
 
   showInterLevelScreen(result);
+}
+
+function isLegendLevel(index = currentLevelIndex) {
+  if (LEGEND_LEVEL_INDEX < 0) return false;
+  const numericIndex = Number(index);
+  if (!Number.isFinite(numericIndex)) return false;
+  return Math.max(0, Math.floor(numericIndex)) === LEGEND_LEVEL_INDEX;
+}
+
+function endLegendRun(reason = "time") {
+  if (!canEndLevel()) return;
+  levelEnded = true;
+  gameState = "inter";
+
+  stopSpawningItems();
+  pauseAllAnimations();
+  disablePlayerInput();
+
+  if (game) {
+    game.state = "inter";
+    if (typeof game.render === "function") {
+      game.render();
+    }
+  }
+
+  window.__saltDroppeeLoopStarted = false;
+
+  showLegendResultScreen(reason);
 }
 
 window.loadLevel = loadLevel;
@@ -1530,11 +1583,13 @@ function getCurrentIntraLevelSpeedMultiplier(){
   return levelSpeedRampState.multiplier || 1;
 }
 
+const LEVEL_SPEED_MULTIPLIERS = [1.0, 1.05, 1.10, 1.15, 1.20, 1.26];
+
 function getLevelSpeedMultiplier(levelIndex) {
   const numericIndex = Number(levelIndex);
   const safeIndex = Number.isFinite(numericIndex) ? numericIndex : 0;
   const clampedIndex = Math.max(0, Math.floor(safeIndex));
-  return 1 + 0.05 * clampedIndex;
+  return LEVEL_SPEED_MULTIPLIERS[clampedIndex] ?? (1 + 0.05 * clampedIndex);
 }
 
 function updateFallSpeedForLevel(levelIndex) {
@@ -1948,6 +2003,41 @@ function showInterLevelScreen(result="win"){
   showOverlay(screen);
 }
 
+function showLegendResultScreen(reason = "time"){
+  void reason;
+  hideInterLevelScreen();
+
+  const screen = document.getElementById("legendResultScreen");
+  const title = document.getElementById("legendTitle");
+  const message = document.getElementById("legendMessage");
+  if (!screen) return;
+
+  if (typeof Game !== "undefined" && Game.instance) {
+    Game.instance.settingsReturnView = "legend";
+  }
+
+  if (title) {
+    title.textContent = "Mode Légende";
+  }
+
+  const numericScore = Number.isFinite(score) ? score : Number(window.score) || 0;
+  const formattedScore = typeof formatScore === "function"
+    ? formatScore(numericScore)
+    : String(numericScore | 0);
+
+  if (message) {
+    message.textContent = `Félicitations, votre score est de ${formattedScore}.`;
+  }
+
+  showOverlay(screen);
+}
+
+function hideLegendResultScreen(){
+  const screen = document.getElementById("legendResultScreen");
+  if (!screen) return;
+  hideOverlay(screen);
+}
+
 function hideInterLevelScreen(){
   const screen = document.getElementById("interLevelScreen");
   if (!screen) return;
@@ -1974,6 +2064,37 @@ function bindInterLevelButtons(){
   }
 }
 
+function bindLegendResultButtons(){
+  const btnHome = document.getElementById("legendHomeButton");
+  const btnRetry = document.getElementById("legendRetryButton");
+
+  if (btnHome){
+    btnHome.onclick = async () => {
+      if (typeof playSound === "function") playSound("click");
+      hideLegendResultScreen();
+      const instance = Game.instance;
+      currentLevelIndex = 0;
+      if (instance) {
+        instance.reset({ showTitle: true });
+      } else {
+        hardResetRuntime();
+        await loadLevel(0, { applyBackground: false, playMusic: false });
+      }
+    };
+  }
+
+  if (btnRetry){
+    btnRetry.onclick = async () => {
+      if (typeof playSound === "function") playSound("click");
+      hideLegendResultScreen();
+      hardResetRuntime();
+      const legendIndex = LEGEND_LEVEL_INDEX >= 0 ? LEGEND_LEVEL_INDEX : currentLevelIndex;
+      await loadLevel(legendIndex);
+      resumeGameplay();
+    };
+  }
+}
+
 // --- Test manuel temporaire : appuyer sur 'i' pour afficher l’écran ---
 window.addEventListener("keydown", (e) => {
   if (e.key === "i" || e.key === "I") showInterLevelScreen("win");
@@ -1981,6 +2102,7 @@ window.addEventListener("keydown", (e) => {
 
 // Appeler le binding après chargement du DOM / init jeu
 window.addEventListener("load", bindInterLevelButtons);
+window.addEventListener("load", bindLegendResultButtons);
 
 window.showInterLevelScreen = showInterLevelScreen;
 window.hideInterLevelScreen = hideInterLevelScreen;
