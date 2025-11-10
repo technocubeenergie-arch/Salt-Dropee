@@ -2670,7 +2670,7 @@ class HUD{
 // =====================
 class Game{
   static instance=null;
-  constructor(){ Game.instance=this; this.reset({ showTitle:true }); }
+  constructor(){ Game.instance=this; this.rulesReturnView = "title"; this.reset({ showTitle:true }); }
   reset({showTitle=true}={}){
     window.__saltDroppeeLoopStarted = false;
     gameState = "paused";
@@ -2857,11 +2857,18 @@ class Game{
         <div class="btnrow">
           <button id="btnPlay" type="button">Jouer</button>
           <button type="button" class="btn-settings" data-action="open-settings">Paramètres</button>
+          <button id="btnRulesTitle" type="button">Règle du jeu</button>
           <button id="btnLB" type="button">Leaderboard local</button>
         </div>
       </div>`;
     showOverlay(overlay);
     addEvent(document.getElementById('btnLB'), INPUT.tap, ()=>{ playSound("click"); this.renderLeaderboard(); });
+    addEvent(document.getElementById('btnRulesTitle'), INPUT.tap, (evt)=>{
+      evt.preventDefault();
+      evt.stopPropagation();
+      playSound("click");
+      this.renderRules("title");
+    }, { passive:false });
     addEvent(document.getElementById('btnPlay'), INPUT.tap, async (e)=>{
       e.preventDefault(); e.stopPropagation();
       playSound("click");
@@ -2926,7 +2933,16 @@ class Game{
   }
   renderPause(){
     this.settingsReturnView = "pause";
-    overlay.innerHTML = `<div class="panel"><h1>Pause</h1><div class="btnrow"><button id="resume" type="button">Reprendre</button><button type="button" class="btn-settings" data-action="open-settings">Paramètres</button><button id="quit" type="button">Menu</button></div></div>`;
+    overlay.innerHTML = `
+      <div class="panel">
+        <h1>Pause</h1>
+        <div class="btnrow">
+          <button id="resume" type="button">Reprendre</button>
+          <button type="button" class="btn-settings" data-action="open-settings">Paramètres</button>
+          <button id="quit" type="button">Menu</button>
+          <button id="btnRulesPause" type="button">Règle du jeu</button>
+        </div>
+      </div>`;
     showOverlay(overlay);
     addEvent(document.getElementById('resume'), INPUT.tap, ()=>{
       playSound("click");
@@ -2942,6 +2958,43 @@ class Game{
       hideOverlay(overlay);
       this.reset();
     });
+    addEvent(document.getElementById('btnRulesPause'), INPUT.tap, (evt)=>{
+      evt.preventDefault();
+      evt.stopPropagation();
+      playSound("click");
+      this.renderRules("pause");
+    }, { passive:false });
+  }
+  renderRules(returnView){
+    this.rulesReturnView = returnView || this.state || "title";
+    overlay.innerHTML = `
+      <div class="rules-screen" role="dialog" aria-modal="true" aria-label="Règles du jeu">
+        <img src="assets/rules.png" alt="Règles du jeu" />
+      </div>`;
+    overlay.classList.add('overlay-rules');
+    showOverlay(overlay);
+
+    const closeRules = () => {
+      overlay.removeEventListener(INPUT.tap, onTap);
+      overlay.classList.remove('overlay-rules');
+      overlay.innerHTML = '';
+      hideOverlay(overlay);
+
+      if (this.rulesReturnView === 'pause' || this.rulesReturnView === 'paused') {
+        this.renderPause();
+      } else {
+        this.renderTitle();
+      }
+    };
+
+    const onTap = (evt) => {
+      evt.preventDefault();
+      evt.stopPropagation();
+      playSound("click");
+      closeRules();
+    };
+
+    overlay.addEventListener(INPUT.tap, onTap, { passive:false });
   }
   renderGameOver(){ const best=parseInt(localStorage.getItem(LS.bestScore)||'0',10); this.settingsReturnView = "over"; overlay.innerHTML = `
     <div class="panel">
