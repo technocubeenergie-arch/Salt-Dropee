@@ -57,17 +57,6 @@ document.addEventListener("click", (event) => {
     instance.settingsReturnView = returnView;
   }
 
-  if (
-    btn.closest("#interLevelScreen") &&
-    typeof hideInterLevelScreen === "function"
-  ) {
-    try {
-      hideInterLevelScreen();
-    } catch (err) {
-      console.error("[settings] failed to hide inter-level screen:", err);
-    }
-  }
-
   try {
     openSettings();
   } catch (err) {
@@ -121,6 +110,15 @@ const LEVELS = [
     endless: true,
   },
 ];
+
+const INTER_LEVEL_BACKGROUNDS = {
+  0: "assets/interlevel1.png",
+  1: "assets/interlevel2.png",
+  2: "assets/interlevel3.png",
+  3: "assets/interlevel4.png",
+};
+
+const INTER_LEVEL_SOUND_SRC = "assets/sounds/tada.mp3";
 
 const MENU_BACKGROUND_SRC = "assets/fondaccueil.png";
 const MENU_MUSIC_SRC = "assets/sounds/audioaccueil.mp3";
@@ -255,9 +253,51 @@ let musicEnabled = true;
 let menuMusic = null;
 let musicUnlockListener = null;
 let musicUnlockCompleted = false;
+let interLevelAudio = null;
 if (typeof window.isSoundEnabled === 'function') {
   try {
     musicEnabled = !!window.isSoundEnabled();
+  } catch (_) {}
+}
+
+function getInterLevelAudio() {
+  if (interLevelAudio) return interLevelAudio;
+  interLevelAudio = new Audio(INTER_LEVEL_SOUND_SRC);
+  interLevelAudio.preload = 'auto';
+  interLevelAudio.loop = false;
+  interLevelAudio.volume = 0.9;
+  return interLevelAudio;
+}
+
+function canPlayInterLevelAudio() {
+  let effectsEnabled = true;
+  if (typeof window.isSoundEnabled === 'function') {
+    try {
+      effectsEnabled = !!window.isSoundEnabled();
+    } catch (_) {}
+  }
+  return effectsEnabled || musicEnabled;
+}
+
+function playInterLevelAudioForLevel(levelIndex) {
+  if (!INTER_LEVEL_SOUND_SRC || !canPlayInterLevelAudio()) return;
+  const audio = getInterLevelAudio();
+  if (!audio) return;
+  try {
+    audio.pause();
+    audio.currentTime = 0;
+  } catch (_) {}
+  const maybe = audio.play();
+  if (maybe && typeof maybe.catch === 'function') {
+    maybe.catch(() => {});
+  }
+}
+
+function stopInterLevelAudio() {
+  if (!interLevelAudio) return;
+  try {
+    interLevelAudio.pause();
+    interLevelAudio.currentTime = 0;
   } catch (_) {}
 }
 
@@ -333,6 +373,12 @@ function setLevelMusic(audio) {
   if (currentMusic.paused && musicEnabled) {
     safePlayMusic(currentMusic);
   }
+}
+
+function stopLevelMusic() {
+  if (!currentMusic) return;
+  tryFadeOut(currentMusic);
+  currentMusic = null;
 }
 
 function getMenuMusic() {
@@ -412,6 +458,7 @@ window.setSoundEnabled = function patchedSetSoundEnabled(enabled) {
   musicEnabled = !!enabled;
   if (!musicEnabled) {
     tryFadeOut(currentMusic);
+    stopInterLevelAudio();
   } else {
     safePlayMusic(currentMusic);
   }
@@ -841,6 +888,8 @@ function finalizeLevelTransition(afterStop){
   }
 
   window.__saltDroppeeLoopStarted = false;
+
+  stopLevelMusic();
 
   if (typeof afterStop === "function") {
     afterStop();
@@ -2059,6 +2108,16 @@ function hideOverlay(el){
   }
 }
 
+function clearMainOverlay(except){
+  const mainOverlay = overlay || document.getElementById("overlay");
+  if (!mainOverlay || mainOverlay === except) return mainOverlay || null;
+
+  mainOverlay.innerHTML = "";
+  hideOverlay(mainOverlay);
+  mainOverlay.classList.remove("overlay-title", "overlay-rules");
+  return mainOverlay;
+}
+
 function resize(){
   if (!canvas) return;
   const vw = window.innerWidth, vh = window.innerHeight;
@@ -2106,13 +2165,18 @@ function resumeGameplay(){
 
 let lastInterLevelResult = "win";
 
-function showInterLevelScreen(result="win"){
+function showInterLevelScreen(result = "win", options = {}){
   lastInterLevelResult = result;
   const screen = document.getElementById("interLevelScreen");
   const title  = document.getElementById("interTitle");
   const scoreText = document.getElementById("interScore");
   const btnNext = document.getElementById("btnNextLevel");
   if (!screen || !title || !scoreText) return;
+
+  const opts = (options && typeof options === "object") ? options : {};
+  const screenAlreadyVisible = screen.classList.contains("show");
+
+  clearMainOverlay(screen);
 
   if (typeof Game !== "undefined" && Game.instance) {
     Game.instance.settingsReturnView = "inter";
@@ -2139,6 +2203,23 @@ function showInterLevelScreen(result="win"){
     };
   }
 
+  const levelIndex = Math.max(0, Number.isFinite(currentLevelIndex) ? Math.floor(currentLevelIndex) : 0);
+  const isLegend = isLegendLevel(levelIndex);
+  const backgroundSrc = INTER_LEVEL_BACKGROUNDS[levelIndex];
+  const shouldUseInterVisuals = result === "win" && backgroundSrc && !isLegend;
+
+  screen.classList.toggle("inter-win", !!shouldUseInterVisuals);
+
+  if (shouldUseInterVisuals) {
+    applyLevelBackground(backgroundSrc);
+    const shouldPlayAudio = opts.replaySound !== false && !screenAlreadyVisible;
+    if (shouldPlayAudio) {
+      playInterLevelAudioForLevel(levelIndex);
+    }
+  } else {
+    stopInterLevelAudio();
+  }
+
   showOverlay(screen);
 }
 
@@ -2150,6 +2231,8 @@ function showLegendResultScreen(reason = "time"){
   const title = document.getElementById("legendTitle");
   const message = document.getElementById("legendMessage");
   if (!screen) return;
+
+  clearMainOverlay(screen);
 
   if (typeof Game !== "undefined" && Game.instance) {
     Game.instance.settingsReturnView = "legend";
@@ -2180,6 +2263,7 @@ function hideLegendResultScreen(){
 function hideInterLevelScreen(){
   const screen = document.getElementById("interLevelScreen");
   if (!screen) return;
+  stopInterLevelAudio();
   hideOverlay(screen);
 }
 
@@ -3172,7 +3256,7 @@ class Game{
 
       if (returnView === "inter") {
         hideOverlay(overlay);
-        showInterLevelScreen(lastInterLevelResult || "win");
+        showInterLevelScreen(lastInterLevelResult || "win", { replaySound: false });
         return;
       }
 

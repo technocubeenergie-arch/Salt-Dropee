@@ -60,11 +60,16 @@
       </div>
 
       <!-- Inter-level overlay (caché par défaut) -->
-      <div id="interLevelScreen" class="overlay" aria-hidden="true">
-        <div class="inter-content" role="dialog" aria-modal="true" aria-labelledby="interTitle">
+      <div id="interLevelScreen" class="overlay inter-level-screen" aria-hidden="true">
+        <div
+          class="inter-content inter-level-content"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="interTitle"
+        >
           <h2 id="interTitle">Niveau terminé !</h2>
           <p id="interScore">Score : 0000</p>
-          <div class="inter-buttons">
+          <div class="inter-buttons inter-level-buttons">
             <button id="btnNextLevel" type="button">Niveau suivant</button>
             <button id="btnSaveQuit" type="button">Sauvegarder &amp; Quitter</button>
             <button type="button" class="btn-settings" data-action="open-settings">
