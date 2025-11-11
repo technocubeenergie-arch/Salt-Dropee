@@ -355,6 +355,10 @@ function safePlayMusic(aud) {
     return Promise.resolve(false);
   }
 
+  if (window.gsap && typeof window.gsap.killTweensOf === 'function') {
+    window.gsap.killTweensOf(aud);
+  }
+
   try {
     aud.loop = true;
   } catch (_) {}
