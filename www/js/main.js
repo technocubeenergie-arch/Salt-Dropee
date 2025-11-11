@@ -119,6 +119,7 @@ const LEVELS = [
 ];
 
 const MENU_BACKGROUND_SRC = "assets/fondaccueil.png";
+const MENU_MUSIC_SRC = "assets/sounds/audioaccueil.mp3";
 
 const LEGEND_LEVEL_INDEX = LEVELS.findIndex(level => level?.id === 6);
 
@@ -247,6 +248,7 @@ function setWalletSprite(img) {
 let currentMusic = null;
 let musicVolume = 0.6;
 let musicEnabled = true;
+let menuMusic = null;
 if (typeof window.isSoundEnabled === 'function') {
   try {
     musicEnabled = !!window.isSoundEnabled();
@@ -289,16 +291,44 @@ function safePlayMusic(aud) {
 }
 
 function setLevelMusic(audio) {
+  const sameAudio = !!audio && currentMusic === audio;
   if (currentMusic && currentMusic !== audio) {
     tryFadeOut(currentMusic);
   }
   currentMusic = audio || null;
-  if (currentMusic) {
+  if (!currentMusic) {
+    return;
+  }
+  if (!sameAudio) {
     try {
       currentMusic.currentTime = 0;
     } catch (_) {}
+    safePlayMusic(currentMusic);
+    return;
   }
-  safePlayMusic(currentMusic);
+  if (currentMusic.paused && musicEnabled) {
+    safePlayMusic(currentMusic);
+  }
+}
+
+function getMenuMusic() {
+  if (!menuMusic) {
+    menuMusic = new Audio(MENU_MUSIC_SRC);
+    menuMusic.loop = true;
+    menuMusic.preload = "auto";
+  }
+  return menuMusic;
+}
+
+function playMenuMusic() {
+  const audio = getMenuMusic();
+  setLevelMusic(audio);
+}
+
+function stopMenuMusic() {
+  if (currentMusic === menuMusic) {
+    setLevelMusic(null);
+  }
 }
 
 function unlockMusicOnce() {
@@ -498,6 +528,29 @@ let canvas;
 let ctx;
 let overlay;
 let game;
+
+function enterTitleScreen() {
+  if (typeof document !== 'undefined' && document.body) {
+    document.body.classList.add('is-title');
+  }
+  if (typeof overlay !== 'undefined' && overlay) {
+    overlay.classList.remove('overlay-rules');
+    overlay.classList.add('overlay-title');
+  }
+  playMenuMusic();
+}
+
+function leaveTitleScreen({ stopMusic = true } = {}) {
+  if (typeof document !== 'undefined' && document.body) {
+    document.body.classList.remove('is-title');
+  }
+  if (typeof overlay !== 'undefined' && overlay) {
+    overlay.classList.remove('overlay-title');
+  }
+  if (stopMusic) {
+    stopMenuMusic();
+  }
+}
 
 let drawLegacyBg = false; // doit rester false
 
@@ -2821,6 +2874,9 @@ class Game{
       setSoundEnabled(!!this.settings.sound);
     }
     if (showTitle) {
+      playMenuMusic();
+    } else {
+      leaveTitleScreen({ stopMusic: true });
       setLevelMusic(null);
     }
     this.timeLeft=CONFIG.runSeconds; this.timeElapsed=0; this.lives=CONFIG.lives; this.score=0; this.comboStreak=0; this.comboMult=comboTiers[0].mult; this.maxCombo=0; this.levelReached=1;
@@ -2967,6 +3023,7 @@ class Game{
   }
   uiStartFromTitle(){
     if (this.state === 'title'){
+      leaveTitleScreen();
       overlay.innerHTML = '';
       hideOverlay(overlay);
       this.start();
@@ -2981,15 +3038,14 @@ class Game{
     } else {
       setBackgroundImageSrc(MENU_BACKGROUND_SRC);
     }
+    enterTitleScreen();
     overlay.innerHTML = `
-      <div class="panel">
-        <h1>Salt Droppee</h1>
-        <p>Attrapez les bons tokens, évitez les malus. 75s, 3 vies.</p>
-        <div class="btnrow">
+      <div class="title-screen" role="presentation">
+        <div class="title-buttons" role="navigation">
           <button id="btnPlay" type="button">Jouer</button>
-          <button type="button" class="btn-settings" data-action="open-settings">Paramètres</button>
           <button id="btnRulesTitle" type="button">Règle du jeu</button>
-          <button id="btnLB" type="button">Leaderboard local</button>
+          <button type="button" class="btn-settings" data-action="open-settings">Paramètres</button>
+          <button id="btnLB" type="button">Leaderboard</button>
         </div>
       </div>`;
     showOverlay(overlay);
@@ -3008,7 +3064,12 @@ class Game{
       this.uiStartFromTitle();
     }, { passive:false });
   }
-  renderSettings(){ const s=this.settings; const controlMode = (s.controlMode === 'zones') ? 'zones' : 'swipe'; s.controlMode = controlMode; overlay.innerHTML = `
+  renderSettings(){
+    if (overlay) overlay.classList.remove('overlay-title');
+    const s=this.settings;
+    const controlMode = (s.controlMode === 'zones') ? 'zones' : 'swipe';
+    s.controlMode = controlMode;
+    overlay.innerHTML = `
     <div class="panel">
       <h1>Paramètres</h1>
       <p><label><input type="checkbox" id="sound" ${s.sound?'checked':''}/> Son</label></p>
@@ -3067,7 +3128,10 @@ class Game{
       this.renderTitle();
     });
   }
-  renderLeaderboard(){ let runs=[]; try{ runs = JSON.parse(localStorage.getItem(LS.runs)||'[]'); }catch(e){}
+  renderLeaderboard(){
+    if (overlay) overlay.classList.remove('overlay-title');
+    let runs=[];
+    try{ runs = JSON.parse(localStorage.getItem(LS.runs)||'[]'); }catch(e){}
     const best = parseInt(localStorage.getItem(LS.bestScore)||'0',10);
     const bestC = parseInt(localStorage.getItem(LS.bestCombo)||'0',10);
     overlay.innerHTML = `
@@ -3083,6 +3147,7 @@ class Game{
     addEvent(document.getElementById('back'), INPUT.tap, ()=>{ playSound("click"); this.renderTitle(); });
   }
   renderPause(){
+    if (overlay) overlay.classList.remove('overlay-title');
     this.settingsReturnView = "pause";
     overlay.innerHTML = `
       <div class="panel">
@@ -3117,6 +3182,7 @@ class Game{
     }, { passive:false });
   }
   renderRules(returnView){
+    if (overlay) overlay.classList.remove('overlay-title');
     this.rulesReturnView = returnView || this.state || "title";
     overlay.innerHTML = `
       <div class="rules-screen" role="dialog" aria-modal="true" aria-label="Règles du jeu">
