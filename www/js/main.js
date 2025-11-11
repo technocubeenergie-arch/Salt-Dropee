@@ -2142,6 +2142,7 @@ async function goToNextLevel(){
 }
 
 function resumeGameplay(){
+  setInterLevelUiState(false);
   levelEnded = false;
   gameState = "playing";
   spawningEnabled = true;
@@ -2164,6 +2165,27 @@ function resumeGameplay(){
 }
 
 let lastInterLevelResult = "win";
+
+function setInterLevelUiState(active) {
+  const isActive = !!active;
+  const body = typeof document !== 'undefined' ? document.body : null;
+  const wrapper = document.getElementById('gameWrapper');
+  const canvasEl = document.getElementById('gameCanvas');
+  const hudEl = document.getElementById('hud');
+
+  if (body) {
+    body.classList.toggle('is-inter-level', isActive);
+  }
+  if (wrapper) {
+    wrapper.classList.toggle('is-inter-level', isActive);
+  }
+  if (canvasEl) {
+    canvasEl.setAttribute('aria-hidden', isActive ? 'true' : 'false');
+  }
+  if (hudEl) {
+    hudEl.setAttribute('aria-hidden', isActive ? 'true' : 'false');
+  }
+}
 
 function showInterLevelScreen(result = "win", options = {}){
   lastInterLevelResult = result;
@@ -2220,6 +2242,7 @@ function showInterLevelScreen(result = "win", options = {}){
     stopInterLevelAudio();
   }
 
+  setInterLevelUiState(true);
   showOverlay(screen);
 }
 
@@ -2264,6 +2287,7 @@ function hideInterLevelScreen(){
   const screen = document.getElementById("interLevelScreen");
   if (!screen) return;
   stopInterLevelAudio();
+  setInterLevelUiState(false);
   hideOverlay(screen);
 }
 
@@ -2282,7 +2306,27 @@ function bindInterLevelButtons(){
   if (bSave){
     bSave.onclick = () => {
       hideInterLevelScreen();
-      console.log("[InterLevel] save & quit stub");
+      if (typeof playSound === "function") {
+        playSound("click");
+      }
+
+      const instance = (typeof Game !== "undefined" && Game.instance)
+        ? Game.instance
+        : null;
+
+      if (instance && typeof instance.reset === "function") {
+        instance.reset({ showTitle: true });
+        return;
+      }
+
+      setInterLevelUiState(false);
+      enterTitleScreen();
+      const mainOverlay = overlay || document.getElementById("overlay");
+      if (mainOverlay) {
+        mainOverlay.innerHTML = "";
+        hideOverlay(mainOverlay);
+      }
+      setBackgroundImageSrc(MENU_BACKGROUND_SRC);
     };
   }
 }
@@ -2977,6 +3021,7 @@ class Game{
   constructor(){ Game.instance=this; this.rulesReturnView = "title"; this.reset({ showTitle:true }); }
   reset({showTitle=true}={}){
     window.__saltDroppeeLoopStarted = false;
+    setInterLevelUiState(false);
     gameState = "paused";
     levelEnded = false;
     spawningEnabled = false;
