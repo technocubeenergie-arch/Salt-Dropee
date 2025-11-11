@@ -272,6 +272,79 @@ body.is-title #hud {
   .inter-buttons{ gap: 12px; }
 }
 
+.inter-level-screen {
+  background: transparent;
+  align-items: stretch;
+  justify-content: flex-end;
+  padding: clamp(32px, 14vh, 200px) clamp(20px, 7vw, 60px) clamp(28px, 10vh, 140px);
+}
+
+.inter-level-content {
+  width: min(88vw, 360px);
+  max-width: 360px;
+  margin: 0 auto;
+  margin-top: auto;
+  margin-bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(12px, 2.5vh, 20px);
+  padding: clamp(26px, 4.5vh, 44px) clamp(24px, 6vw, 48px);
+  background: rgba(12, 18, 38, 0.62);
+  border: 2px solid rgba(255, 255, 255, 0.18);
+  border-radius: 18px;
+  backdrop-filter: blur(8px);
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.45);
+  pointer-events: auto;
+}
+
+.inter-level-content h2 {
+  margin: 0;
+  font-size: clamp(1.4rem, 3.6vw, 1.8rem);
+  letter-spacing: 0.06em;
+}
+
+.inter-level-content p {
+  margin: 0;
+  font-size: clamp(1.05rem, 2.8vw, 1.3rem);
+}
+
+.inter-level-buttons {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: clamp(12px, 2vh, 18px);
+  margin-top: clamp(10px, 2.4vh, 18px);
+}
+
+.inter-level-buttons button {
+  width: 100%;
+  padding: clamp(12px, 2.6vh, 16px) clamp(16px, 4.5vw, 18px);
+  font-size: clamp(1rem, 2.8vw, 1.2rem);
+  background: rgba(0, 0, 0, 0.58);
+  border: 2px solid rgba(255, 255, 255, 0.82);
+  color: #fff;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.45);
+  transition: transform 0.12s ease, filter 0.2s ease;
+}
+
+.inter-level-buttons button:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.1);
+}
+
+@media (max-width: 360px) {
+  .inter-level-screen {
+    padding: clamp(24px, 12vh, 160px) clamp(14px, 8vw, 32px) clamp(24px, 12vh, 120px);
+  }
+
+  .inter-level-content {
+    width: 100%;
+    padding: clamp(20px, 4vh, 34px) clamp(18px, 6vw, 30px);
+  }
+}
+
 .rules-screen {
   width: 100%;
   height: 100%;
