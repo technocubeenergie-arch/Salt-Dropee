@@ -73,6 +73,16 @@ body.is-title #hud {
   visibility: hidden;
 }
 
+body.is-inter-level #gameWrapper > :not(#bgLayer):not(#interLevelScreen):not(#legendResultScreen):not(#overlay) {
+  opacity: 0;
+  pointer-events: none;
+}
+
+body.is-inter-level #gameCanvas,
+body.is-inter-level #hud {
+  visibility: hidden;
+}
+
 #gameCanvas {
   position: relative;
   z-index: 1;
