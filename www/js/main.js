@@ -3151,7 +3151,15 @@ class Game{
       }
     }
     addEvent(document.getElementById('sens'), 'input', e=>{ this.settings.sensitivity = parseFloat(e.target.value); saveSettings(this.settings); });
-    addEvent(document.getElementById('back'), INPUT.tap, ()=>{
+    addEvent(document.getElementById('back'), INPUT.tap, (evt)=>{
+      if (evt && typeof evt.preventDefault === 'function') {
+        evt.preventDefault();
+      }
+      if (evt && typeof evt.stopImmediatePropagation === 'function') {
+        evt.stopImmediatePropagation();
+      } else if (evt && typeof evt.stopPropagation === 'function') {
+        evt.stopPropagation();
+      }
       playSound("click");
       const returnView = this.settingsReturnView || this.state || "title";
       this.settingsReturnView = "title";
@@ -3174,7 +3182,7 @@ class Game{
       }
 
       this.renderTitle();
-    });
+    }, { passive: false });
   }
   renderLeaderboard(){
     if (overlay) overlay.classList.remove('overlay-title');
