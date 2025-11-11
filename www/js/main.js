@@ -890,6 +890,8 @@ const BonusIcons = {
   magnet: MagnetImg,
   x2: X2Img,
   shield: ShieldImg,
+  fakeAirdrop: FakeADImg,
+  anvil: AnvilImg,
 };
 
 // Types négatifs du projet
@@ -2843,12 +2845,21 @@ class HUD{
       bonusY += iconSize + iconSpacing;
     };
 
-    // --- HUD des bonus temporaires ---
+    // --- HUD des bonus et malus temporaires ---
     for (const type in activeBonuses) {
       const bonus = activeBonuses[type];
       if (bonus.active) {
         drawBonusIcon(type, bonus.timeLeft);
       }
+    }
+
+    if (controlInversionState.active && controlInversionState.timeLeft > 0) {
+      drawBonusIcon("fakeAirdrop", controlInversionState.timeLeft);
+    }
+
+    const slowTimer = Math.max(0, Number(this.g?.wallet?.slowTimer) || 0);
+    if (slowTimer > 0) {
+      drawBonusIcon("anvil", slowTimer);
     }
 
     const drawShieldIcon = (count) => {
