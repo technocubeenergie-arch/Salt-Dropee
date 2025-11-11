@@ -249,6 +249,8 @@ let currentMusic = null;
 let musicVolume = 0.6;
 let musicEnabled = true;
 let menuMusic = null;
+let musicUnlockListener = null;
+let musicUnlockCompleted = false;
 if (typeof window.isSoundEnabled === 'function') {
   try {
     musicEnabled = !!window.isSoundEnabled();
@@ -278,16 +280,34 @@ function tryFadeOut(aud) {
 }
 
 function safePlayMusic(aud) {
-  if (!aud || !musicEnabled) return;
+  if (!aud || !musicEnabled) {
+    return Promise.resolve(false);
+  }
+
+  try {
+    aud.loop = true;
+  } catch (_) {}
+
   aud.volume = 0;
-  aud.loop = true;
-  aud.play().then(() => {
+
+  const playPromise = aud.play();
+  if (!playPromise || typeof playPromise.then !== 'function') {
     if (window.gsap) {
       gsap.to(aud, { volume: musicVolume, duration: 0.6, ease: "power2.out" });
     } else {
       aud.volume = musicVolume;
     }
-  }).catch(() => {});
+    return Promise.resolve(!aud.paused);
+  }
+
+  return playPromise.then(() => {
+    if (window.gsap) {
+      gsap.to(aud, { volume: musicVolume, duration: 0.6, ease: "power2.out" });
+    } else {
+      aud.volume = musicVolume;
+    }
+    return true;
+  }).catch(() => false);
 }
 
 function setLevelMusic(audio) {
@@ -321,6 +341,7 @@ function getMenuMusic() {
 }
 
 function playMenuMusic() {
+  unlockMusicOnce();
   const audio = getMenuMusic();
   setLevelMusic(audio);
 }
@@ -332,14 +353,36 @@ function stopMenuMusic() {
 }
 
 function unlockMusicOnce() {
-  const once = () => {
-    if (currentMusic) {
-      safePlayMusic(currentMusic);
+  if (musicUnlockCompleted || musicUnlockListener) return;
+
+  const cleanup = () => {
+    if (!musicUnlockListener) return;
+    window.removeEventListener('pointerdown', musicUnlockListener);
+    window.removeEventListener('touchstart', musicUnlockListener);
+    window.removeEventListener('mousedown', musicUnlockListener);
+    musicUnlockListener = null;
+    musicUnlockCompleted = true;
+  };
+
+  musicUnlockListener = () => {
+    const audio = currentMusic || menuMusic || getMenuMusic();
+    if (!audio) return;
+
+    const maybePromise = safePlayMusic(audio);
+    if (maybePromise && typeof maybePromise.then === 'function') {
+      maybePromise.then((played) => {
+        if (played) {
+          cleanup();
+        }
+      });
+    } else if (!audio.paused) {
+      cleanup();
     }
   };
-  window.addEventListener('pointerdown', once, { once: true });
-  window.addEventListener('touchstart', once, { once: true });
-  window.addEventListener('mousedown', once, { once: true });
+
+  window.addEventListener('pointerdown', musicUnlockListener);
+  window.addEventListener('touchstart', musicUnlockListener);
+  window.addEventListener('mousedown', musicUnlockListener);
 }
 
 window.addEventListener('load', unlockMusicOnce);
@@ -3306,6 +3349,7 @@ function startGame(){
   if (typeof unlockAudioOnce === "function") {
     unlockAudioOnce();
   }
+  unlockMusicOnce();
 
   resize();
   addEvent(window, 'resize', resize);
