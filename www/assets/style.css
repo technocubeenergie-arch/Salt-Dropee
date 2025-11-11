@@ -163,13 +163,7 @@ body.is-title #hud {
   outline-offset: 2px;
 }
 
-body.contrast-high .title-buttons button {
-  background: rgba(0, 0, 0, 0.85);
-  border-color: var(--ui2);
-  color: var(--ui2);
-}
-
-
+/* AUDIT 2025-03: high-contrast theming relies on the class applied to <html>. */
 .contrast-high { --ui: #ffffff; --ui2: #00ffea; --bg: #000000; --danger:#ff0044; --ok:#00ff66; --ink:#000000; }
 
 

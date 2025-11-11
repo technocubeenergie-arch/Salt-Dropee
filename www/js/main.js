@@ -2,6 +2,10 @@
 // Salt Droppee — script.js (patched 2025‑09‑23)
 // ================================
 
+// AUDIT NOTES (2025-03):
+// - Removed the legacy canvas background renderer path that was never executed in production.
+// - Factorized duplicated end-of-level transition handling into finalizeLevelTransition().
+
 // --- Détection d'input & utilitaire cross-platform
 const hasTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
 const gsap = window.gsap;
@@ -595,8 +599,6 @@ function leaveTitleScreen({ stopMusic = true } = {}) {
   }
 }
 
-let drawLegacyBg = false; // doit rester false
-
 // --- État "niveaux" ---
 let currentLevelIndex = 0; // 0 → LEVELS[0] = niveau 1
 let levelState = { targetScore: 0, timeLimit: 0, lives: 0 };
@@ -821,8 +823,9 @@ function checkEndConditions(){
   }
 }
 
-function endLevel(result){
-  if (!canEndLevel()) return;
+function finalizeLevelTransition(afterStop){
+  if (!canEndLevel()) return false;
+
   levelEnded = true;
   gameState = "inter";
 
@@ -839,7 +842,15 @@ function endLevel(result){
 
   window.__saltDroppeeLoopStarted = false;
 
-  showInterLevelScreen(result);
+  if (typeof afterStop === "function") {
+    afterStop();
+  }
+
+  return true;
+}
+
+function endLevel(result){
+  finalizeLevelTransition(() => showInterLevelScreen(result));
 }
 
 function isLegendLevel(index = currentLevelIndex) {
@@ -850,24 +861,7 @@ function isLegendLevel(index = currentLevelIndex) {
 }
 
 function endLegendRun(reason = "time") {
-  if (!canEndLevel()) return;
-  levelEnded = true;
-  gameState = "inter";
-
-  stopSpawningItems();
-  pauseAllAnimations();
-  disablePlayerInput();
-
-  if (game) {
-    game.state = "inter";
-    if (typeof game.render === "function") {
-      game.render();
-    }
-  }
-
-  window.__saltDroppeeLoopStarted = false;
-
-  showLegendResultScreen(reason);
+  finalizeLevelTransition(() => showLegendResultScreen(reason));
 }
 
 window.loadLevel = loadLevel;
@@ -3272,7 +3266,6 @@ class Game{
     addEvent(document.getElementById('menu'), INPUT.tap, ()=>{ playSound("click"); overlay.innerHTML=''; hideOverlay(overlay); this.reset({showTitle:true}); });
     if (TG){ const sh=document.getElementById('share'); if (sh) addEvent(sh, INPUT.tap, ()=>{ playSound("click"); try{ TG.sendData(JSON.stringify({ score:this.score, duration:CONFIG.runSeconds, version:VERSION })); }catch(e){} }); }
   }
-  drawBg(g){ const grad=g.createLinearGradient(0,0,0,BASE_H); const presets=[ ['#0f2027','#203a43','#2c5364'], ['#232526','#414345','#6b6e70'], ['#1e3c72','#2a5298','#6fa3ff'], ['#42275a','#734b6d','#b57ea7'], ['#355c7d','#6c5b7b','#c06c84'] ]; const cols=presets[this.bgIndex % presets.length]; grad.addColorStop(0,cols[0]); grad.addColorStop(0.5,cols[1]); grad.addColorStop(1,cols[2]); g.fillStyle=grad; g.fillRect(0,0,BASE_W,BASE_H); }
   render(){
     const sx = this.shake>0? Math.round(rand(-2,2)):0;
     const sy = this.shake>0? Math.round(rand(-2,2)):0;
@@ -3280,10 +3273,6 @@ class Game{
     ctx.save();
     ctx.clearRect(0,0,BASE_W,BASE_H);
     ctx.translate(sx,sy);
-
-    if (drawLegacyBg) {
-      this.drawBg(ctx);
-    }
     this.arm.draw(ctx);
     this.wallet.draw(ctx);
 
