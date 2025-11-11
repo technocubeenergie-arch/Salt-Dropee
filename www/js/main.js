@@ -116,9 +116,13 @@ const INTER_LEVEL_BACKGROUNDS = {
   1: "assets/interlevel2.png",
   2: "assets/interlevel3.png",
   3: "assets/interlevel4.png",
+  4: "assets/interlevel5.png",
 };
 
-const INTER_LEVEL_SOUND_SRC = "assets/sounds/tada.mp3";
+const INTER_LEVEL_SOUND_SOURCES = {
+  default: "assets/sounds/tada.mp3",
+  4: "assets/sounds/supertada.mp3",
+};
 
 const MENU_BACKGROUND_SRC = "assets/fondaccueil.png";
 const MENU_MUSIC_SRC = "assets/sounds/audioaccueil.mp3";
@@ -260,13 +264,34 @@ if (typeof window.isSoundEnabled === 'function') {
   } catch (_) {}
 }
 
-function getInterLevelAudio() {
-  if (interLevelAudio) return interLevelAudio;
-  interLevelAudio = new Audio(INTER_LEVEL_SOUND_SRC);
-  interLevelAudio.preload = 'auto';
-  interLevelAudio.loop = false;
-  interLevelAudio.volume = 0.9;
-  return interLevelAudio;
+function getInterLevelSoundSrc(levelIndex) {
+  if (levelIndex != null && Object.prototype.hasOwnProperty.call(INTER_LEVEL_SOUND_SOURCES, levelIndex)) {
+    return INTER_LEVEL_SOUND_SOURCES[levelIndex];
+  }
+  return INTER_LEVEL_SOUND_SOURCES.default || null;
+}
+
+function getInterLevelAudioForSrc(src) {
+  if (!src) return null;
+
+  if (interLevelAudio && interLevelAudio.src === src) {
+    return interLevelAudio.element;
+  }
+
+  if (interLevelAudio && interLevelAudio.element) {
+    try {
+      interLevelAudio.element.pause();
+      interLevelAudio.element.currentTime = 0;
+    } catch (_) {}
+  }
+
+  const audio = new Audio(src);
+  audio.preload = 'auto';
+  audio.loop = false;
+  audio.volume = 0.9;
+
+  interLevelAudio = { element: audio, src };
+  return audio;
 }
 
 function canPlayInterLevelAudio() {
@@ -280,8 +305,10 @@ function canPlayInterLevelAudio() {
 }
 
 function playInterLevelAudioForLevel(levelIndex) {
-  if (!INTER_LEVEL_SOUND_SRC || !canPlayInterLevelAudio()) return;
-  const audio = getInterLevelAudio();
+  if (!canPlayInterLevelAudio()) return;
+  const src = getInterLevelSoundSrc(levelIndex);
+  if (!src) return;
+  const audio = getInterLevelAudioForSrc(src);
   if (!audio) return;
   try {
     audio.pause();
@@ -294,10 +321,10 @@ function playInterLevelAudioForLevel(levelIndex) {
 }
 
 function stopInterLevelAudio() {
-  if (!interLevelAudio) return;
+  if (!interLevelAudio || !interLevelAudio.element) return;
   try {
-    interLevelAudio.pause();
-    interLevelAudio.currentTime = 0;
+    interLevelAudio.element.pause();
+    interLevelAudio.element.currentTime = 0;
   } catch (_) {}
 }
 
@@ -2211,8 +2238,18 @@ function showInterLevelScreen(result = "win", options = {}){
     : String(numericScore | 0);
   scoreText.textContent = "Score : " + formattedScore;
 
+  const levelIndex = Math.max(0, Number.isFinite(currentLevelIndex) ? Math.floor(currentLevelIndex) : 0);
+  const nextIndex = Math.min(levelIndex + 1, LEVELS.length - 1);
+  const isLegend = isLegendLevel(levelIndex);
+  const nextIsLegend = isLegendLevel(nextIndex);
+
   if (btnNext){
-    btnNext.textContent = (result === "win") ? "Niveau suivant" : "Rejouer";
+    let nextLabel = "Rejouer";
+    if (result === "win") {
+      nextLabel = nextIsLegend ? "Passer au mode Légende" : "Niveau suivant";
+    }
+
+    btnNext.textContent = nextLabel;
     btnNext.onclick = async () => {
       hideInterLevelScreen();
       if (result === "win"){
@@ -2225,8 +2262,6 @@ function showInterLevelScreen(result = "win", options = {}){
     };
   }
 
-  const levelIndex = Math.max(0, Number.isFinite(currentLevelIndex) ? Math.floor(currentLevelIndex) : 0);
-  const isLegend = isLegendLevel(levelIndex);
   const backgroundSrc = INTER_LEVEL_BACKGROUNDS[levelIndex];
   const shouldUseInterVisuals = result === "win" && backgroundSrc && !isLegend;
 
