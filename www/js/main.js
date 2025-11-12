@@ -12,6 +12,127 @@ const supportsPointerEvents = typeof window !== 'undefined' && 'PointerEvent' in
 const usePointerEventsForMouse = supportsPointerEvents && !hasTouch;
 const gsap = window.gsap;
 
+const DEBUG_INPUT_EVENT_TYPES = new Set([
+  'pointerdown', 'pointermove', 'pointerup', 'pointercancel',
+  'mousedown', 'mousemove', 'mouseup',
+  'touchstart', 'touchmove', 'touchend', 'touchcancel',
+  'click', 'keydown', 'keyup',
+]);
+
+const debugListenerRegistry = new WeakMap();
+
+function debugDescribeElement(target) {
+  if (!target) return 'null';
+  if (target === window) return 'window';
+  if (target === document) return 'document';
+  if (target === document.body) return 'body';
+  if (typeof HTMLElement !== 'undefined' && target instanceof HTMLElement) {
+    if (target.id) return `#${target.id}`;
+    const tag = target.tagName ? target.tagName.toLowerCase() : 'element';
+    if (target.classList && target.classList.length > 0) {
+      const cls = Array.from(target.classList).join('.');
+      return `${tag}.${cls}`;
+    }
+    return tag;
+  }
+  if (target && typeof target.nodeName === 'string') {
+    return target.nodeName.toLowerCase();
+  }
+  return typeof target === 'string' ? target : 'unknown';
+}
+
+function debugFormatContext(context) {
+  if (!context || typeof context !== 'object') return '';
+  const filteredEntries = Object.entries(context).filter(([_, value]) => {
+    const t = typeof value;
+    return value == null || t === 'string' || t === 'number' || t === 'boolean';
+  });
+  if (filteredEntries.length === 0) return '';
+  try {
+    return ' ' + JSON.stringify(Object.fromEntries(filteredEntries));
+  } catch (err) {
+    void err;
+    return '';
+  }
+}
+
+function registerDebugListener(target, type, handler) {
+  if (!target || typeof handler !== 'function') return { count: 0 };
+  let typeMap = debugListenerRegistry.get(target);
+  if (!typeMap) {
+    typeMap = new Map();
+    debugListenerRegistry.set(target, typeMap);
+  }
+  const list = typeMap.get(type) || [];
+  list.push(handler);
+  typeMap.set(type, list);
+  return { count: list.length };
+}
+
+function unregisterDebugListener(target, type, handler) {
+  if (!target || typeof handler !== 'function') return { count: 0 };
+  const typeMap = debugListenerRegistry.get(target);
+  if (!typeMap) return { count: 0 };
+  const list = typeMap.get(type);
+  if (!Array.isArray(list)) return { count: 0 };
+  const idx = list.indexOf(handler);
+  if (idx >= 0) {
+    list.splice(idx, 1);
+    if (list.length === 0) {
+      typeMap.delete(type);
+    } else {
+      typeMap.set(type, list);
+    }
+  }
+  if (typeMap.size === 0) {
+    debugListenerRegistry.delete(target);
+  }
+  return { count: Array.isArray(list) ? list.length : 0 };
+}
+
+function logInputListener(action, target, type, opts, extra) {
+  if (!DEBUG_INPUT_EVENT_TYPES.has(type)) return;
+  const base = extra && typeof extra === 'object' ? { ...extra } : {};
+  if (opts && typeof opts === 'object') {
+    if (typeof opts.passive === 'boolean') base.passive = opts.passive;
+    if (typeof opts.capture === 'boolean') base.capture = opts.capture;
+  }
+  const context = debugFormatContext(base);
+  console.info(`[input] ${action} ${type} -> ${debugDescribeElement(target)}${context}`);
+}
+
+function addEvent(el, type, handler, opts) {
+  if (!el || !type || typeof handler !== 'function') return;
+  const finalOpts = (opts === undefined || opts === null) ? { passive: true } : opts;
+  el.addEventListener(type, handler, finalOpts);
+  let count = 0;
+  if (typeof registerDebugListener === 'function') {
+    const info = registerDebugListener(el, type, handler);
+    if (info && typeof info.count === 'number') {
+      count = info.count;
+    }
+  }
+  if (typeof logInputListener === 'function') {
+    logInputListener('attach', el, type, finalOpts, { count });
+  }
+}
+
+function removeEvent(el, type, handler, opts) {
+  if (!el || !type || typeof handler !== 'function') return;
+  const finalOpts = (opts === undefined || opts === null) ? false : opts;
+  el.removeEventListener(type, handler, finalOpts);
+  let count = 0;
+  if (typeof unregisterDebugListener === 'function') {
+    const info = unregisterDebugListener(el, type, handler);
+    if (info && typeof info.count === 'number') {
+      count = info.count;
+    }
+  }
+  if (typeof logInputListener === 'function') {
+    logInputListener('detach', el, type, typeof finalOpts === 'object' ? finalOpts : {}, { count });
+  }
+}
+
 if (typeof window.openSettings !== "function") {
   window.openSettings = function openSettingsFallback() {
     const instance = (typeof Game !== "undefined" && Game.instance)
@@ -646,111 +767,6 @@ const INPUT = usePointerEventsForMouse
     up:   hasTouch ? 'touchend'  : 'mouseup',
     cancel: hasTouch ? 'touchcancel' : null,
   };
-
-const DEBUG_INPUT_EVENT_TYPES = new Set([
-  'pointerdown', 'pointermove', 'pointerup', 'pointercancel',
-  'mousedown', 'mousemove', 'mouseup',
-  'touchstart', 'touchmove', 'touchend', 'touchcancel',
-  'click', 'keydown', 'keyup',
-]);
-
-const debugListenerRegistry = new WeakMap();
-
-function debugDescribeElement(target) {
-  if (!target) return 'null';
-  if (target === window) return 'window';
-  if (target === document) return 'document';
-  if (target === document.body) return 'body';
-  if (typeof HTMLElement !== 'undefined' && target instanceof HTMLElement) {
-    if (target.id) return `#${target.id}`;
-    const tag = target.tagName ? target.tagName.toLowerCase() : 'element';
-    if (target.classList && target.classList.length > 0) {
-      const cls = Array.from(target.classList).join('.');
-      return `${tag}.${cls}`;
-    }
-    return tag;
-  }
-  if (target && typeof target.nodeName === 'string') {
-    return target.nodeName.toLowerCase();
-  }
-  return typeof target === 'string' ? target : 'unknown';
-}
-
-function debugFormatContext(context) {
-  if (!context || typeof context !== 'object') return '';
-  const filteredEntries = Object.entries(context).filter(([_, value]) => {
-    const t = typeof value;
-    return value == null || t === 'string' || t === 'number' || t === 'boolean';
-  });
-  if (filteredEntries.length === 0) return '';
-  try {
-    return ' ' + JSON.stringify(Object.fromEntries(filteredEntries));
-  } catch (err) {
-    void err;
-    return '';
-  }
-}
-
-function registerDebugListener(target, type, handler) {
-  if (!target || typeof handler !== 'function') return { count: 0 };
-  let typeMap = debugListenerRegistry.get(target);
-  if (!typeMap) {
-    typeMap = new Map();
-    debugListenerRegistry.set(target, typeMap);
-  }
-  const list = typeMap.get(type) || [];
-  list.push(handler);
-  typeMap.set(type, list);
-  return { count: list.length };
-}
-
-function unregisterDebugListener(target, type, handler) {
-  if (!target || typeof handler !== 'function') return { count: 0 };
-  const typeMap = debugListenerRegistry.get(target);
-  if (!typeMap) return { count: 0 };
-  const list = typeMap.get(type);
-  if (!Array.isArray(list)) return { count: 0 };
-  const idx = list.indexOf(handler);
-  if (idx >= 0) {
-    list.splice(idx, 1);
-    if (list.length === 0) {
-      typeMap.delete(type);
-    } else {
-      typeMap.set(type, list);
-    }
-  }
-  if (typeMap.size === 0) {
-    debugListenerRegistry.delete(target);
-  }
-  return { count: Array.isArray(list) ? list.length : 0 };
-}
-
-function logInputListener(action, target, type, opts, extra) {
-  if (!DEBUG_INPUT_EVENT_TYPES.has(type)) return;
-  const base = extra && typeof extra === 'object' ? { ...extra } : {};
-  if (opts && typeof opts === 'object') {
-    if (typeof opts.passive === 'boolean') base.passive = opts.passive;
-    if (typeof opts.capture === 'boolean') base.capture = opts.capture;
-  }
-  const context = debugFormatContext(base);
-  console.info(`[input] ${action} ${type} -> ${debugDescribeElement(target)}${context}`);
-}
-
-function addEvent(el, type, handler, opts) {
-  if (!el || !type || typeof handler !== 'function') return;
-  const finalOpts = (opts === undefined || opts === null) ? { passive: true } : opts;
-  el.addEventListener(type, handler, finalOpts);
-  const { count } = registerDebugListener(el, type, handler);
-  logInputListener('attach', el, type, finalOpts, { count });
-}
-
-function removeEvent(el, type, handler, opts) {
-  if (!el || !type || typeof handler !== 'function') return;
-  const finalOpts = (opts === undefined || opts === null) ? false : opts;
-  el.removeEventListener(type, handler, finalOpts);
-  const { count } = unregisterDebugListener(el, type, handler);
-  logInputListener('detach', el, type, typeof finalOpts === 'object' ? finalOpts : {}, { count });
-}
 
 const SCREEN_NAME_ALIASES = {
   playing: 'running',
