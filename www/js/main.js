@@ -2368,6 +2368,16 @@ function showOverlay(el){
   if (typeof el.setAttribute === "function") {
     el.setAttribute("aria-hidden", "false");
   }
+  if (typeof el.removeAttribute === "function") {
+    try {
+      el.removeAttribute("inert");
+    } catch (err) {
+      void err;
+    }
+  }
+  if (el?.style) {
+    el.style.pointerEvents = "auto";
+  }
 }
 
 function hideOverlay(el){
@@ -2375,6 +2385,16 @@ function hideOverlay(el){
   el.classList.remove("show");
   if (typeof el.setAttribute === "function") {
     el.setAttribute("aria-hidden", "true");
+  }
+  if (typeof el.setAttribute === "function") {
+    try {
+      el.setAttribute("inert", "");
+    } catch (err) {
+      void err;
+    }
+  }
+  if (el?.style) {
+    el.style.pointerEvents = "none";
   }
 }
 
@@ -2412,8 +2432,9 @@ async function goToNextLevel(){
 }
 
 function resumeGameplay(){
+  hideLegendResultScreen();
+  hideInterLevelScreen();
   setActiveScreen('running', { via: 'resumeGameplay' });
-  setInterLevelUiState(false);
   levelEnded = false;
   gameState = "playing";
   spawningEnabled = true;
@@ -2568,9 +2589,9 @@ function hideLegendResultScreen(){
 
 function hideInterLevelScreen(){
   const screen = document.getElementById("interLevelScreen");
-  if (!screen) return;
   stopInterLevelAudio();
   setInterLevelUiState(false);
+  if (!screen) return;
   hideOverlay(screen);
 }
 
@@ -3705,6 +3726,10 @@ class Game{
       setActiveScreen(nextScreen, { via: 'settings-back', raw: returnViewRaw });
       const returnView = returnViewRaw;
       this.settingsReturnView = "title";
+      if (nextScreen !== 'interLevel') {
+        hideLegendResultScreen();
+        hideInterLevelScreen();
+      }
       overlay.innerHTML='';
 
       if (returnView === "pause" || returnView === "paused") {
