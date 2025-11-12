@@ -2396,6 +2396,37 @@ function hideOverlay(el){
   if (el?.style) {
     el.style.pointerEvents = "none";
   }
+  if (typeof document !== 'undefined' && typeof el.contains === 'function') {
+    const active = document.activeElement;
+    if (active && el.contains(active) && typeof active.blur === 'function') {
+      active.blur();
+    }
+  }
+}
+
+function getOverlayElements() {
+  if (typeof document === 'undefined') return [];
+  const ids = ['overlay', 'interLevelScreen', 'legendResultScreen'];
+  return ids
+    .map((id) => document.getElementById(id))
+    .filter((node) => !!node);
+}
+
+function deactivateOtherOverlays(activeEl) {
+  const overlays = getOverlayElements();
+  overlays.forEach((node) => {
+    if (!node || node === activeEl) return;
+    hideOverlay(node);
+    if (node !== overlay && node.classList) {
+      node.classList.remove('overlay-title', 'overlay-rules');
+    }
+  });
+}
+
+function showExclusiveOverlay(el) {
+  if (!el) return;
+  deactivateOtherOverlays(el);
+  showOverlay(el);
 }
 
 function clearMainOverlay(except){
@@ -2545,7 +2576,7 @@ function showInterLevelScreen(result = "win", options = {}){
   }
 
   setInterLevelUiState(true);
-  showOverlay(screen);
+  showExclusiveOverlay(screen);
 }
 
 function showLegendResultScreen(reason = "time"){
@@ -2578,7 +2609,7 @@ function showLegendResultScreen(reason = "time"){
     message.textContent = `Félicitations, votre score est de ${formattedScore}.`;
   }
 
-  showOverlay(screen);
+  showExclusiveOverlay(screen);
 }
 
 function hideLegendResultScreen(){
@@ -3616,7 +3647,7 @@ class Game{
           <button id="btnLB" type="button">Leaderboard</button>
         </div>
       </div>`;
-    showOverlay(overlay);
+    showExclusiveOverlay(overlay);
     addEvent(document.getElementById('btnLB'), INPUT.tap, ()=>{ playSound("click"); this.renderLeaderboard(); });
     addEvent(document.getElementById('btnRulesTitle'), INPUT.tap, (evt)=>{
       evt.preventDefault();
@@ -3658,7 +3689,7 @@ class Game{
       <p>Sensibilité: <input type="range" id="sens" min="0.5" max="1.5" step="0.05" value="${s.sensitivity}"></p>
       <div class="btnrow"><button id="back">Retour</button></div>
     </div>`;
-    showOverlay(overlay);
+    showExclusiveOverlay(overlay);
     addEvent(document.getElementById('sound'), 'change', e=>{ playSound("click"); this.settings.sound = e.target.checked; saveSettings(this.settings); if (typeof setSoundEnabled === "function") { setSoundEnabled(this.settings.sound); } });
     addEvent(document.getElementById('contrast'), 'change', e=>{
       if (e && typeof e.stopImmediatePropagation === 'function') {
@@ -3766,7 +3797,7 @@ class Game{
       </div>
       <div class="btnrow"><button id="back">Retour</button></div>
     </div>`;
-    showOverlay(overlay);
+    showExclusiveOverlay(overlay);
     addEvent(document.getElementById('back'), INPUT.tap, ()=>{ playSound("click"); this.renderTitle(); });
   }
   renderPause(){
@@ -3783,7 +3814,7 @@ class Game{
           <button id="btnRulesPause" type="button">Règle du jeu</button>
         </div>
       </div>`;
-    showOverlay(overlay);
+    showExclusiveOverlay(overlay);
     addEvent(document.getElementById('resume'), INPUT.tap, ()=>{
       playSound("click");
       overlay.innerHTML='';
@@ -3814,7 +3845,7 @@ class Game{
         <img src="assets/rules.webp" alt="Règles du jeu" />
       </div>`;
     overlay.classList.add('overlay-rules');
-    showOverlay(overlay);
+    showExclusiveOverlay(overlay);
 
     const closeRules = () => {
       removeEvent(overlay, INPUT.tap, onTap, { passive: false });
@@ -3853,7 +3884,7 @@ class Game{
         ${TG? '<button id="share">Partager</button>': ''}
       </div>
     </div>`;
-    showOverlay(overlay);
+    showExclusiveOverlay(overlay);
     addEvent(document.getElementById('again'), INPUT.tap, async ()=>{ playSound("click"); overlay.innerHTML=''; hideOverlay(overlay); this.reset({showTitle:false}); await new Promise(r=>requestAnimationFrame(r)); this.start(); }, { passive:false });
     addEvent(document.getElementById('menu'), INPUT.tap, ()=>{ playSound("click"); overlay.innerHTML=''; hideOverlay(overlay); this.reset({showTitle:true}); });
     if (TG){ const sh=document.getElementById('share'); if (sh) addEvent(sh, INPUT.tap, ()=>{ playSound("click"); try{ TG.sendData(JSON.stringify({ score:this.score, duration:CONFIG.runSeconds, version:VERSION })); }catch(e){} }); }
