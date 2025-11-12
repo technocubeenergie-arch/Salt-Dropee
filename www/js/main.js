@@ -129,8 +129,6 @@ const MENU_MUSIC_SRC = "assets/sounds/audioaccueil.mp3";
 
 const LEGEND_LEVEL_INDEX = LEVELS.findIndex(level => level?.id === 6);
 
-let currentLeaderboardLevelId = LEVELS[0]?.id ?? 1;
-
 // --- Cache d'assets par niveau ---
 const levelAssets = {}; // index -> { bg:Image, wallet:Image, music:HTMLAudioElement|null }
 
@@ -158,309 +156,6 @@ function preloadLevelAssets(levelCfg) {
   }
 
   return Promise.all(tasks).then(() => ({ bg, wallet, music }));
-}
-
-const STORAGE_KEYS = {
-  profile: 'sd_profile',
-  progress: 'sd_progress',
-};
-
-function escapeHtml(value) {
-  if (value === null || value === undefined) return '';
-  return String(value).replace(/[&<>"']/g, (char) => {
-    switch (char) {
-      case '&': return '&amp;';
-      case '<': return '&lt;';
-      case '>': return '&gt;';
-      case '"': return '&quot;';
-      case "'": return '&#39;';
-      default: return char;
-    }
-  });
-}
-
-function safeReadStorage(key) {
-  try {
-    if (typeof window === 'undefined' || !window.localStorage) {
-      return null;
-    }
-    const raw = window.localStorage.getItem(key);
-    if (!raw) {
-      return null;
-    }
-    return JSON.parse(raw);
-  } catch (error) {
-    console.warn('[storage] Read failed for', key, error);
-    return null;
-  }
-}
-
-function safeWriteStorage(key, value) {
-  try {
-    if (typeof window === 'undefined' || !window.localStorage) {
-      return false;
-    }
-    window.localStorage.setItem(key, JSON.stringify(value));
-    return true;
-  } catch (error) {
-    console.warn('[storage] Write failed for', key, error);
-    return false;
-  }
-}
-
-function safeRemoveStorage(key) {
-  try {
-    if (typeof window === 'undefined' || !window.localStorage) {
-      return;
-    }
-    window.localStorage.removeItem(key);
-  } catch (error) {
-    console.warn('[storage] Remove failed for', key, error);
-  }
-}
-
-let cachedProfile = null;
-
-function loadProfileFromStorage() {
-  const stored = safeReadStorage(STORAGE_KEYS.profile);
-  if (!stored || typeof stored.username !== 'string') {
-    cachedProfile = null;
-    return cachedProfile;
-  }
-  cachedProfile = {
-    id: stored.id || null,
-    username: stored.username,
-    source: stored.source || 'local',
-  };
-  return cachedProfile;
-}
-
-function getCurrentProfile() {
-  if (cachedProfile && typeof cachedProfile.username === 'string') {
-    return cachedProfile;
-  }
-  return loadProfileFromStorage();
-}
-
-const resumeState = {
-  available: false,
-  nextLevelIndex: null,
-  nextLevelId: null,
-  timestamp: null,
-  source: null,
-};
-
-function computeLevelIndexFromProgress(progress) {
-  if (!progress || typeof progress !== 'object') {
-    return null;
-  }
-
-  const indexKeys = ['nextLevelIndex', 'levelIndex', 'index'];
-  for (const key of indexKeys) {
-    if (Number.isFinite(progress[key])) {
-      const idx = Math.max(0, Math.floor(progress[key]));
-      if (idx < LEVELS.length) {
-        return idx;
-      }
-    }
-  }
-
-  const idKeys = ['nextLevelId', 'levelId', 'level', 'id'];
-  for (const key of idKeys) {
-    if (Number.isFinite(progress[key])) {
-      const levelId = Number(progress[key]);
-      const foundIndex = LEVELS.findIndex((lvl) => Number(lvl?.id) === levelId);
-      if (foundIndex >= 0) {
-        return foundIndex;
-      }
-    }
-  }
-
-  return null;
-}
-
-function normalizeProgressData(raw) {
-  if (!raw || typeof raw !== 'object') {
-    return null;
-  }
-  const idx = computeLevelIndexFromProgress(raw);
-  if (!Number.isInteger(idx) || idx < 0 || idx >= LEVELS.length) {
-    return null;
-  }
-  const level = LEVELS[idx] || null;
-  const timestamp = Number.isFinite(raw.timestamp) ? Number(raw.timestamp) : Date.now();
-  return {
-    nextLevelIndex: idx,
-    nextLevelId: level?.id ?? idx + 1,
-    timestamp,
-  };
-}
-
-function setResumeState(normalized, source, { skipPersist = false } = {}) {
-  const prevAvailable = resumeState.available;
-
-  if (normalized) {
-    resumeState.available = true;
-    resumeState.nextLevelIndex = normalized.nextLevelIndex;
-    resumeState.nextLevelId = normalized.nextLevelId;
-    resumeState.timestamp = normalized.timestamp || Date.now();
-    resumeState.source = source || normalized.source || 'local';
-    if (!skipPersist) {
-      safeWriteStorage(STORAGE_KEYS.progress, {
-        nextLevelIndex: resumeState.nextLevelIndex,
-        nextLevelId: resumeState.nextLevelId,
-        timestamp: resumeState.timestamp,
-      });
-    }
-  } else {
-    resumeState.available = false;
-    resumeState.nextLevelIndex = null;
-    resumeState.nextLevelId = null;
-    resumeState.timestamp = null;
-    resumeState.source = null;
-    if (!skipPersist) {
-      safeRemoveStorage(STORAGE_KEYS.progress);
-    }
-  }
-
-  refreshResumeUi({ forceRerender: prevAvailable !== resumeState.available });
-}
-
-function persistLocalProgress(progress, source = 'local') {
-  const normalized = normalizeProgressData(progress);
-  if (!normalized) {
-    return null;
-  }
-  normalized.timestamp = normalized.timestamp || Date.now();
-  safeWriteStorage(STORAGE_KEYS.progress, {
-    nextLevelIndex: normalized.nextLevelIndex,
-    nextLevelId: normalized.nextLevelId,
-    timestamp: normalized.timestamp,
-  });
-  setResumeState(normalized, source, { skipPersist: true });
-  console.info('[save] Progress stored locally for level', normalized.nextLevelId);
-  return normalized;
-}
-
-function syncResumeStateFromLocal() {
-  const stored = safeReadStorage(STORAGE_KEYS.progress);
-  const normalized = normalizeProgressData(stored);
-  setResumeState(normalized, stored?.source || 'local', { skipPersist: true });
-  return normalized;
-}
-
-function getResumeLevelInfo() {
-  if (!resumeState.available) {
-    return null;
-  }
-  const idx = Math.max(0, Math.min(Number(resumeState.nextLevelIndex) || 0, LEVELS.length - 1));
-  const level = LEVELS[idx] || null;
-  const id = level?.id ?? idx + 1;
-  const name = level?.name || `Niveau ${id}`;
-  return { index: idx, id, name };
-}
-
-function formatResumeButtonLabel() {
-  const info = getResumeLevelInfo();
-  if (!info) {
-    return 'Reprendre';
-  }
-  return `Reprendre (N${info.id})`;
-}
-
-function formatResumeStatusText() {
-  const info = getResumeLevelInfo();
-  if (!info) {
-    return '';
-  }
-  const sourceLabel = resumeState.source === 'supabase' ? 'en ligne' : 'locale';
-  return `Sauvegarde : N${info.id} — ${info.name} (${sourceLabel})`;
-}
-
-function setButtonLoading(button, loading) {
-  if (!button) return;
-  if (loading) {
-    if (!button.hasAttribute('data-loading')) {
-      button.dataset.prevDisabled = button.disabled ? 'true' : 'false';
-    }
-    button.setAttribute('data-loading', 'true');
-    button.disabled = true;
-  } else {
-    button.removeAttribute('data-loading');
-    const wasDisabled = button.dataset.prevDisabled === 'true';
-    if (!wasDisabled) {
-      button.disabled = false;
-    }
-    delete button.dataset.prevDisabled;
-  }
-}
-
-function refreshResumeUi({ forceRerender = false } = {}) {
-  const overlayEl = overlay || document.getElementById('overlay');
-  const instance = (typeof Game !== 'undefined' && Game.instance) ? Game.instance : null;
-  if (!overlayEl) {
-    return;
-  }
-
-  const hasResumeButton = !!overlayEl.querySelector('[data-resume-button]');
-  const wantsButton = !!resumeState.available;
-  const canRerender = overlayEl.classList?.contains('overlay-title') && instance && instance.state === 'title';
-
-  if (canRerender && (forceRerender || hasResumeButton !== wantsButton)) {
-    instance.renderTitle();
-    return;
-  }
-
-  updateTitleMetaElements();
-}
-
-function refreshProfileUi() {
-  updateTitleMetaElements();
-}
-
-function updateTitleMetaElements() {
-  const overlayEl = overlay || document.getElementById('overlay');
-  if (!overlayEl) return;
-
-  const profile = getCurrentProfile();
-  const badgeText = profile?.username ? `Connecté : ${profile.username}` : 'Joueur invité';
-  const badgeClass = profile?.username ? 'title-profile-badge' : 'title-profile-badge is-guest';
-
-  overlayEl.querySelectorAll('[data-profile-badge]').forEach((node) => {
-    node.textContent = badgeText;
-    node.className = badgeClass;
-  });
-
-  const statusEl = overlayEl.querySelector('[data-resume-status]');
-  if (statusEl) {
-    statusEl.classList.remove('is-muted', 'is-success', 'is-error');
-    if (resumeState.available) {
-      statusEl.textContent = formatResumeStatusText();
-      statusEl.classList.add('is-muted');
-    } else {
-      statusEl.textContent = '';
-    }
-  }
-
-  const resumeButton = overlayEl.querySelector('[data-resume-button]');
-  if (resumeButton && resumeState.available) {
-    resumeButton.textContent = formatResumeButtonLabel();
-  }
-}
-
-if (typeof window !== 'undefined') {
-  loadProfileFromStorage();
-  syncResumeStateFromLocal();
-  window.addEventListener('storage', (event) => {
-    if (!event) return;
-    if (event.key === STORAGE_KEYS.profile) {
-      loadProfileFromStorage();
-      refreshProfileUi();
-    }
-    if (event.key === STORAGE_KEYS.progress) {
-      syncResumeStateFromLocal();
-    }
-  });
 }
 
 async function ensureLevelAssets(index) {
@@ -1226,9 +921,6 @@ function finalizeLevelTransition(afterStop){
   window.__saltDroppeeLoopStarted = false;
 
   stopLevelMusic();
-
-  const finalScore = Number.isFinite(score) ? score : Number(window.score) || 0;
-  queueScoreSubmission(currentLevelIndex, finalScore);
 
   if (typeof afterStop === "function") {
     afterStop();
@@ -2526,366 +2218,18 @@ function setInterLevelUiState(active) {
   }
 }
 
-function setInterSaveStatus(message, variant = 'muted') {
-  const statusEl = document.getElementById('interSaveStatus');
-  if (!statusEl) return;
-  statusEl.textContent = message || '';
-  statusEl.classList.remove('is-success', 'is-error', 'is-muted');
-  if (variant === 'success') {
-    statusEl.classList.add('is-success');
-  } else if (variant === 'error') {
-    statusEl.classList.add('is-error');
-  } else if (variant === 'muted') {
-    statusEl.classList.add('is-muted');
-  }
-}
-
-function setInterLevelButtonsDisabled(disabled, exceptButton) {
-  const screen = document.getElementById('interLevelScreen');
-  if (!screen) return;
-  const buttons = screen.querySelectorAll('button');
-  buttons.forEach((btn) => {
-    if (btn === exceptButton) return;
-    if (!btn.hasAttribute('data-loading')) {
-      btn.disabled = !!disabled;
-    }
-  });
-}
-
-function computeResumeIndexFromResult(result) {
-  const currentIdx = Math.max(0, Math.min(Number(currentLevelIndex) || 0, LEVELS.length - 1));
-  if (result === 'win') {
-    return Math.min(currentIdx + 1, LEVELS.length - 1);
-  }
-  return currentIdx;
-}
-
-function buildProgressPayload(result) {
-  const resumeIndex = computeResumeIndexFromResult(result);
-  const level = LEVELS[resumeIndex] || null;
-  return {
-    nextLevelIndex: resumeIndex,
-    nextLevelId: level?.id ?? resumeIndex + 1,
-    level: level?.id ?? resumeIndex + 1,
-    updatedAt: new Date().toISOString(),
-    timestamp: Date.now(),
-    lastResult: result,
-  };
-}
-
-async function returnToTitleFromInterLevel() {
-  hideInterLevelScreen();
-  const instance = (typeof Game !== 'undefined' && Game.instance) ? Game.instance : null;
-  if (instance && typeof instance.reset === 'function') {
-    instance.reset({ showTitle: true });
-    return;
-  }
-
-  setInterLevelUiState(false);
-  enterTitleScreen();
-  const mainOverlay = overlay || document.getElementById('overlay');
-  if (mainOverlay) {
-    mainOverlay.innerHTML = '';
-    hideOverlay(mainOverlay);
-  }
-  setBackgroundImageSrc(MENU_BACKGROUND_SRC);
-}
-
-async function handleInterLevelSave(eventOrButton) {
-  const event = eventOrButton instanceof Event ? eventOrButton : null;
-  const target = event?.currentTarget || eventOrButton;
-  const saveButton = (target instanceof HTMLElement) ? target : document.getElementById('btnSaveQuit');
-  if (!saveButton) return;
-  if (saveButton.getAttribute('data-loading') === 'true') return;
-
-  if (event) {
-    if (typeof event.preventDefault === 'function') event.preventDefault();
-    if (typeof event.stopPropagation === 'function') event.stopPropagation();
-  }
-
-  if (typeof playSound === 'function') {
-    playSound('click');
-  }
-
-  const resultKey = lastInterLevelResult || 'win';
-  const payload = buildProgressPayload(resultKey);
-  if (!payload) {
-    setInterSaveStatus('Sauvegarde indisponible.', 'error');
-    return;
-  }
-
-  setButtonLoading(saveButton, true);
-  setInterLevelButtonsDisabled(true, saveButton);
-  setInterSaveStatus('Sauvegarde en cours...', 'muted');
-
-  try {
-    const api = window.api;
-    let response = null;
-    if (api && typeof api.saveProgress === 'function') {
-      response = await api.saveProgress(payload);
-    }
-
-    if (response && response.success) {
-      persistLocalProgress(payload, response.source || 'local');
-      const message = response.source === 'supabase'
-        ? 'Sauvegarde cloud OK ✔️'
-        : 'Hors-ligne : sauvegarde locale prête';
-      setInterSaveStatus(message, 'success');
-      console.info(`[save] Progress saved via ${response.source || 'local'} for level ${payload.nextLevelId}.`);
-    } else if (response && response.reason === 'NO_PROFILE') {
-      persistLocalProgress(payload, 'local');
-      setInterSaveStatus('Sauvegarde locale prête (pseudo requis pour le cloud).', 'success');
-      console.info('[save] Local save only (no profile registered).');
-    } else {
-      const fallback = persistLocalProgress(payload, 'local');
-      if (!fallback) {
-        throw new Error('SAVE_FALLBACK_FAILED');
-      }
-      setInterSaveStatus('Hors-ligne : sauvegarde locale prête', 'success');
-      console.info('[save] Local fallback stored after remote failure.');
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 550));
-    await returnToTitleFromInterLevel();
-  } catch (error) {
-    console.error('[save] Failed to save progress', error);
-    setInterSaveStatus('Sauvegarde impossible (réessayez).', 'error');
-    setInterLevelButtonsDisabled(false, saveButton);
-    setButtonLoading(saveButton, false);
-  }
-}
-
-async function startResumeFromIndex(index) {
-  const clampedIndex = Math.max(0, Math.min(Number(index) || 0, LEVELS.length - 1));
-  currentLevelIndex = clampedIndex;
-
-  try {
-    await loadLevel(clampedIndex, { applyBackground: false, playMusic: false });
-  } catch (error) {
-    console.error('[resume] Failed to preload level', error);
-  }
-
-  const instance = (typeof Game !== 'undefined' && Game.instance) ? Game.instance : null;
-  if (instance && typeof instance.uiStartFromTitle === 'function') {
-    instance.uiStartFromTitle();
-    return;
-  }
-
-  leaveTitleScreen();
-  const mainOverlay = overlay || document.getElementById('overlay');
-  if (mainOverlay) {
-    mainOverlay.innerHTML = '';
-    hideOverlay(mainOverlay);
-  }
-  resumeGameplay();
-}
-
-async function handleResumeClick(buttonOrEvent) {
-  const event = buttonOrEvent instanceof Event ? buttonOrEvent : null;
-  const target = event?.currentTarget || buttonOrEvent;
-  const resumeButton = (target instanceof HTMLElement) ? target : document.getElementById('btnResume');
-  if (!resumeButton) return;
-  if (resumeButton.getAttribute('data-loading') === 'true') return;
-
-  const overlayEl = overlay || document.getElementById('overlay');
-  const statusEl = overlayEl ? overlayEl.querySelector('[data-resume-status]') : null;
-
-  setButtonLoading(resumeButton, true);
-  if (statusEl) {
-    statusEl.textContent = 'Chargement de la sauvegarde...';
-    statusEl.classList.remove('is-error', 'is-success');
-    statusEl.classList.add('is-muted');
-  }
-
-  try {
-    const api = window.api;
-    let response = null;
-    if (api && typeof api.loadProgress === 'function') {
-      response = await api.loadProgress();
-    }
-
-    let normalized = null;
-    if (response && response.success && response.progress) {
-      normalized = normalizeProgressData(response.progress);
-      if (normalized) {
-        setResumeState(normalized, response.source || 'local');
-        console.info(`[resume] Progress loaded from ${response.source || 'local'} (level ${normalized.nextLevelId}).`);
-      }
-    }
-
-    if (!normalized) {
-      const local = safeReadStorage(STORAGE_KEYS.progress);
-      normalized = normalizeProgressData(local);
-      if (normalized) {
-        setResumeState(normalized, resumeState.source || 'local', { skipPersist: true });
-        console.info('[resume] Using local fallback progress.');
-      }
-    }
-
-    if (!normalized) {
-      if (statusEl) {
-        statusEl.textContent = 'Sauvegarde introuvable.';
-        statusEl.classList.remove('is-muted', 'is-success');
-        statusEl.classList.add('is-error');
-      }
-      setButtonLoading(resumeButton, false);
-      setResumeState(null, null);
-      return;
-    }
-
-    if (statusEl) {
-      statusEl.textContent = 'Sauvegarde chargée ✔️';
-      statusEl.classList.remove('is-muted', 'is-error');
-      statusEl.classList.add('is-success');
-    }
-
-    await startResumeFromIndex(normalized.nextLevelIndex);
-  } catch (error) {
-    console.error('[resume] Failed to load progress', error);
-    if (statusEl) {
-      statusEl.textContent = 'Impossible de reprendre (hors-ligne).';
-      statusEl.classList.remove('is-muted', 'is-success');
-      statusEl.classList.add('is-error');
-    }
-    setButtonLoading(resumeButton, false);
-  }
-}
-
-function renderLeaderboardEntries(entries, wrapper) {
-  if (!wrapper) return;
-  if (!Array.isArray(entries) || entries.length === 0) {
-    wrapper.innerHTML = '<div class="leaderboard-table-empty" data-lb-empty>Aucun score disponible.</div>';
-    return;
-  }
-
-  const rows = entries.map((entry, index) => {
-    const rank = Number(entry.rank) || index + 1;
-    const username = entry.username ? escapeHtml(entry.username) : '—';
-    const value = Number(entry.score) || 0;
-    const scoreText = Number.isFinite(value) ? value.toLocaleString('fr-FR') : String(value);
-    return `<tr><td>#${rank}</td><td>${username}</td><td>${scoreText}</td></tr>`;
-  }).join('');
-
-  wrapper.innerHTML = `
-    <table class="leaderboard-table" aria-describedby="leaderboardTitle">
-      <thead>
-        <tr><th scope="col">Rang</th><th scope="col">Pseudo</th><th scope="col">Score</th></tr>
-      </thead>
-      <tbody>${rows}</tbody>
-    </table>`;
-}
-
-function updateLeaderboardView(levelId) {
-  const overlayEl = overlay || document.getElementById('overlay');
-  if (!overlayEl) return;
-
-  const statusEl = overlayEl.querySelector('[data-lb-status]');
-  const wrapper = overlayEl.querySelector('[data-lb-table-wrapper]');
-  if (!wrapper) return;
-
-  const numericLevel = Number(levelId) || 0;
-
-  if (statusEl) {
-    statusEl.textContent = 'Chargement...';
-    statusEl.classList.remove('is-error', 'is-success');
-    statusEl.classList.add('is-muted');
-  }
-  wrapper.innerHTML = '<div class="leaderboard-table-empty" data-lb-empty>Chargement...</div>';
-
-  const api = window.api;
-  if (!api || typeof api.getLeaderboard !== 'function') {
-    renderLeaderboardEntries([], wrapper);
-    if (statusEl) {
-      statusEl.textContent = 'Leaderboard indisponible (hors-ligne)';
-      statusEl.classList.remove('is-muted', 'is-success');
-      statusEl.classList.add('is-error');
-    }
-    console.warn('[leaderboard] getLeaderboard API indisponible.');
-    return;
-  }
-
-  Promise.resolve()
-    .then(() => api.getLeaderboard(numericLevel, 50))
-    .then((result) => {
-      if (!result || !result.success) {
-        throw new Error('Leaderboard request failed');
-      }
-      const entries = Array.isArray(result.entries) ? result.entries : [];
-      renderLeaderboardEntries(entries, wrapper);
-      if (statusEl) {
-        statusEl.textContent = result.source === 'supabase'
-          ? 'Scores en ligne'
-          : 'Mode hors-ligne (données locales)';
-        statusEl.classList.remove('is-error', 'is-muted');
-        statusEl.classList.add(result.source === 'supabase' ? 'is-success' : 'is-muted');
-      }
-      console.info(`[leaderboard] Loaded ${entries.length} entries for level ${numericLevel} (${result.source || 'unknown'}).`);
-    })
-    .catch((error) => {
-      console.error('[leaderboard] Unable to load leaderboard', error);
-      renderLeaderboardEntries([], wrapper);
-      if (statusEl) {
-        statusEl.textContent = 'Leaderboard indisponible (hors-ligne)';
-        statusEl.classList.remove('is-muted', 'is-success');
-        statusEl.classList.add('is-error');
-      }
-    });
-}
-
-function queueScoreSubmission(levelIndex, points) {
-  const profile = getCurrentProfile();
-  if (!profile || !profile.username) {
-    console.info('[score] Submission skipped (pseudo requis).');
-    return;
-  }
-
-  const api = window.api;
-  if (!api || typeof api.submitScore !== 'function') {
-    console.info('[score] submitScore API indisponible.');
-    return;
-  }
-
-  const clampedIndex = Math.max(0, Math.min(Number(levelIndex) || 0, LEVELS.length - 1));
-  const level = LEVELS[clampedIndex] || null;
-  const levelId = level?.id ?? clampedIndex + 1;
-  const payloadScore = Number.isFinite(points) ? Math.max(0, Math.round(points)) : 0;
-
-  Promise.resolve()
-    .then(() => api.submitScore(levelId, payloadScore))
-    .then((result) => {
-      if (result && result.success) {
-        console.info(`[score] Score ${payloadScore} envoyé pour N${levelId} (${result.source || 'unknown'}).`);
-      } else if (result && result.reason === 'NO_PROFILE') {
-        console.info('[score] Submission skipped by API (NO_PROFILE).');
-      } else {
-        console.warn('[score] submitScore non confirmé', result);
-      }
-    })
-    .catch((error) => {
-      console.warn('[score] submitScore failed', error);
-    });
-}
-
 function showInterLevelScreen(result = "win", options = {}){
   lastInterLevelResult = result;
   const screen = document.getElementById("interLevelScreen");
   const title  = document.getElementById("interTitle");
   const scoreText = document.getElementById("interScore");
   const btnNext = document.getElementById("btnNextLevel");
-  const btnSave = document.getElementById("btnSaveQuit");
   if (!screen || !title || !scoreText) return;
 
   const opts = (options && typeof options === "object") ? options : {};
   const screenAlreadyVisible = screen.classList.contains("show");
 
   clearMainOverlay(screen);
-
-  if (btnSave) {
-    setButtonLoading(btnSave, false);
-    btnSave.disabled = false;
-  }
-  setInterLevelButtonsDisabled(false);
-  setInterSaveStatus('', null);
 
   if (typeof Game !== "undefined" && Game.instance) {
     Game.instance.settingsReturnView = "inter";
@@ -2988,12 +2332,41 @@ function hideInterLevelScreen(){
 
 // --- Boutons ---
 function bindInterLevelButtons(){
+  const bNext = document.getElementById("btnNextLevel");
   const bSave = document.getElementById("btnSaveQuit");
+
+  if (bNext){
+    bNext.onclick = () => {
+      hideInterLevelScreen();
+      goToNextLevel();
+    };
+  }
+
   if (bSave){
-    bSave.onclick = null;
-    addEvent(bSave, INPUT.tap, (evt) => {
-      handleInterLevelSave(evt);
-    }, { passive: false });
+    bSave.onclick = () => {
+      hideInterLevelScreen();
+      if (typeof playSound === "function") {
+        playSound("click");
+      }
+
+      const instance = (typeof Game !== "undefined" && Game.instance)
+        ? Game.instance
+        : null;
+
+      if (instance && typeof instance.reset === "function") {
+        instance.reset({ showTitle: true });
+        return;
+      }
+
+      setInterLevelUiState(false);
+      enterTitleScreen();
+      const mainOverlay = overlay || document.getElementById("overlay");
+      if (mainOverlay) {
+        mainOverlay.innerHTML = "";
+        hideOverlay(mainOverlay);
+      }
+      setBackgroundImageSrc(MENU_BACKGROUND_SRC);
+    };
   }
 }
 
@@ -3882,19 +3255,9 @@ class Game{
       setBackgroundImageSrc(MENU_BACKGROUND_SRC);
     }
     enterTitleScreen();
-    const profile = getCurrentProfile();
-    const badgeClass = profile?.username ? 'title-profile-badge' : 'title-profile-badge is-guest';
-    const badgeLabel = profile?.username ? `Connecté : ${profile.username}` : 'Joueur invité';
-    const resumeLabel = resumeState.available ? formatResumeButtonLabel() : '';
-    const resumeStatus = resumeState.available ? formatResumeStatusText() : '';
     overlay.innerHTML = `
       <div class="title-screen" role="presentation">
-        <div class="title-meta">
-          <span class="${badgeClass}" data-profile-badge>${escapeHtml(badgeLabel)}</span>
-          <div class="title-resume-hint" data-resume-status>${escapeHtml(resumeStatus)}</div>
-        </div>
         <div class="title-buttons" role="navigation">
-          ${resumeState.available ? `<button id="btnResume" type="button" data-resume-button>${escapeHtml(resumeLabel)}</button>` : ''}
           <button id="btnPlay" type="button">Jouer</button>
           <button id="btnRulesTitle" type="button">Règle du jeu</button>
           <button type="button" class="btn-settings" data-action="open-settings">Paramètres</button>
@@ -3902,15 +3265,6 @@ class Game{
         </div>
       </div>`;
     showOverlay(overlay);
-    const resumeBtn = document.getElementById('btnResume');
-    if (resumeBtn) {
-      addEvent(resumeBtn, INPUT.tap, (evt) => {
-        if (evt && typeof evt.preventDefault === 'function') evt.preventDefault();
-        if (evt && typeof evt.stopPropagation === 'function') evt.stopPropagation();
-        playSound("click");
-        handleResumeClick(resumeBtn);
-      }, { passive: false });
-    }
     addEvent(document.getElementById('btnLB'), INPUT.tap, ()=>{ playSound("click"); this.renderLeaderboard(); });
     addEvent(document.getElementById('btnRulesTitle'), INPUT.tap, (evt)=>{
       evt.preventDefault();
@@ -3921,24 +3275,16 @@ class Game{
     addEvent(document.getElementById('btnPlay'), INPUT.tap, async (e)=>{
       e.preventDefault(); e.stopPropagation();
       playSound("click");
-      currentLevelIndex = 0;
       await new Promise(r=>requestAnimationFrame(r));
       try{ const prev=ctx.imageSmoothingEnabled; ctx.imageSmoothingEnabled=false; const imgs=[walletImage, GoldImg, SilverImg, BronzeImg, DiamondImg, BombImg, Hand.open, Hand.pinch]; for (const im of imgs){ if (im && im.naturalWidth) ctx.drawImage(im,0,0,1,1); } ctx.save(); ctx.shadowColor='rgba(0,0,0,0.15)'; ctx.shadowBlur=4; ctx.shadowOffsetY=1; ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(4,4,2,0,Math.PI*2); ctx.fill(); ctx.restore(); ctx.imageSmoothingEnabled=prev; ctx.clearRect(0,0,8,8); }catch(_){ }
       this.uiStartFromTitle();
     }, { passive:false });
-    updateTitleMetaElements();
   }
   renderSettings(){
     if (overlay) overlay.classList.remove('overlay-title');
     const s=this.settings;
     const controlMode = (s.controlMode === 'zones') ? 'zones' : 'swipe';
     s.controlMode = controlMode;
-    const profile = getCurrentProfile();
-    const hasProfile = !!profile?.username;
-    const profileStatusText = hasProfile
-      ? `Connecté : ${profile.username}`
-      : 'Définissez votre pseudo pour participer en ligne.';
-    const profileValue = hasProfile ? profile.username : '';
     overlay.innerHTML = `
     <div class="panel">
       <h1>Paramètres</h1>
@@ -3954,16 +3300,6 @@ class Game{
         </div>
       </div>` : ''}
       <p>Sensibilité: <input type="range" id="sens" min="0.5" max="1.5" step="0.05" value="${s.sensitivity}"></p>
-      <div class="settings-profile">
-        <h2>Profil</h2>
-        <p class="settings-profile-status ${hasProfile ? 'is-success' : ''}" data-profile-status>${escapeHtml(profileStatusText)}</p>
-        <div class="settings-profile-actions">
-          <label for="settingsUsername">Pseudo</label>
-          <input type="text" id="settingsUsername" maxlength="24" autocomplete="nickname" placeholder="Ex: DropMaster" value="${escapeHtml(profileValue)}" ${hasProfile ? 'disabled' : ''}>
-          <button type="button" id="settingsProfileSubmit" ${hasProfile ? 'disabled' : ''}>${hasProfile ? 'Pseudo validé' : 'Valider'}</button>
-        </div>
-        <p class="settings-profile-hint">${hasProfile ? 'Le pseudo est fixe pour cette version.' : 'Le pseudo est optionnel mais doit être unique.'}</p>
-      </div>
       <div class="btnrow"><button id="back">Retour</button></div>
     </div>`;
     showOverlay(overlay);
@@ -4006,97 +3342,6 @@ class Game{
       }
     }
     addEvent(document.getElementById('sens'), 'input', e=>{ this.settings.sensitivity = parseFloat(e.target.value); saveSettings(this.settings); });
-    const profileStatusEl = overlay.querySelector('[data-profile-status]');
-    const profileInputEl = overlay.querySelector('#settingsUsername');
-    const profileSubmitEl = overlay.querySelector('#settingsProfileSubmit');
-
-    const updateProfileStatus = (message, variant) => {
-      if (!profileStatusEl) return;
-      profileStatusEl.textContent = message || '';
-      profileStatusEl.classList.remove('is-success', 'is-error');
-      if (variant === 'success') {
-        profileStatusEl.classList.add('is-success');
-      } else if (variant === 'error') {
-        profileStatusEl.classList.add('is-error');
-      }
-    };
-
-    if (profileSubmitEl && !hasProfile) {
-      const submitProfile = async () => {
-        if (!profileInputEl) return;
-        const username = (profileInputEl.value || '').trim();
-        if (!username) {
-          updateProfileStatus('Pseudo requis.', 'error');
-          return;
-        }
-
-        setButtonLoading(profileSubmitEl, true);
-        updateProfileStatus('Enregistrement...', null);
-
-        try {
-          let response = null;
-          if (window.api && typeof window.api.registerPlayer === 'function') {
-            response = await window.api.registerPlayer(username);
-          } else {
-            const localProfile = {
-              id: `local-${Date.now()}`,
-              username,
-              source: 'local',
-            };
-            safeWriteStorage(STORAGE_KEYS.profile, localProfile);
-            response = { success: true, username: localProfile.username, profileId: localProfile.id, source: 'local' };
-          }
-
-          if (response && response.success) {
-            const finalUsername = response.username || username;
-            const storedProfile = {
-              id: response.profileId || response.id || null,
-              username: finalUsername,
-              source: response.source || 'local',
-            };
-            safeWriteStorage(STORAGE_KEYS.profile, storedProfile);
-            cachedProfile = storedProfile;
-            updateProfileStatus(`Connecté : ${finalUsername}`, 'success');
-            profileInputEl.value = finalUsername;
-            profileInputEl.disabled = true;
-            profileSubmitEl.dataset.prevDisabled = 'true';
-            setButtonLoading(profileSubmitEl, false);
-            profileSubmitEl.disabled = true;
-            profileSubmitEl.textContent = 'Pseudo validé';
-            refreshProfileUi();
-            console.info(`[profile] Username set via ${storedProfile.source}.`);
-          } else if (response && response.reason === 'USERNAME_TAKEN') {
-            updateProfileStatus('Pseudo déjà pris.', 'error');
-            setButtonLoading(profileSubmitEl, false);
-          } else if (response && response.error) {
-            updateProfileStatus(response.error, 'error');
-            setButtonLoading(profileSubmitEl, false);
-          } else {
-            throw new Error('registerPlayer failed');
-          }
-        } catch (error) {
-          console.error('[profile] registerPlayer failed', error);
-          updateProfileStatus('Erreur réseau, réessayez.', 'error');
-          setButtonLoading(profileSubmitEl, false);
-        }
-      };
-
-      addEvent(profileSubmitEl, INPUT.tap, (evt) => {
-        if (evt && typeof evt.preventDefault === 'function') evt.preventDefault();
-        if (evt && typeof evt.stopPropagation === 'function') evt.stopPropagation();
-        submitProfile();
-      }, { passive: false });
-
-      if (profileInputEl) {
-        profileInputEl.addEventListener('keydown', (evt) => {
-          if (evt.key === 'Enter') {
-            evt.preventDefault();
-            submitProfile();
-          }
-        });
-      }
-    }
-
     addEvent(document.getElementById('back'), INPUT.tap, (evt)=>{
       if (evt && typeof evt.preventDefault === 'function') {
         evt.preventDefault();
@@ -4132,39 +3377,21 @@ class Game{
   }
   renderLeaderboard(){
     if (overlay) overlay.classList.remove('overlay-title');
-    const levelOptions = LEVELS.map((lvl) => {
-      const value = Number(lvl?.id) || 0;
-      const isSelected = value === currentLeaderboardLevelId;
-      return `<option value="${value}" ${isSelected ? 'selected' : ''}>N${value}</option>`;
-    }).join('');
+    let runs=[];
+    try{ runs = JSON.parse(localStorage.getItem(LS.runs)||'[]'); }catch(e){}
+    const best = parseInt(localStorage.getItem(LS.bestScore)||'0',10);
+    const bestC = parseInt(localStorage.getItem(LS.bestCombo)||'0',10);
     overlay.innerHTML = `
-    <div class="panel leaderboard-panel" role="dialog" aria-modal="true" aria-labelledby="leaderboardTitle">
-      <div class="leaderboard-header">
-        <h1 id="leaderboardTitle">Leaderboard</h1>
-        <label class="leaderboard-level-select">
-          <span>Niveau</span>
-          <select id="leaderboardLevel">${levelOptions}</select>
-        </label>
-        <div class="leaderboard-status" data-lb-status></div>
+    <div class="panel">
+      <h1>Leaderboard (local)</h1>
+      <p>Record: <b>${best}</b> | Combo max: <b>${bestC}</b></p>
+      <div style="text-align:left; max-height:200px; overflow:auto; border:1px solid var(--ui); padding:6px;">
+        ${runs.map((r,i)=>`#${i+1} — ${new Date(r.ts).toLocaleString()} — Score ${r.score} — Combo ${r.combo} — N${r.lvl}`).join('<br/>') || 'Aucune partie'}
       </div>
-      <div class="leaderboard-table-wrapper" data-lb-table-wrapper>
-        <div class="leaderboard-table-empty" data-lb-empty>Chargement...</div>
-      </div>
-      <div class="leaderboard-footer"><button id="back">Retour</button></div>
+      <div class="btnrow"><button id="back">Retour</button></div>
     </div>`;
     showOverlay(overlay);
-
-    const levelSelect = document.getElementById('leaderboardLevel');
-    if (levelSelect) {
-      addEvent(levelSelect, 'change', (evt) => {
-        const selected = Number(evt.target.value) || currentLeaderboardLevelId;
-        currentLeaderboardLevelId = selected;
-        updateLeaderboardView(selected);
-      });
-    }
-
     addEvent(document.getElementById('back'), INPUT.tap, ()=>{ playSound("click"); this.renderTitle(); });
-    updateLeaderboardView(currentLeaderboardLevelId);
   }
   renderPause(){
     if (overlay) overlay.classList.remove('overlay-title');
