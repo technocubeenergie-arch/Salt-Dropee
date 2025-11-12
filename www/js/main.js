@@ -3080,9 +3080,9 @@ class Game{
     resetActiveBonuses();
     resetShieldState({ silent: true });
     resetControlInversion({ silent: true });
-    this.settings = loadSettings(); document.documentElement.classList.toggle('contrast-high', !!this.settings.contrast);
+    this.settings = loadSettings();
+    this.applyContrastSetting(this.settings.contrast);
     setActiveControlMode(this.settings.controlMode);
-    this.palette = CONFIG.palette.slice(); if (this.settings.contrast){ this.palette = ['#000','#444','#ff0044','#ffaa00','#ffffff','#00ffea','#00ff66','#66a6ff']; }
     const u=new URLSearchParams(location.search); const seed=u.get('seed'); this.random = seed? (function(seed){ let t=seed>>>0; return function(){ t += 0x6D2B79F5; let r = Math.imul(t ^ t >>> 15, 1 | t); r ^= r + Math.imul(r ^ r >>> 7, 61 | r); return ((r ^ r >>> 14) >>> 0) / 4294967296; };})(parseInt(seed)||1) : Math.random;
     this.state='title';
     this.settingsReturnView = "title";
@@ -3106,6 +3106,16 @@ class Game{
     this.shake=0; this.bgIndex=0; this.didFirstCatch=false; this.updateBgByScore();
     loadLevel(currentLevelIndex, { applyBackground: !showTitle, playMusic: !showTitle });
     if (showTitle) this.renderTitle(); else this.render();
+  }
+  applyContrastSetting(enabled){
+    const contrastOn = !!enabled;
+    if (typeof document !== 'undefined' && document.documentElement){
+      document.documentElement.classList.toggle('contrast-high', contrastOn);
+    }
+    this.palette = CONFIG.palette.slice();
+    if (contrastOn){
+      this.palette = ['#000','#444','#ff0044','#ffaa00','#ffffff','#00ffea','#00ff66','#66a6ff'];
+    }
   }
   diffMult(){ return Math.pow(CONFIG.spawnRampFactor, Math.floor(this.timeElapsed/CONFIG.spawnRampEverySec)); }
   updateBgByScore(){ const th=CONFIG.evolveThresholds; let idx=0; for (let i=0;i<th.length;i++){ if (this.score>=th[i]) idx=i; } if (idx!==this.bgIndex){ this.bgIndex=idx; this.wallet.evolveByScore(this.score); this.levelReached = Math.max(this.levelReached, this.wallet.level); } }
@@ -3304,7 +3314,18 @@ class Game{
     </div>`;
     showOverlay(overlay);
     addEvent(document.getElementById('sound'), 'change', e=>{ playSound("click"); this.settings.sound = e.target.checked; saveSettings(this.settings); if (typeof setSoundEnabled === "function") { setSoundEnabled(this.settings.sound); } });
-    addEvent(document.getElementById('contrast'), 'change', e=>{ playSound("click"); this.settings.contrast = e.target.checked; saveSettings(this.settings); this.reset(); });
+    addEvent(document.getElementById('contrast'), 'change', e=>{
+      if (e && typeof e.stopImmediatePropagation === 'function') {
+        e.stopImmediatePropagation();
+      } else if (e && typeof e.stopPropagation === 'function') {
+        e.stopPropagation();
+      }
+      playSound("click");
+      const contrastEnabled = !!e?.target?.checked;
+      this.settings.contrast = contrastEnabled;
+      saveSettings(this.settings);
+      this.applyContrastSetting(contrastEnabled);
+    }, { passive: false });
     addEvent(document.getElementById('haptics'), 'change', e=>{ playSound("click"); this.settings.haptics = e.target.checked; saveSettings(this.settings); });
     if (hasTouch) {
       const controlToggle = overlay.querySelector('[data-control-toggle]');
