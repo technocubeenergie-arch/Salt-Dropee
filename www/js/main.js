@@ -68,42 +68,42 @@ document.addEventListener("click", (event) => {
 const LEVELS = [
   {
     id: 1, name: "Level 1",
-    background: "assets/fondniveau1.png",
+    background: "assets/fondniveau1.webp",
     walletSprite: "assets/walletniveau1.png",
     music: "assets/sounds/audioniveau1.mp3",
     targetScore: 800, timeLimit: 60, lives: 3,
   },
   {
     id: 2, name: "Level 2",
-    background: "assets/fondniveau2.png",
+    background: "assets/fondniveau2.webp",
     walletSprite: "assets/walletniveau2.png",
     music: "assets/sounds/audioniveau2.mp3",
     targetScore: 1200, timeLimit: 60, lives: 3,
   },
   {
     id: 3, name: "Level 3",
-    background: "assets/fondniveau3.png",
+    background: "assets/fondniveau3.webp",
     walletSprite: "assets/walletniveau3.png",
     music: "assets/sounds/audioniveau3.mp3",
     targetScore: 1600, timeLimit: 60, lives: 3,
   },
   {
     id: 4, name: "Level 4",
-    background: "assets/fondniveau4.png",
+    background: "assets/fondniveau4.webp",
     walletSprite: "assets/walletniveau4.png",
     music: "assets/sounds/audioniveau4.mp3",
     targetScore: 2000, timeLimit: 60, lives: 3,
   },
   {
     id: 5, name: "Level 5",
-    background: "assets/fondniveau5.png",
+    background: "assets/fondniveau5.webp",
     walletSprite: "assets/walletniveau5.png",
     music: "assets/sounds/audioniveau5.mp3",
     targetScore: 2500, timeLimit: 60, lives: 3,
   },
   {
     id: 6, name: "Level 6",
-    background: "assets/fondniveau6.png",
+    background: "assets/fondniveau6.webp",
     walletSprite: "assets/walletniveau6.png",
     music: "assets/sounds/audioniveau6.mp3",
     targetScore: Infinity, timeLimit: 60, lives: 3,
@@ -112,11 +112,11 @@ const LEVELS = [
 ];
 
 const INTER_LEVEL_BACKGROUNDS = {
-  0: "assets/interlevel1.png",
-  1: "assets/interlevel2.png",
-  2: "assets/interlevel3.png",
-  3: "assets/interlevel4.png",
-  4: "assets/interlevel5.png",
+  0: "assets/interlevel1.webp",
+  1: "assets/interlevel2.webp",
+  2: "assets/interlevel3.webp",
+  3: "assets/interlevel4.webp",
+  4: "assets/interlevel5.webp",
 };
 
 const INTER_LEVEL_SOUND_SOURCES = {
@@ -124,7 +124,7 @@ const INTER_LEVEL_SOUND_SOURCES = {
   4: "assets/sounds/supertada.mp3",
 };
 
-const MENU_BACKGROUND_SRC = "assets/fondaccueil.png";
+const MENU_BACKGROUND_SRC = "assets/fondaccueil.webp";
 const MENU_MUSIC_SRC = "assets/sounds/audioaccueil.mp3";
 
 const LEGEND_LEVEL_INDEX = LEVELS.findIndex(level => level?.id === 6);
@@ -1628,7 +1628,7 @@ function resetShieldState(options = {}) {
 }
 
 const footerImg = new Image();
-footerImg.src = 'assets/footer.png';
+footerImg.src = 'assets/footer.webp';
 
 // --- Main (2 frames)
 const Hand = { open:new Image(), pinch:new Image(), ready:false };
@@ -3433,7 +3433,7 @@ class Game{
     this.rulesReturnView = returnView || this.state || "title";
     overlay.innerHTML = `
       <div class="rules-screen" role="dialog" aria-modal="true" aria-label="Règles du jeu">
-        <img src="assets/rules.png" alt="Règles du jeu" />
+        <img src="assets/rules.webp" alt="Règles du jeu" />
       </div>`;
     overlay.classList.add('overlay-rules');
     showOverlay(overlay);
