@@ -3292,13 +3292,13 @@ class Game{
       <p><label><input type="checkbox" id="contrast" ${s.contrast?'checked':''}/> Contraste élevé</label></p>
       <p><label><input type="checkbox" id="haptics" ${s.haptics?'checked':''}/> Vibrations</label></p>
       ${hasTouch ? `
-      <p>
-        <label for="controlMode">Mode de contrôle (mobile)</label>
-        <select id="controlMode">
-          <option value="swipe"${controlMode==='zones'?'':' selected'}>Swipe</option>
-          <option value="zones"${controlMode==='zones'?' selected':''}>Zones tactiles</option>
-        </select>
-      </p>` : ''}
+      <div class="control-mode-setting">
+        <span class="control-mode-label" id="controlModeLabel">Mode de contrôle (mobile)</span>
+        <div class="control-mode-toggle" role="group" aria-labelledby="controlModeLabel" data-control-toggle>
+          <button type="button" class="control-mode-option" data-mode="swipe">Swipe</button>
+          <button type="button" class="control-mode-option" data-mode="zones">Zones tactiles</button>
+        </div>
+      </div>` : ''}
       <p>Sensibilité: <input type="range" id="sens" min="0.5" max="1.5" step="0.05" value="${s.sensitivity}"></p>
       <div class="btnrow"><button id="back">Retour</button></div>
     </div>`;
@@ -3307,14 +3307,37 @@ class Game{
     addEvent(document.getElementById('contrast'), 'change', e=>{ playSound("click"); this.settings.contrast = e.target.checked; saveSettings(this.settings); this.reset(); });
     addEvent(document.getElementById('haptics'), 'change', e=>{ playSound("click"); this.settings.haptics = e.target.checked; saveSettings(this.settings); });
     if (hasTouch) {
-      const controlSelect = document.getElementById('controlMode');
-      if (controlSelect) {
-        addEvent(controlSelect, 'change', e=>{
-          playSound("click");
-          const value = e.target.value === 'zones' ? 'zones' : 'swipe';
-          this.settings.controlMode = value;
-          saveSettings(this.settings);
-          setActiveControlMode(value);
+      const controlToggle = overlay.querySelector('[data-control-toggle]');
+      if (controlToggle) {
+        const controlButtons = Array.from(controlToggle.querySelectorAll('button[data-mode]'));
+        const updateToggleState = (mode)=>{
+          const normalized = mode === 'zones' ? 'zones' : 'swipe';
+          controlButtons.forEach(btn=>{
+            const isActive = btn.dataset.mode === normalized;
+            btn.classList.toggle('is-active', isActive);
+            btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+          });
+        };
+        updateToggleState(this.settings.controlMode);
+        controlButtons.forEach(btn=>{
+          btn.addEventListener('click', (evt)=>{
+            if (evt && typeof evt.preventDefault === 'function') {
+              evt.preventDefault();
+            }
+            if (evt && typeof evt.stopPropagation === 'function') {
+              evt.stopPropagation();
+            }
+            const value = btn.dataset.mode === 'zones' ? 'zones' : 'swipe';
+            if (value === this.settings.controlMode) {
+              updateToggleState(value);
+              return;
+            }
+            playSound("click");
+            this.settings.controlMode = value;
+            saveSettings(this.settings);
+            setActiveControlMode(value);
+            updateToggleState(value);
+          }, { passive: false });
         });
       }
     }
