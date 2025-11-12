@@ -8,6 +8,8 @@
 
 // --- Détection d'input & utilitaire cross-platform
 const hasTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+const supportsPointerEvents = typeof window !== 'undefined' && 'PointerEvent' in window;
+const usePointerEventsForMouse = supportsPointerEvents && !hasTouch;
 const gsap = window.gsap;
 
 if (typeof window.openSettings !== "function") {
@@ -629,14 +631,23 @@ const comboVis = {
   flash: 0
 };
 
-const INPUT = {
-  tap: hasTouch ? 'touchstart' : 'click',
-  down: hasTouch ? 'touchstart' : 'mousedown',
-  move: hasTouch ? 'touchmove' : 'mousemove',
-  up:   hasTouch ? 'touchend'  : 'mouseup',
-};
+const INPUT = usePointerEventsForMouse
+  ? {
+    tap: 'pointerdown',
+    down: 'pointerdown',
+    move: 'pointermove',
+    up: 'pointerup',
+    cancel: 'pointercancel',
+  }
+  : {
+    tap: hasTouch ? 'touchstart' : 'click',
+    down: hasTouch ? 'touchstart' : 'mousedown',
+    move: hasTouch ? 'touchmove' : 'mousemove',
+    up:   hasTouch ? 'touchend'  : 'mouseup',
+    cancel: hasTouch ? 'touchcancel' : null,
+  };
 function addEvent(el, type, handler, opts) {
-  if (!el) return;
+  if (!el || !type) return;
   el.addEventListener(type, handler, opts || { passive: true });
 }
 function getPrimaryPoint(evt) {
@@ -733,9 +744,7 @@ function setActiveControlMode(mode) {
     directionalSourceState.touchRight = false;
     recomputeDirectionalState();
     if (typeof input !== 'undefined') {
-      input.dragging = false;
-      input.pointerLastX = null;
-      input.pointerVirtualX = null;
+      resetPointerDragState({ releaseCapture: true });
     }
   } else if (directionalSourceState.touchLeft || directionalSourceState.touchRight) {
     directionalSourceState.touchLeft = false;
@@ -764,7 +773,7 @@ function pauseAllAnimations(){
 function disablePlayerInput(){
   inputEnabled = false;
   if (typeof input !== "undefined") {
-    input.dragging = false;
+    resetPointerDragState({ releaseCapture: true });
     input.dash = false;
   }
   resetDirectionalInputs();
@@ -779,7 +788,7 @@ function resumeAllAnimations(){
 function enablePlayerInput(){
   inputEnabled = true;
   if (typeof input !== "undefined") {
-    input.dragging = false;
+    resetPointerDragState({ releaseCapture: true });
     input.dash = false;
   }
 }
@@ -2422,7 +2431,32 @@ const input = {
   pointerLastX: null,
   pointerVirtualX: null,
   pointerInvertState: false,
+  pointerId: null,
 };
+
+function resetPointerDragState(options = {}) {
+  const { releaseCapture = false, pointerId = null } = options;
+  const activePointerId = Number.isInteger(pointerId) ? pointerId : input.pointerId;
+
+  if (
+    releaseCapture &&
+    Number.isInteger(activePointerId) &&
+    canvas &&
+    typeof canvas.releasePointerCapture === 'function'
+  ) {
+    try {
+      canvas.releasePointerCapture(activePointerId);
+    } catch (err) {
+      // ignore capture release errors
+    }
+  }
+
+  input.dragging = false;
+  input.pointerLastX = null;
+  input.pointerVirtualX = null;
+  input.pointerInvertState = controlsAreInverted();
+  input.pointerId = null;
+}
 
 function getRawHorizontalAxis() {
   if (leftPressed && !rightPressed) return -1;
@@ -2438,6 +2472,21 @@ function getEffectiveHorizontalAxis() {
 function getWalletCenter(walletRef) {
   if (!walletRef) return BASE_W / 2;
   return walletRef.x + walletRef.w / 2;
+}
+
+function isTouchLikeEvent(evt) {
+  if (!evt) return false;
+  if (typeof evt.pointerType === 'string') {
+    return evt.pointerType === 'touch';
+  }
+  const type = evt.type;
+  return typeof type === 'string' && type.startsWith('touch');
+}
+
+function isMatchingPointer(evt) {
+  if (!evt || typeof evt.pointerId !== 'number') return true;
+  if (!Number.isInteger(input.pointerId)) return true;
+  return evt.pointerId === input.pointerId;
 }
 
 function handleTouchZoneEvent(evt) {
@@ -2460,7 +2509,7 @@ function handleTouchZoneEvent(evt) {
   }
 
   const wallet = game?.wallet;
-  const touches = evt?.touches;
+  const touches = evt?.touches || evt?.changedTouches || (evt?.pointerType === 'touch' ? [evt] : null);
   if (!wallet || !touches) {
     if (directionalSourceState.touchLeft || directionalSourceState.touchRight) {
       directionalSourceState.touchLeft = false;
@@ -2544,8 +2593,29 @@ function onKeyUp(e){
   if (e.code === 'Space') input.dash = false;
 }
 function onPointerDown(e){
-  if (e?.type?.startsWith('touch') && handleTouchZoneEvent(e)) return;
-  if (!inputEnabled) return;
+  if (isTouchLikeEvent(e) && handleTouchZoneEvent(e)) return;
+
+  if (!inputEnabled) {
+    resetPointerDragState({ releaseCapture: true });
+    return;
+  }
+
+  resetPointerDragState({ releaseCapture: true });
+
+  if (typeof e.pointerId === 'number') {
+    input.pointerId = e.pointerId;
+    const target = e.target;
+    if (target && typeof target.setPointerCapture === 'function') {
+      try {
+        target.setPointerCapture(e.pointerId);
+      } catch (err) {
+        // ignore capture errors
+      }
+    }
+  } else {
+    input.pointerId = null;
+  }
+
   const point = getCanvasPoint(e);
   input.dragging = true;
   input.pointerLastX = point.x;
@@ -2558,8 +2628,8 @@ function onPointerDown(e){
   }
 }
 function onPointerMove(e){
-  if (e?.type?.startsWith('touch') && handleTouchZoneEvent(e)) return;
-  if (!inputEnabled || !input.dragging) return;
+  if (isTouchLikeEvent(e) && handleTouchZoneEvent(e)) return;
+  if (!inputEnabled || !input.dragging || !isMatchingPointer(e)) return;
   const point = getCanvasPoint(e);
   if (!game || !game.wallet) return;
 
@@ -2586,10 +2656,10 @@ function onPointerMove(e){
   animateWalletToCenter(game.wallet, input.pointerVirtualX);
 }
 function onPointerUp(e){
-  if (e?.type?.startsWith('touch') && handleTouchZoneEvent(e)) return;
-  input.dragging = false;
-  input.pointerLastX = null;
-  input.pointerVirtualX = null;
+  if (isTouchLikeEvent(e) && handleTouchZoneEvent(e)) return;
+  if (!isMatchingPointer(e) && Number.isInteger(input.pointerId)) return;
+  const pointerId = typeof e.pointerId === 'number' ? e.pointerId : null;
+  resetPointerDragState({ releaseCapture: true, pointerId });
 }
 
 const TG = window.Telegram?.WebApp; if (TG){ try{ TG.ready(); TG.expand(); }catch(e){} }
@@ -3578,7 +3648,8 @@ function startGame(){
   addEvent(canvas, INPUT.down, onPointerDown);
   addEvent(window, INPUT.move, onPointerMove);
   addEvent(window, INPUT.up, onPointerUp);
-  if (hasTouch) addEvent(window, 'touchcancel', onPointerUp);
+  if (INPUT.cancel) addEvent(window, INPUT.cancel, onPointerUp);
+  addEvent(window, 'blur', () => resetPointerDragState({ releaseCapture: true }));
 
   game = new Game();
   if (game && game.wallet) targetX = game.wallet.x + game.wallet.w / 2;
@@ -3592,7 +3663,7 @@ function startGame(){
     }
   });
 
-  addEvent(document, 'visibilitychange', ()=>{ if (document.hidden && game.state==='playing'){ const now = performance.now(); if (game.ignoreVisibilityUntil && now < game.ignoreVisibilityUntil) return; game.state='paused'; game.renderPause(); } });
+  addEvent(document, 'visibilitychange', ()=>{ if (document.hidden && game.state==='playing'){ const now = performance.now(); if (game.ignoreVisibilityUntil && now < game.ignoreVisibilityUntil) return; resetPointerDragState({ releaseCapture: true }); game.state='paused'; game.renderPause(); } });
 
   addEvent(canvas, INPUT.tap, (e)=>{ if (game.state!=='playing') return; const now=performance.now(); if (game.ignoreClicksUntil && now < game.ignoreClicksUntil) return; const pt=getCanvasPoint(e); if (pt.y<40 && pt.x>BASE_W-80){ playSound("click"); game.state='paused'; game.renderPause(); } });
 
