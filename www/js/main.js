@@ -31,7 +31,7 @@ if (typeof window.openSettings !== "function") {
 }
 
 console.info("[settings] listener initialized");
-document.addEventListener("click", (event) => {
+addEvent(document, 'click', (event) => {
   const btn = event.target.closest('[data-action="open-settings"]');
   if (!btn) return;
 
@@ -64,7 +64,7 @@ document.addEventListener("click", (event) => {
   } catch (err) {
     console.error("[settings] openSettings failed:", err);
   }
-});
+}, { passive: false });
 
 // --- LEVELS: fichiers réels du projet ---
 const LEVELS = [
@@ -440,9 +440,9 @@ function unlockMusicOnce() {
 
   const cleanup = () => {
     if (!musicUnlockListener) return;
-    window.removeEventListener('pointerdown', musicUnlockListener);
-    window.removeEventListener('touchstart', musicUnlockListener);
-    window.removeEventListener('mousedown', musicUnlockListener);
+    removeEvent(window, 'pointerdown', musicUnlockListener);
+    removeEvent(window, 'touchstart', musicUnlockListener);
+    removeEvent(window, 'mousedown', musicUnlockListener);
     musicUnlockListener = null;
     musicUnlockCompleted = true;
   };
@@ -463,9 +463,9 @@ function unlockMusicOnce() {
     }
   };
 
-  window.addEventListener('pointerdown', musicUnlockListener);
-  window.addEventListener('touchstart', musicUnlockListener);
-  window.addEventListener('mousedown', musicUnlockListener);
+  addEvent(window, 'pointerdown', musicUnlockListener);
+  addEvent(window, 'touchstart', musicUnlockListener);
+  addEvent(window, 'mousedown', musicUnlockListener);
 }
 
 window.addEventListener('load', unlockMusicOnce);
@@ -646,10 +646,164 @@ const INPUT = usePointerEventsForMouse
     up:   hasTouch ? 'touchend'  : 'mouseup',
     cancel: hasTouch ? 'touchcancel' : null,
   };
-function addEvent(el, type, handler, opts) {
-  if (!el || !type) return;
-  el.addEventListener(type, handler, opts || { passive: true });
+
+const DEBUG_INPUT_EVENT_TYPES = new Set([
+  'pointerdown', 'pointermove', 'pointerup', 'pointercancel',
+  'mousedown', 'mousemove', 'mouseup',
+  'touchstart', 'touchmove', 'touchend', 'touchcancel',
+  'click', 'keydown', 'keyup',
+]);
+
+const debugListenerRegistry = new WeakMap();
+
+function debugDescribeElement(target) {
+  if (!target) return 'null';
+  if (target === window) return 'window';
+  if (target === document) return 'document';
+  if (target === document.body) return 'body';
+  if (typeof HTMLElement !== 'undefined' && target instanceof HTMLElement) {
+    if (target.id) return `#${target.id}`;
+    const tag = target.tagName ? target.tagName.toLowerCase() : 'element';
+    if (target.classList && target.classList.length > 0) {
+      const cls = Array.from(target.classList).join('.');
+      return `${tag}.${cls}`;
+    }
+    return tag;
+  }
+  if (target && typeof target.nodeName === 'string') {
+    return target.nodeName.toLowerCase();
+  }
+  return typeof target === 'string' ? target : 'unknown';
 }
+
+function debugFormatContext(context) {
+  if (!context || typeof context !== 'object') return '';
+  const filteredEntries = Object.entries(context).filter(([_, value]) => {
+    const t = typeof value;
+    return value == null || t === 'string' || t === 'number' || t === 'boolean';
+  });
+  if (filteredEntries.length === 0) return '';
+  try {
+    return ' ' + JSON.stringify(Object.fromEntries(filteredEntries));
+  } catch (err) {
+    void err;
+    return '';
+  }
+}
+
+function registerDebugListener(target, type, handler) {
+  if (!target || typeof handler !== 'function') return { count: 0 };
+  let typeMap = debugListenerRegistry.get(target);
+  if (!typeMap) {
+    typeMap = new Map();
+    debugListenerRegistry.set(target, typeMap);
+  }
+  const list = typeMap.get(type) || [];
+  list.push(handler);
+  typeMap.set(type, list);
+  return { count: list.length };
+}
+
+function unregisterDebugListener(target, type, handler) {
+  if (!target || typeof handler !== 'function') return { count: 0 };
+  const typeMap = debugListenerRegistry.get(target);
+  if (!typeMap) return { count: 0 };
+  const list = typeMap.get(type);
+  if (!Array.isArray(list)) return { count: 0 };
+  const idx = list.indexOf(handler);
+  if (idx >= 0) {
+    list.splice(idx, 1);
+    if (list.length === 0) {
+      typeMap.delete(type);
+    } else {
+      typeMap.set(type, list);
+    }
+  }
+  if (typeMap.size === 0) {
+    debugListenerRegistry.delete(target);
+  }
+  return { count: Array.isArray(list) ? list.length : 0 };
+}
+
+function logInputListener(action, target, type, opts, extra) {
+  if (!DEBUG_INPUT_EVENT_TYPES.has(type)) return;
+  const base = extra && typeof extra === 'object' ? { ...extra } : {};
+  if (opts && typeof opts === 'object') {
+    if (typeof opts.passive === 'boolean') base.passive = opts.passive;
+    if (typeof opts.capture === 'boolean') base.capture = opts.capture;
+  }
+  const context = debugFormatContext(base);
+  console.info(`[input] ${action} ${type} -> ${debugDescribeElement(target)}${context}`);
+}
+
+function addEvent(el, type, handler, opts) {
+  if (!el || !type || typeof handler !== 'function') return;
+  const finalOpts = (opts === undefined || opts === null) ? { passive: true } : opts;
+  el.addEventListener(type, handler, finalOpts);
+  const { count } = registerDebugListener(el, type, handler);
+  logInputListener('attach', el, type, finalOpts, { count });
+}
+
+function removeEvent(el, type, handler, opts) {
+  if (!el || !type || typeof handler !== 'function') return;
+  const finalOpts = (opts === undefined || opts === null) ? false : opts;
+  el.removeEventListener(type, handler, finalOpts);
+  const { count } = unregisterDebugListener(el, type, handler);
+  logInputListener('detach', el, type, typeof finalOpts === 'object' ? finalOpts : {}, { count });
+}
+
+const SCREEN_NAME_ALIASES = {
+  playing: 'running',
+  run: 'running',
+  running: 'running',
+  title: 'title',
+  home: 'title',
+  paused: 'paused',
+  pause: 'paused',
+  inter: 'interLevel',
+  interlevel: 'interLevel',
+  settings: 'settings',
+  over: 'gameover',
+  gameover: 'gameover',
+  legend: 'interLevel',
+};
+
+let activeScreen = 'boot';
+let lastNonSettingsScreen = 'boot';
+const NAV_SCREEN_LOG_TARGETS = new Set(['title', 'running', 'paused', 'interLevel', 'settings', 'gameover']);
+
+function normalizeScreenName(name) {
+  if (typeof name !== 'string' || name.trim() === '') return 'unknown';
+  const key = name.trim();
+  const lower = key.toLowerCase();
+  return SCREEN_NAME_ALIASES[lower] || key;
+}
+
+function logNavigation(target, context = {}) {
+  const navContext = debugFormatContext(context);
+  console.info(`[nav] goto(${target})${navContext}`);
+}
+
+function setActiveScreen(next, context = {}) {
+  const normalized = normalizeScreenName(next);
+  const prev = activeScreen;
+  const sameScreen = normalized === prev;
+  const info = { from: prev, ...(context && typeof context === 'object' ? context : {}) };
+  if (sameScreen) {
+    console.info(`[state] setActiveScreen: ${prev} (unchanged)${debugFormatContext(info)}`);
+    return normalized;
+  }
+  activeScreen = normalized;
+  if (normalized !== 'settings' && normalized !== 'unknown') {
+    lastNonSettingsScreen = normalized;
+  }
+  console.info(`[state] setActiveScreen: ${prev} -> ${normalized}${debugFormatContext(info)}`);
+  if (NAV_SCREEN_LOG_TARGETS.has(normalized)) {
+    logNavigation(normalized, info);
+  }
+  return normalized;
+}
+
 function getPrimaryPoint(evt) {
   if (hasTouch) {
     const touches = evt.changedTouches || evt.touches;
@@ -666,6 +820,7 @@ let overlay;
 let game;
 
 function enterTitleScreen() {
+  setActiveScreen('title', { via: 'enterTitleScreen' });
   if (typeof document !== 'undefined' && document.body) {
     document.body.classList.add('is-title');
   }
@@ -677,6 +832,7 @@ function enterTitleScreen() {
 }
 
 function leaveTitleScreen({ stopMusic = true } = {}) {
+  setActiveScreen('running', { via: 'leaveTitleScreen' });
   if (typeof document !== 'undefined' && document.body) {
     document.body.classList.remove('is-title');
   }
@@ -770,8 +926,9 @@ function pauseAllAnimations(){
   }
 }
 
-function disablePlayerInput(){
+function disablePlayerInput(reason = 'unspecified'){
   inputEnabled = false;
+  console.info(`[input] disable player input${debugFormatContext({ reason, screen: activeScreen })}`);
   if (typeof input !== "undefined") {
     resetPointerDragState({ releaseCapture: true });
     input.dash = false;
@@ -785,8 +942,9 @@ function resumeAllAnimations(){
   }
 }
 
-function enablePlayerInput(){
+function enablePlayerInput(reason = 'unspecified'){
   inputEnabled = true;
+  console.info(`[input] enable player input${debugFormatContext({ reason, screen: activeScreen })}`);
   if (typeof input !== "undefined") {
     resetPointerDragState({ releaseCapture: true });
     input.dash = false;
@@ -918,7 +1076,7 @@ function finalizeLevelTransition(afterStop){
 
   stopSpawningItems();
   pauseAllAnimations();
-  disablePlayerInput();
+  disablePlayerInput('finalizeLevelTransition');
 
   if (game) {
     game.state = "inter";
@@ -2118,6 +2276,62 @@ let SCALE = 1, VIEW_W = BASE_W, VIEW_H = BASE_H;
 let targetX = BASE_W / 2;
 const WR = { x: 0, y: 0, w: 0, h: 0 };
 
+function describeCanvasRegionFromPoint(point) {
+  if (!point || !Number.isFinite(point.y)) return '#canvas';
+  const baseH = BASE_H;
+  const y = point.y;
+  const wallet = game?.wallet;
+  const walletBottom = wallet ? (wallet.y + wallet.h) : (baseH - 96);
+  const footerThreshold = baseH - 4;
+  if (y >= footerThreshold) {
+    return '#footer';
+  }
+  if (y >= walletBottom) {
+    return '#controlZone';
+  }
+  return '#canvas';
+}
+
+function classifyPointerTarget(evt, point) {
+  if (!evt) return 'unknown';
+  const target = evt.target;
+  if (target === window) return 'window';
+  if (target === document || target === document?.body) return 'document';
+  const closest = typeof target?.closest === 'function' ? (sel) => target.closest(sel) : () => null;
+  if (closest('#interLevelScreen')) return '#interLevel';
+  if (closest('#legendResultScreen')) return '#interLevel';
+  if (closest('#overlay')) {
+    if (activeScreen === 'settings') return '#settings';
+    if (activeScreen === 'paused') return '#pauseOverlay';
+    if (activeScreen === 'title') return '#titleOverlay';
+    if (activeScreen === 'gameover') return '#gameoverOverlay';
+    if (activeScreen === 'legend') return '#legendOverlay';
+    return '#overlay';
+  }
+  if (canvas && (target === canvas || closest('#gameCanvas'))) {
+    return describeCanvasRegionFromPoint(point);
+  }
+  if (target && target.id) return `#${target.id}`;
+  return debugDescribeElement(target);
+}
+
+function logPointerTrace(eventName, evt, meta = {}) {
+  const { point, ...rest } = (meta && typeof meta === 'object') ? meta : {};
+  const logicalTarget = classifyPointerTarget(evt, point);
+  const info = { screen: activeScreen, ...rest };
+  if (typeof evt?.pointerId === 'number') info.pointerId = evt.pointerId;
+  if (typeof evt?.pointerType === 'string') info.pointerType = evt.pointerType;
+  if (!info.pointerType && typeof evt?.type === 'string') {
+    if (evt.type.startsWith('mouse')) info.pointerType = 'mouse';
+    if (evt.type.startsWith('touch')) info.pointerType = 'touch';
+  }
+  if (point && Number.isFinite(point.x) && Number.isFinite(point.y)) {
+    info.x = Math.round(point.x);
+    info.y = Math.round(point.y);
+  }
+  console.info(`[input] ${eventName} target=${logicalTarget}${debugFormatContext(info)}`);
+}
+
 function positionHUD(){
   const canvasEl = document.getElementById('gameCanvas');
   const hud = document.getElementById('hud');
@@ -2182,12 +2396,13 @@ async function goToNextLevel(){
 }
 
 function resumeGameplay(){
+  setActiveScreen('running', { via: 'resumeGameplay' });
   setInterLevelUiState(false);
   levelEnded = false;
   gameState = "playing";
   spawningEnabled = true;
   resumeAllAnimations();
-  enablePlayerInput();
+  enablePlayerInput('resumeGameplay');
   resetDirectionalInputs();
 
   if (game) {
@@ -2239,6 +2454,8 @@ function showInterLevelScreen(result = "win", options = {}){
   const screenAlreadyVisible = screen.classList.contains("show");
 
   clearMainOverlay(screen);
+
+  setActiveScreen('interLevel', { via: 'showInterLevelScreen', result });
 
   if (typeof Game !== "undefined" && Game.instance) {
     Game.instance.settingsReturnView = "inter";
@@ -2304,6 +2521,8 @@ function showLegendResultScreen(reason = "time"){
   if (!screen) return;
 
   clearMainOverlay(screen);
+
+  setActiveScreen('interLevel', { via: 'showLegendResultScreen', reason });
 
   if (typeof Game !== "undefined" && Game.instance) {
     Game.instance.settingsReturnView = "legend";
@@ -2411,7 +2630,7 @@ function bindLegendResultButtons(){
 }
 
 // --- Test manuel temporaire : appuyer sur 'i' pour afficher l’écran ---
-window.addEventListener("keydown", (e) => {
+addEvent(window, 'keydown', (e) => {
   if (e.key === "i" || e.key === "I") showInterLevelScreen("win");
 });
 
@@ -2593,13 +2812,19 @@ function onKeyUp(e){
   if (e.code === 'Space') input.dash = false;
 }
 function onPointerDown(e){
-  if (isTouchLikeEvent(e) && handleTouchZoneEvent(e)) return;
+  const point = getCanvasPoint(e);
+  if (isTouchLikeEvent(e) && handleTouchZoneEvent(e)) {
+    logPointerTrace('pointerdown', e, { point, status: 'touch-zone-delegated' });
+    return;
+  }
 
   if (!inputEnabled) {
+    logPointerTrace('pointerdown', e, { point, status: 'input-disabled' });
     resetPointerDragState({ releaseCapture: true });
     return;
   }
 
+  logPointerTrace('pointerdown', e, { point, status: 'drag-start' });
   resetPointerDragState({ releaseCapture: true });
 
   if (typeof e.pointerId === 'number') {
@@ -2616,7 +2841,6 @@ function onPointerDown(e){
     input.pointerId = null;
   }
 
-  const point = getCanvasPoint(e);
   input.dragging = true;
   input.pointerLastX = point.x;
   input.pointerInvertState = controlsAreInverted();
@@ -2656,8 +2880,16 @@ function onPointerMove(e){
   animateWalletToCenter(game.wallet, input.pointerVirtualX);
 }
 function onPointerUp(e){
-  if (isTouchLikeEvent(e) && handleTouchZoneEvent(e)) return;
-  if (!isMatchingPointer(e) && Number.isInteger(input.pointerId)) return;
+  const point = getCanvasPoint(e);
+  if (isTouchLikeEvent(e) && handleTouchZoneEvent(e)) {
+    logPointerTrace('pointerup', e, { point, status: 'touch-zone-delegated' });
+    return;
+  }
+  if (!isMatchingPointer(e) && Number.isInteger(input.pointerId)) {
+    logPointerTrace('pointerup', e, { point, status: 'non-matching-pointer' });
+    return;
+  }
+  logPointerTrace('pointerup', e, { point, status: 'release' });
   const pointerId = typeof e.pointerId === 'number' ? e.pointerId : null;
   resetPointerDragState({ releaseCapture: true, pointerId });
 }
@@ -3138,7 +3370,7 @@ class Game{
     if (window.gsap?.killTweensOf) {
       gsap.killTweensOf("*");
     }
-    enablePlayerInput();
+    enablePlayerInput('Game.reset');
     resetDirectionalInputs();
     if (typeof input !== "undefined") {
       input.dragging = false;
@@ -3156,6 +3388,7 @@ class Game{
     const u=new URLSearchParams(location.search); const seed=u.get('seed'); this.random = seed? (function(seed){ let t=seed>>>0; return function(){ t += 0x6D2B79F5; let r = Math.imul(t ^ t >>> 15, 1 | t); r ^= r + Math.imul(r ^ r >>> 7, 61 | r); return ((r ^ r >>> 14) >>> 0) / 4294967296; };})(parseInt(seed)||1) : Math.random;
     this.state='title';
     this.settingsReturnView = "title";
+    setActiveScreen(showTitle ? 'title' : 'running', { via: 'Game.reset', showTitle });
     if (typeof setSoundEnabled === "function") {
       setSoundEnabled(!!this.settings.sound);
     }
@@ -3209,8 +3442,9 @@ class Game{
     levelEnded = false;
     gameState = "playing";
     spawningEnabled = true;
-    enablePlayerInput();
+    enablePlayerInput('Game.start');
     this.state='playing';
+    setActiveScreen('running', { via: 'Game.start' });
     this.lastTime=performance.now();
     this.ignoreClicksUntil=this.lastTime+500;
     this.ignoreVisibilityUntil=this.lastTime+1000;
@@ -3326,6 +3560,7 @@ class Game{
     }
   }
   renderTitle(){
+    setActiveScreen('title', { via: 'renderTitle' });
     this.settingsReturnView = "title";
     if (currentBackgroundSrc === MENU_BACKGROUND_SRC) {
       setBackgroundImageSrc(MENU_BACKGROUND_SRC);
@@ -3362,6 +3597,10 @@ class Game{
   }
   renderSettings(){
     if (overlay) overlay.classList.remove('overlay-title');
+    const fromViewRaw = this.settingsReturnView || this.state || activeScreen;
+    const fromView = normalizeScreenName(fromViewRaw);
+    console.info(`[overlay] open settings (from ${fromView})${debugFormatContext({ raw: fromViewRaw, screen: activeScreen })}`);
+    setActiveScreen('settings', { via: 'renderSettings', from: fromView, raw: fromViewRaw });
     const s=this.settings;
     const controlMode = (s.controlMode === 'zones') ? 'zones' : 'swipe';
     s.controlMode = controlMode;
@@ -3411,7 +3650,7 @@ class Game{
         };
         updateToggleState(this.settings.controlMode);
         controlButtons.forEach(btn=>{
-          btn.addEventListener('click', (evt)=>{
+          addEvent(btn, 'click', (evt)=>{
             if (evt && typeof evt.preventDefault === 'function') {
               evt.preventDefault();
             }
@@ -3443,7 +3682,12 @@ class Game{
         evt.stopPropagation();
       }
       playSound("click");
-      const returnView = this.settingsReturnView || this.state || "title";
+      const returnViewRaw = this.settingsReturnView || this.state || "title";
+      const targetScreen = normalizeScreenName(returnViewRaw);
+      const nextScreen = targetScreen === 'unknown' ? lastNonSettingsScreen : targetScreen;
+      console.info(`[overlay] close settings (to ${nextScreen})${debugFormatContext({ raw: returnViewRaw })}`);
+      setActiveScreen(nextScreen, { via: 'settings-back', raw: returnViewRaw });
+      const returnView = returnViewRaw;
       this.settingsReturnView = "title";
       overlay.innerHTML='';
 
@@ -3485,6 +3729,7 @@ class Game{
     addEvent(document.getElementById('back'), INPUT.tap, ()=>{ playSound("click"); this.renderTitle(); });
   }
   renderPause(){
+    setActiveScreen('paused', { via: 'renderPause' });
     if (overlay) overlay.classList.remove('overlay-title');
     this.settingsReturnView = "pause";
     overlay.innerHTML = `
@@ -3502,6 +3747,7 @@ class Game{
       playSound("click");
       overlay.innerHTML='';
       hideOverlay(overlay);
+      setActiveScreen('running', { via: 'pause-resume' });
       this.state='playing';
       this.lastTime=performance.now();
       this.loop();
@@ -3530,7 +3776,7 @@ class Game{
     showOverlay(overlay);
 
     const closeRules = () => {
-      overlay.removeEventListener(INPUT.tap, onTap);
+      removeEvent(overlay, INPUT.tap, onTap, { passive: false });
       overlay.classList.remove('overlay-rules');
       overlay.innerHTML = '';
       hideOverlay(overlay);
@@ -3549,9 +3795,13 @@ class Game{
       closeRules();
     };
 
-    overlay.addEventListener(INPUT.tap, onTap, { passive:false });
+    addEvent(overlay, INPUT.tap, onTap, { passive:false });
   }
-  renderGameOver(){ const best=parseInt(localStorage.getItem(LS.bestScore)||'0',10); this.settingsReturnView = "over"; overlay.innerHTML = `
+  renderGameOver(){
+    const best=parseInt(localStorage.getItem(LS.bestScore)||'0',10);
+    this.settingsReturnView = "over";
+    setActiveScreen('gameover', { via: 'renderGameOver' });
+    overlay.innerHTML = `
     <div class="panel">
       <h1>Fin de partie</h1>
       <p>Score: <b>${this.score}</b> | Record local: <b>${best}</b></p>
