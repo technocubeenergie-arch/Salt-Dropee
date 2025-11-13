@@ -2949,9 +2949,10 @@ function handleTouchZoneEvent(evt) {
 }
 function onKeyDown(e){
   const allowTitleStart = (e.code === 'Enter');
-  if (!inputEnabled && !allowTitleStart) return;
+  const canTriggerTitleStart = allowTitleStart && activeScreen === 'title';
+  if (!inputEnabled && !canTriggerTitleStart) return;
 
-  if (!inputEnabled && allowTitleStart){
+  if (!inputEnabled && canTriggerTitleStart){
     const g = Game.instance;
     if (g && g.state==='title'){
       playSound("click");
@@ -2971,7 +2972,7 @@ function onKeyDown(e){
   }
   if (changed) recomputeDirectionalState();
   if (e.code === 'Space') input.dash = true;
-  if (allowTitleStart){
+  if (canTriggerTitleStart){
     const g = Game.instance;
     if (g && g.state==='title'){
       playSound("click");
