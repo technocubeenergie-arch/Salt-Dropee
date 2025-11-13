@@ -178,7 +178,16 @@ class AuthController {
       return { success: false, message: availability.message };
     }
     try {
-      const redirectTo = typeof window !== 'undefined' ? window.location?.origin : undefined;
+      const redirectTo = (() => {
+        if (typeof window === 'undefined') {
+          return undefined;
+        }
+        const { origin, pathname } = window.location || {};
+        if (!origin) {
+          return undefined;
+        }
+        return `${origin}${pathname || ''}`;
+      })();
       const { data, error } = await this.supabase.auth.signUp({
         email,
         password,
