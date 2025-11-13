@@ -183,8 +183,7 @@ class AuthController {
         email,
         password,
         options: {
-          emailRedirectTo: https://technocubeenergie-arch.github.io/Salt-Dropee/
-,
+          emailRedirectTo: redirectTo,
         },
       });
       if (error) {
