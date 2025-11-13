@@ -876,8 +876,9 @@ function updateTitleAccountStatus(){
   let statusText = 'Connexion en cours…';
   if (!state.enabled && !state.loading) {
     statusText = 'Compte indisponible';
-  } else if (state.user && state.user.email) {
-    statusText = `Connecté : ${state.user.email}`;
+  } else if (state.user && (state.user.username || state.user.email)) {
+    const identifier = state.user.username || state.user.email;
+    statusText = `Connecté : ${identifier}`;
   } else if (state.ready) {
     statusText = 'Vous n’êtes pas connecté';
   } else if (state.lastError) {
@@ -935,6 +936,7 @@ function escapeHtml(value){
 }
 
 const EMAIL_VALIDATION_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
+const USERNAME_PATTERN = /^[a-zA-Z0-9_]{3,15}$/;
 
 function isValidEmail(value){
   if (typeof value !== 'string') return false;
@@ -944,6 +946,14 @@ function isValidEmail(value){
 
 function isValidPassword(value){
   return typeof value === 'string' && value.length >= 6;
+}
+
+function isValidUsername(value){
+  if (typeof value !== 'string') {
+    return false;
+  }
+  const trimmed = value.trim();
+  return USERNAME_PATTERN.test(trimmed);
 }
 
 tryConnectAuthFacade();
@@ -3863,10 +3873,15 @@ class Game{
     }
 
     if (state.user) {
-      const safeEmail = escapeHtml(state.user.email || 'Utilisateur connecté');
+      const safeEmail = escapeHtml(state.user.email || '');
+      const safeUsername = escapeHtml(state.user.username || '');
+      const identifier = safeUsername || safeEmail || 'Utilisateur connecté';
+      const secondaryLine = safeUsername && safeEmail && safeUsername !== safeEmail
+        ? `<br><small>${safeEmail}</small>`
+        : '';
       if (body) {
         body.innerHTML = `
-          <p class="account-status-line">Connecté en tant que <strong>${safeEmail}</strong>.</p>
+          <p class="account-status-line">Connecté en tant que <strong>${identifier}</strong>.${secondaryLine}</p>
           <div class="btnrow">
             <button type="button" id="btnAccountSignOut">Se déconnecter</button>
             <button type="button" data-account-close>Fermer</button>
@@ -3901,6 +3916,11 @@ class Game{
           <label>Adresse e-mail
             <input type="email" name="email" required autocomplete="email" inputmode="email" />
           </label>
+          ${mode === 'signup' ? `
+          <label>Pseudo
+            <input type="text" name="username" required minlength="3" maxlength="15" autocomplete="username" spellcheck="false" />
+            <p class="account-field-note account-field-error" data-account-username-error role="status" aria-live="polite" hidden></p>
+          </label>` : ''}
           <label>Mot de passe
             <input type="password" name="password" required minlength="6" autocomplete="${mode === 'signup' ? 'new-password' : 'current-password'}" />
           </label>
@@ -3921,6 +3941,17 @@ class Game{
     const form = overlay.querySelector('[data-account-form]');
     const switchBtn = overlay.querySelector('[data-account-switch]');
     const submitBtn = overlay.querySelector('[data-account-submit]');
+    const usernameErrorEl = overlay.querySelector('[data-account-username-error]');
+    const setUsernameError = (message = '') => {
+      if (!usernameErrorEl) return;
+      usernameErrorEl.textContent = message;
+      if (message) {
+        usernameErrorEl.hidden = false;
+      } else {
+        usernameErrorEl.hidden = true;
+      }
+    };
+    setUsernameError('');
     const formInputs = form ? Array.from(form.querySelectorAll('input')) : [];
     const toggleFormDisabled = (disabled) => {
       formInputs.forEach((input)=>{ input.disabled = disabled; });
@@ -3952,6 +3983,7 @@ class Game{
         const email = String(formData.get('email') || '').trim();
         const password = String(formData.get('password') || '');
         const confirmPassword = mode === 'signup' ? String(formData.get('confirmPassword') || '') : '';
+        const username = mode === 'signup' ? String(formData.get('username') || '').trim() : '';
         if (!isValidEmail(email)) {
           setMessage('Merci de saisir un email valide.', 'error');
           return;
@@ -3960,23 +3992,42 @@ class Game{
           setMessage('Mot de passe trop court (6 caractères minimum).', 'error');
           return;
         }
+        if (mode === 'signup' && !isValidUsername(username)) {
+          setUsernameError('Choisissez un pseudo de 3 à 15 caractères (lettres, chiffres ou _).');
+          setMessage('Pseudo invalide.', 'error');
+          return;
+        }
         if (mode === 'signup' && password !== confirmPassword) {
           setMessage('Les mots de passe ne correspondent pas.', 'error');
           return;
+        }
+        if (mode === 'signup') {
+          setUsernameError('');
         }
         playSound("click");
         toggleFormDisabled(true);
         setMessage(mode === 'signup' ? 'Création du compte…' : 'Connexion…');
         try {
           const action = mode === 'signup' ? service.signUp : service.signIn;
-          const result = await action({ email, password });
+          const payload = mode === 'signup' ? { email, password, username } : { email, password };
+          const result = await action(payload);
           if (!result?.success) {
             setMessage(result?.message || 'Opération impossible.', 'error');
+            if (mode === 'signup') {
+              if (result?.reason === 'USERNAME_TAKEN') {
+                setUsernameError(result?.message || 'Ce pseudo est déjà utilisé.');
+              } else {
+                setUsernameError('');
+              }
+            }
             toggleFormDisabled(false);
             return;
           }
           if (result.requiresEmailConfirmation) {
             setMessage(result.message || 'Vérifiez votre email pour confirmer votre compte.', 'success');
+            if (mode === 'signup') {
+              setUsernameError('');
+            }
             toggleFormDisabled(false);
           } else {
             setMessage('Connexion réussie.', 'success');
