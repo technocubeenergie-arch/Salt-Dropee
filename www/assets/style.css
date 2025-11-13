@@ -308,6 +308,22 @@ body.is-inter-level #hud {
   font-size: 1rem;
 }
 
+.account-field-note {
+  font-size: 0.8rem;
+  line-height: 1.2;
+  opacity: 0.9;
+}
+
+.account-field-error {
+  color: var(--danger);
+  min-height: 0.9rem;
+  margin: -2px 0 0;
+}
+
+.account-field-error[hidden] {
+  display: none;
+}
+
 .account-message {
   min-height: 20px;
   font-size: 0.85rem;

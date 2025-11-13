@@ -78,6 +78,42 @@ class AuthController {
     }
   }
 
+  async fetchUsernameForUser(userId) {
+    if (!this.supabase || !userId) {
+      return null;
+    }
+    try {
+      const { data, error } = await this.supabase
+        .from('profiles')
+        .select('username')
+        .eq('id', userId)
+        .maybeSingle();
+      if (error && error.code !== 'PGRST116') {
+        throw error;
+      }
+      return data?.username || null;
+    } catch (error) {
+      console.warn('[auth] failed to load profile username', error);
+      return null;
+    }
+  }
+
+  async enrichUserWithProfile(user, options = {}) {
+    if (!user) {
+      return null;
+    }
+    const enriched = { ...user };
+    if (options.usernameHint) {
+      enriched.username = options.usernameHint;
+      return enriched;
+    }
+    const username = await this.fetchUsernameForUser(user.id);
+    if (username) {
+      enriched.username = username;
+    }
+    return enriched;
+  }
+
   async init() {
     if (!this.state.enabled) {
       this.notify({ loading: false, ready: false });
@@ -109,9 +145,10 @@ class AuthController {
       await this.hydrateCurrentUser();
       this.notify({ ready: true, loading: false, lastError: null });
 
-      const { data } = this.supabase.auth.onAuthStateChange((_event, session) => {
+      const { data } = this.supabase.auth.onAuthStateChange(async (_event, session) => {
         const user = session?.user || null;
-        this.notify({ user, ready: true, loading: false, lastError: null });
+        const enrichedUser = await this.enrichUserWithProfile(user);
+        this.notify({ user: enrichedUser, ready: true, loading: false, lastError: null });
       });
       this.authSubscription = data;
     } catch (error) {
@@ -135,7 +172,8 @@ class AuthController {
         this.notify({ lastError: error.message });
         return;
       }
-      this.state.user = data?.user || null;
+      const enrichedUser = await this.enrichUserWithProfile(data?.user || null);
+      this.state.user = enrichedUser;
     } catch (error) {
       console.error('[auth] hydrate user failed', error);
     }
@@ -162,20 +200,50 @@ class AuthController {
         return { success: false, message: describeSupabaseError(error) };
       }
       const user = data?.user || null;
-      if (user) {
-        this.notify({ user, lastError: null });
+      const enrichedUser = await this.enrichUserWithProfile(user);
+      if (enrichedUser) {
+        this.notify({ user: enrichedUser, lastError: null });
       }
-      return { success: true, user };
+      return { success: true, user: enrichedUser };
     } catch (error) {
       console.error('[auth] signIn failed', error);
       return { success: false, message: 'Connexion impossible pour le moment.' };
     }
   }
 
-  async signUp({ email, password }) {
+  async createProfileForUser(user, username) {
+    const trimmedUsername = typeof username === 'string' ? username.trim() : '';
+    if (!trimmedUsername) {
+      return { success: false, message: 'Pseudo requis.', reason: 'USERNAME_REQUIRED' };
+    }
+    if (!user?.id) {
+      return { success: false, message: 'Utilisateur invalide.' };
+    }
+    try {
+      const { error } = await this.supabase
+        .from('profiles')
+        .insert([{ id: user.id, username: trimmedUsername }]);
+      if (error) {
+        if (error.code === '23505') {
+          return { success: false, message: 'Ce pseudo est déjà utilisé.', reason: 'USERNAME_TAKEN' };
+        }
+        return { success: false, message: 'Enregistrement du pseudo impossible.' };
+      }
+      return { success: true };
+    } catch (error) {
+      console.error('[auth] createProfileForUser failed', error);
+      return { success: false, message: 'Enregistrement du pseudo impossible.' };
+    }
+  }
+
+  async signUp({ email, password, username }) {
     const availability = this.ensureAuthAvailable();
     if (!availability.available) {
       return { success: false, message: availability.message };
+    }
+    const trimmedUsername = typeof username === 'string' ? username.trim() : '';
+    if (!trimmedUsername) {
+      return { success: false, message: 'Pseudo requis.', reason: 'USERNAME_REQUIRED' };
     }
     try {
       const redirectTo = (() => {
@@ -198,14 +266,21 @@ class AuthController {
       if (error) {
         return { success: false, message: describeSupabaseError(error) };
       }
-      const requiresEmailConfirmation = !data?.session;
       const user = data?.user || null;
-      if (user && !requiresEmailConfirmation) {
-        this.notify({ user, lastError: null });
+      if (user) {
+        const profileResult = await this.createProfileForUser(user, trimmedUsername);
+        if (!profileResult.success) {
+          return { success: false, message: profileResult.message, reason: profileResult.reason };
+        }
+      }
+      const requiresEmailConfirmation = !data?.session;
+      const enrichedUser = await this.enrichUserWithProfile(user, { usernameHint: trimmedUsername });
+      if (enrichedUser && !requiresEmailConfirmation) {
+        this.notify({ user: enrichedUser, lastError: null });
       }
       return {
         success: true,
-        user,
+        user: enrichedUser,
         requiresEmailConfirmation,
         message: requiresEmailConfirmation ? EMAIL_CONFIRMATION_MESSAGE : null,
       };
