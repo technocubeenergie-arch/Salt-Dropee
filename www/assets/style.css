@@ -5,6 +5,7 @@
   --danger: #b13e53;
   --ok: #38b764;
   --ink: #1a1c2c;
+  --stage-fallback: #14121b; /* Fond neutre visible avant le chargement des visuels */
 }
 
 
@@ -13,7 +14,8 @@ html,
 body {
   height: 100%;
   margin: 0;
-  background: var(--bg);
+  background-color: var(--stage-fallback, #0d0f1a);
+  background: var(--bg, var(--stage-fallback, #0d0f1a));
   color: var(--ui);
   font-family: monospace;
   -webkit-user-select: none;
@@ -43,6 +45,7 @@ body * {
   min-height: 100dvh;
   padding: env(safe-area-inset-top) env(safe-area-inset-right)
     env(safe-area-inset-bottom) env(safe-area-inset-left);
+  background-color: var(--stage-fallback, #0d0f1a);
 }
 
 /* Référence de position */
@@ -51,6 +54,7 @@ body * {
   width: fit-content;
   margin: 0 auto;
   display: grid;
+  background-color: var(--stage-fallback, #0d0f1a);
 }
 
 /* Calques de base */
@@ -59,6 +63,7 @@ body * {
   inset: 0;
   width: 100%;
   height: 100%;
+  background-color: var(--stage-fallback, #0d0f1a);
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
