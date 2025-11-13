@@ -17,8 +17,9 @@ const initializationPromise = (async () => {
     const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
     supabaseInstance = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       auth: {
-        persistSession: false,
-        autoRefreshToken: false,
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: false,
       },
     });
     console.info('[data] Supabase client initialised.');
