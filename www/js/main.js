@@ -835,6 +835,119 @@ let ctx;
 let overlay;
 let game;
 
+const DEFAULT_AUTH_FRONT_STATE = Object.freeze({
+  enabled: false,
+  ready: false,
+  loading: true,
+  user: null,
+  lastError: null,
+});
+
+let authState = { ...DEFAULT_AUTH_FRONT_STATE };
+let authFacade = null;
+let authUnsubscribe = null;
+let authBridgeAttempts = 0;
+let authBridgeTimer = null;
+
+function getAuthService(){
+  if (authFacade) return authFacade;
+  if (typeof window !== 'undefined' && window.SaltAuth) {
+    authFacade = window.SaltAuth;
+  }
+  return authFacade;
+}
+
+function getAuthStateSnapshot(){
+  return authState;
+}
+
+function handleAuthStateUpdate(nextState){
+  authState = { ...DEFAULT_AUTH_FRONT_STATE, ...(nextState || {}) };
+  updateTitleAccountStatus();
+  refreshAccountPanelIfVisible();
+}
+
+function updateTitleAccountStatus(){
+  if (typeof document === 'undefined') return;
+  const statusEl = document.getElementById('titleAccountStatus');
+  const buttonEl = document.getElementById('btnAccount');
+  if (!statusEl && !buttonEl) return;
+  const state = getAuthStateSnapshot();
+  let statusText = 'Connexion en cours…';
+  if (!state.enabled && !state.loading) {
+    statusText = 'Compte indisponible';
+  } else if (state.user && state.user.email) {
+    statusText = `Connecté : ${state.user.email}`;
+  } else if (state.ready) {
+    statusText = 'Vous n’êtes pas connecté';
+  } else if (state.lastError) {
+    statusText = 'Service indisponible';
+  }
+  if (statusEl) {
+    statusEl.textContent = statusText;
+  }
+  if (buttonEl) {
+    buttonEl.dataset.accountState = state.user ? 'signed-in' : 'signed-out';
+    buttonEl.disabled = false;
+  }
+}
+
+function refreshAccountPanelIfVisible(){
+  const overlayEl = overlay || (typeof document !== 'undefined' ? document.getElementById('overlay') : null);
+  if (!overlayEl || typeof overlayEl.querySelector !== 'function') return;
+  const isAccountPanel = overlayEl.querySelector('[data-account-panel]');
+  if (!isAccountPanel) return;
+  if (!game || typeof game.renderAccountPanel !== 'function') return;
+  game.renderAccountPanel({ keepMode: true });
+}
+
+function tryConnectAuthFacade(){
+  if (authFacade || typeof window === 'undefined') return;
+  const candidate = window.SaltAuth;
+  if (candidate && typeof candidate.onChange === 'function') {
+    authFacade = candidate;
+    if (typeof candidate.getState === 'function') {
+      try {
+        authState = { ...DEFAULT_AUTH_FRONT_STATE, ...candidate.getState() };
+      } catch (error) {
+        console.warn('[auth] failed to read initial state', error);
+      }
+    }
+    authUnsubscribe = candidate.onChange(handleAuthStateUpdate);
+    updateTitleAccountStatus();
+    return;
+  }
+  if (authBridgeAttempts > 20) {
+    return;
+  }
+  authBridgeAttempts += 1;
+  if (authBridgeTimer) {
+    clearTimeout(authBridgeTimer);
+  }
+  authBridgeTimer = setTimeout(tryConnectAuthFacade, 350);
+}
+
+const HTML_ESCAPE_LOOKUP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+
+function escapeHtml(value){
+  if (value === undefined || value === null) return '';
+  return String(value).replace(/[&<>"']/g, (char)=>HTML_ESCAPE_LOOKUP[char] || char);
+}
+
+const EMAIL_VALIDATION_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
+
+function isValidEmail(value){
+  if (typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  return trimmed.length > 3 && EMAIL_VALIDATION_PATTERN.test(trimmed);
+}
+
+function isValidPassword(value){
+  return typeof value === 'string' && value.length >= 6;
+}
+
+tryConnectAuthFacade();
+
 function enterTitleScreen() {
   setActiveScreen('title', { via: 'enterTitleScreen' });
   if (typeof document !== 'undefined' && document.body) {
@@ -3427,7 +3540,7 @@ class HUD{
 // =====================
 class Game{
   static instance=null;
-  constructor(){ Game.instance=this; this.rulesReturnView = "title"; this.reset({ showTitle:true }); }
+  constructor(){ Game.instance=this; this.rulesReturnView = "title"; this.accountMode = 'signin'; this.reset({ showTitle:true }); }
   reset({showTitle=true}={}){
     window.__saltDroppeeLoopStarted = false;
     setInterLevelUiState(false);
@@ -3640,6 +3753,13 @@ class Game{
     enterTitleScreen();
     overlay.innerHTML = `
       <div class="title-screen" role="presentation">
+        <div class="title-account-bar">
+          <div class="title-account-card">
+            <span id="titleAccountStatus" class="title-account-status">Connexion en cours…</span>
+            <button id="btnAccount" type="button" class="title-account-button">Compte</button>
+          </div>
+        </div>
+        <div class="title-screen-spacer" aria-hidden="true"></div>
         <div class="title-buttons" role="navigation">
           <button id="btnPlay" type="button">Jouer</button>
           <button id="btnRulesTitle" type="button">Règle du jeu</button>
@@ -3648,6 +3768,16 @@ class Game{
         </div>
       </div>`;
     showExclusiveOverlay(overlay);
+    const accountBtn = document.getElementById('btnAccount');
+    if (accountBtn) {
+      addEvent(accountBtn, INPUT.tap, (evt)=>{
+        evt.preventDefault();
+        evt.stopPropagation();
+        playSound("click");
+        this.renderAccountPanel({ keepMode: true });
+      }, { passive:false });
+    }
+    updateTitleAccountStatus();
     addEvent(document.getElementById('btnLB'), INPUT.tap, ()=>{ playSound("click"); this.renderLeaderboard(); });
     addEvent(document.getElementById('btnRulesTitle'), INPUT.tap, (evt)=>{
       evt.preventDefault();
@@ -3662,6 +3792,201 @@ class Game{
       try{ const prev=ctx.imageSmoothingEnabled; ctx.imageSmoothingEnabled=false; const imgs=[walletImage, GoldImg, SilverImg, BronzeImg, DiamondImg, BombImg, Hand.open, Hand.pinch]; for (const im of imgs){ if (im && im.naturalWidth) ctx.drawImage(im,0,0,1,1); } ctx.save(); ctx.shadowColor='rgba(0,0,0,0.15)'; ctx.shadowBlur=4; ctx.shadowOffsetY=1; ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(4,4,2,0,Math.PI*2); ctx.fill(); ctx.restore(); ctx.imageSmoothingEnabled=prev; ctx.clearRect(0,0,8,8); }catch(_){ }
       this.uiStartFromTitle();
     }, { passive:false });
+  }
+  renderAccountPanel(options = {}){
+    const keepMode = options && options.keepMode;
+    if (!overlay) return;
+    const service = getAuthService();
+    if (!keepMode && options && typeof options.mode === 'string') {
+      this.accountMode = options.mode === 'signup' ? 'signup' : 'signin';
+    } else if (!this.accountMode) {
+      this.accountMode = 'signin';
+    }
+    overlay.classList.remove('overlay-title', 'overlay-rules');
+    overlay.innerHTML = `
+      <div class="panel account-panel" role="dialog" aria-modal="true" aria-labelledby="accountTitle" data-account-panel="true">
+        <h1 id="accountTitle">Compte joueur</h1>
+        <div class="account-panel-body" data-account-body></div>
+        <p class="account-message" data-account-message role="status" aria-live="polite"></p>
+      </div>`;
+    showExclusiveOverlay(overlay);
+    setActiveScreen('account', { via: 'renderAccountPanel', mode: this.accountMode });
+    const state = getAuthStateSnapshot();
+    const body = overlay.querySelector('[data-account-body]');
+    const messageEl = overlay.querySelector('[data-account-message]');
+
+    const setMessage = (text = '', variant = 'info') => {
+      if (!messageEl) return;
+      messageEl.textContent = text || '';
+      messageEl.classList.remove('is-error', 'is-success');
+      if (variant === 'error') messageEl.classList.add('is-error');
+      if (variant === 'success') messageEl.classList.add('is-success');
+    };
+
+    const wireCloseButtons = () => {
+      const closeButtons = overlay.querySelectorAll('[data-account-close]');
+      closeButtons.forEach((btn) => {
+        addEvent(btn, INPUT.tap, (evt)=>{
+          evt.preventDefault();
+          evt.stopPropagation();
+          playSound("click");
+          this.renderTitle();
+        }, { passive:false });
+      });
+    };
+
+    if (!state.enabled) {
+      if (body) {
+        body.innerHTML = `
+          <p>Le service de compte est désactivé sur cette version.</p>
+          <div class="btnrow"><button type="button" data-account-close>Retour</button></div>`;
+      }
+      setMessage('Authentification indisponible.', 'error');
+      wireCloseButtons();
+      return;
+    }
+
+    if (!state.ready) {
+      if (body) {
+        body.innerHTML = `
+          <p>Connexion au service d’authentification…</p>
+          <div class="btnrow"><button type="button" data-account-close>Retour</button></div>`;
+      }
+      if (state.lastError) {
+        setMessage(state.lastError, 'error');
+      } else {
+        setMessage('Initialisation en cours…', 'info');
+      }
+      wireCloseButtons();
+      return;
+    }
+
+    if (state.user) {
+      const safeEmail = escapeHtml(state.user.email || 'Utilisateur connecté');
+      if (body) {
+        body.innerHTML = `
+          <p class="account-status-line">Connecté en tant que <strong>${safeEmail}</strong>.</p>
+          <div class="btnrow">
+            <button type="button" id="btnAccountSignOut">Se déconnecter</button>
+            <button type="button" data-account-close>Fermer</button>
+          </div>`;
+      }
+      wireCloseButtons();
+      const signOutBtn = document.getElementById('btnAccountSignOut');
+      if (signOutBtn) {
+        addEvent(signOutBtn, INPUT.tap, async (evt)=>{
+          evt.preventDefault();
+          evt.stopPropagation();
+          playSound("click");
+          if (!service || typeof service.signOut !== 'function') {
+            setMessage('Service indisponible.', 'error');
+            return;
+          }
+          const result = await service.signOut();
+          if (!result?.success) {
+            setMessage(result?.message || 'Déconnexion impossible.', 'error');
+          } else {
+            setMessage('Déconnexion en cours…');
+          }
+        }, { passive:false });
+      }
+      return;
+    }
+
+    const mode = this.accountMode === 'signup' ? 'signup' : 'signin';
+    if (body) {
+      body.innerHTML = `
+        <form class="account-form" data-account-form novalidate>
+          <label>Adresse e-mail
+            <input type="email" name="email" required autocomplete="email" inputmode="email" />
+          </label>
+          <label>Mot de passe
+            <input type="password" name="password" required minlength="6" autocomplete="${mode === 'signup' ? 'new-password' : 'current-password'}" />
+          </label>
+          ${mode === 'signup' ? `
+          <label>Confirmer le mot de passe
+            <input type="password" name="confirmPassword" required minlength="6" autocomplete="new-password" />
+          </label>` : ''}
+          <div class="btnrow account-button-row">
+            <button type="submit" data-account-submit>${mode === 'signup' ? 'Créer mon compte' : 'Se connecter'}</button>
+            <button type="button" data-account-close>Retour</button>
+          </div>
+          <button type="button" class="account-switch" data-account-switch>
+            ${mode === 'signup' ? 'Déjà un compte ? Se connecter' : 'Pas encore de compte ? S’inscrire'}
+          </button>
+        </form>`;
+    }
+    wireCloseButtons();
+    const form = overlay.querySelector('[data-account-form]');
+    const switchBtn = overlay.querySelector('[data-account-switch]');
+    const submitBtn = overlay.querySelector('[data-account-submit]');
+    const formInputs = form ? Array.from(form.querySelectorAll('input')) : [];
+    const toggleFormDisabled = (disabled) => {
+      formInputs.forEach((input)=>{ input.disabled = disabled; });
+      if (submitBtn) submitBtn.disabled = disabled;
+      if (switchBtn) switchBtn.disabled = disabled;
+    };
+
+    setMessage('Connectez-vous pour sauvegarder vos progrès.', 'info');
+
+    if (switchBtn) {
+      addEvent(switchBtn, INPUT.tap, (evt)=>{
+        evt.preventDefault();
+        evt.stopPropagation();
+        playSound("click");
+        this.accountMode = mode === 'signup' ? 'signin' : 'signup';
+        this.renderAccountPanel({ keepMode: true });
+      }, { passive:false });
+    }
+
+    if (form) {
+      addEvent(form, 'submit', async (evt)=>{
+        evt.preventDefault();
+        evt.stopPropagation();
+        if (!service) {
+          setMessage('Service indisponible.', 'error');
+          return;
+        }
+        const formData = new FormData(form);
+        const email = String(formData.get('email') || '').trim();
+        const password = String(formData.get('password') || '');
+        const confirmPassword = mode === 'signup' ? String(formData.get('confirmPassword') || '') : '';
+        if (!isValidEmail(email)) {
+          setMessage('Merci de saisir un email valide.', 'error');
+          return;
+        }
+        if (!isValidPassword(password)) {
+          setMessage('Mot de passe trop court (6 caractères minimum).', 'error');
+          return;
+        }
+        if (mode === 'signup' && password !== confirmPassword) {
+          setMessage('Les mots de passe ne correspondent pas.', 'error');
+          return;
+        }
+        playSound("click");
+        toggleFormDisabled(true);
+        setMessage(mode === 'signup' ? 'Création du compte…' : 'Connexion…');
+        try {
+          const action = mode === 'signup' ? service.signUp : service.signIn;
+          const result = await action({ email, password });
+          if (!result?.success) {
+            setMessage(result?.message || 'Opération impossible.', 'error');
+            toggleFormDisabled(false);
+            return;
+          }
+          if (result.requiresEmailConfirmation) {
+            setMessage(result.message || 'Vérifiez votre email pour confirmer votre compte.', 'success');
+            toggleFormDisabled(false);
+          } else {
+            setMessage('Connexion réussie.', 'success');
+          }
+        } catch (error) {
+          console.error('[auth] form submit failed', error);
+          setMessage('Une erreur inattendue est survenue.', 'error');
+          toggleFormDisabled(false);
+        }
+      }, { passive:false });
+    }
   }
   renderSettings(){
     if (overlay) overlay.classList.remove('overlay-title');
