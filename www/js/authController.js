@@ -14,10 +14,30 @@ const DEFAULT_STATE = Object.freeze({
 });
 
 const EMAIL_CONFIRMATION_MESSAGE = 'Vérifiez votre boîte mail pour confirmer votre inscription.';
+const USERNAME_CONFLICT_MESSAGE = 'Ce pseudo est déjà utilisé. Merci d’en choisir un autre.';
+
+function isUsernameConflictError(error) {
+  if (!error) {
+    return false;
+  }
+  const code = error.code ? String(error.code).toUpperCase() : '';
+  if (code === '23505' || code === '409') {
+    const message = typeof error.message === 'string' ? error.message.toLowerCase() : '';
+    return message.includes('username') || message.includes('players_username_key');
+  }
+  const lower = typeof error.message === 'string' ? error.message.toLowerCase() : '';
+  return lower.includes('username already')
+    || lower.includes('username exist')
+    || lower.includes('duplicate key value')
+    || lower.includes('pseudo déjà pris');
+}
 
 function describeSupabaseError(error) {
   if (!error) {
     return 'Une erreur inattendue est survenue.';
+  }
+  if (isUsernameConflictError(error)) {
+    return USERNAME_CONFLICT_MESSAGE;
   }
   const message = typeof error.message === 'string' ? error.message : '';
   const lower = message.toLowerCase();
@@ -84,16 +104,16 @@ class AuthController {
     }
     try {
       const { data, error } = await this.supabase
-        .from('profiles')
+        .from('players')
         .select('username')
-        .eq('id', userId)
+        .eq('auth_user_id', userId)
         .maybeSingle();
       if (error && error.code !== 'PGRST116') {
         throw error;
       }
       return data?.username || null;
     } catch (error) {
-      console.warn('[auth] failed to load profile username', error);
+      console.warn('[auth] failed to load player username', { error, userId });
       return null;
     }
   }
@@ -240,7 +260,13 @@ class AuthController {
         },
       });
       if (error) {
-        return { success: false, message: describeSupabaseError(error) };
+        console.error('[auth] signUp failed (supabase.auth.signUp)', { error });
+        const usernameTaken = isUsernameConflictError(error);
+        return {
+          success: false,
+          message: usernameTaken ? USERNAME_CONFLICT_MESSAGE : describeSupabaseError(error),
+          reason: usernameTaken ? 'USERNAME_TAKEN' : undefined,
+        };
       }
       const user = data?.user || null;
       const requiresEmailConfirmation = !data?.session;
@@ -255,7 +281,7 @@ class AuthController {
         message: requiresEmailConfirmation ? EMAIL_CONFIRMATION_MESSAGE : null,
       };
     } catch (error) {
-      console.error('[auth] signUp failed', error?.message, error);
+      console.error('[auth] signUp unexpected failure', { error });
       return { success: false, message: 'Création de compte impossible pour le moment.' };
     }
   }
