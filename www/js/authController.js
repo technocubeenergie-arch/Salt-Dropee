@@ -16,20 +16,52 @@ const DEFAULT_STATE = Object.freeze({
 const EMAIL_CONFIRMATION_MESSAGE = 'Vérifiez votre boîte mail pour confirmer votre inscription.';
 const USERNAME_CONFLICT_MESSAGE = 'Ce pseudo est déjà utilisé. Merci d’en choisir un autre.';
 
+function collectErrorTexts(error) {
+  if (!error) {
+    return [];
+  }
+
+  const texts = [];
+  const pushIfString = (value) => {
+    if (typeof value === 'string' && value.trim()) {
+      texts.push(value.toLowerCase());
+    }
+  };
+
+  pushIfString(error.message);
+  pushIfString(error.code);
+  pushIfString(error.details);
+  pushIfString(error.hint);
+
+  const cause = error.cause;
+  if (cause) {
+    if (typeof cause === 'string') {
+      pushIfString(cause);
+    } else if (typeof cause === 'object') {
+      texts.push(...collectErrorTexts(cause));
+    }
+  }
+
+  return texts;
+}
+
 function isUsernameConflictError(error) {
   if (!error) {
     return false;
   }
   const code = error.code ? String(error.code).toUpperCase() : '';
   if (code === '23505' || code === '409') {
-    const message = typeof error.message === 'string' ? error.message.toLowerCase() : '';
-    return message.includes('username') || message.includes('players_username_key');
+    const texts = collectErrorTexts(error);
+    return texts.some((text) => text.includes('username') || text.includes('players_username_key'));
   }
-  const lower = typeof error.message === 'string' ? error.message.toLowerCase() : '';
-  return lower.includes('username already')
-    || lower.includes('username exist')
-    || lower.includes('duplicate key value')
-    || lower.includes('pseudo déjà pris');
+  const texts = collectErrorTexts(error);
+  return texts.some((text) =>
+    text.includes('username already')
+    || text.includes('username exist')
+    || text.includes('duplicate key value')
+    || text.includes('pseudo déjà pris')
+    || text.includes('players_username_key')
+  );
 }
 
 function describeSupabaseError(error) {
@@ -39,8 +71,9 @@ function describeSupabaseError(error) {
   if (isUsernameConflictError(error)) {
     return USERNAME_CONFLICT_MESSAGE;
   }
+  const texts = collectErrorTexts(error);
   const message = typeof error.message === 'string' ? error.message : '';
-  const lower = message.toLowerCase();
+  const lower = (texts[0] || message || '').toLowerCase();
   if (lower.includes('invalid login credentials')) {
     return 'Email ou mot de passe incorrect.';
   }
@@ -56,7 +89,10 @@ function describeSupabaseError(error) {
   if (lower.includes('too many requests')) {
     return 'Trop de tentatives. Réessayez dans quelques instants.';
   }
-  return message || 'Opération impossible pour le moment.';
+  if (lower.includes('row-level security policy')) {
+    return 'Accès refusé. Merci de vous reconnecter.';
+  }
+  return message || texts.find(Boolean) || 'Opération impossible pour le moment.';
 }
 
 class AuthController {
@@ -231,6 +267,27 @@ class AuthController {
     }
   }
 
+  async checkUsernameAvailability(username) {
+    if (!this.supabase || !username) {
+      return { available: true };
+    }
+    try {
+      const { data, error } = await this.supabase
+        .from('players')
+        .select('id')
+        .eq('username', username)
+        .limit(1);
+      if (error) {
+        throw error;
+      }
+      const taken = Array.isArray(data) && data.length > 0;
+      return { available: !taken };
+    } catch (error) {
+      console.warn('[auth] username availability check failed', { error, username });
+      return { available: true, skipped: true };
+    }
+  }
+
   async signUp({ email, password, username }) {
     const availability = this.ensureAuthAvailable();
     if (!availability.available) {
@@ -239,6 +296,10 @@ class AuthController {
     const trimmedUsername = typeof username === 'string' ? username.trim() : '';
     if (!trimmedUsername) {
       return { success: false, message: 'Pseudo requis.', reason: 'USERNAME_REQUIRED' };
+    }
+    const usernameAvailability = await this.checkUsernameAvailability(trimmedUsername);
+    if (!usernameAvailability.available) {
+      return { success: false, message: USERNAME_CONFLICT_MESSAGE, reason: 'USERNAME_TAKEN' };
     }
     try {
       const redirectTo = (() => {
@@ -260,7 +321,10 @@ class AuthController {
         },
       });
       if (error) {
-        console.error('[auth] signUp failed (supabase.auth.signUp)', { error });
+        console.error('[auth] signUp failed (supabase.auth.signUp)', error);
+        if (error?.cause) {
+          console.error('[auth] signUp error cause (supabase.auth.signUp)', error.cause);
+        }
         const usernameTaken = isUsernameConflictError(error);
         return {
           success: false,
@@ -281,7 +345,7 @@ class AuthController {
         message: requiresEmailConfirmation ? EMAIL_CONFIRMATION_MESSAGE : null,
       };
     } catch (error) {
-      console.error('[auth] signUp unexpected failure', { error });
+      console.error('[auth] signUp unexpected failure', error);
       return { success: false, message: 'Création de compte impossible pour le moment.' };
     }
   }
