@@ -140,70 +140,32 @@ async function registerPlayer(username) {
     };
   }
 
+  let supabaseAvailable = false;
   try {
-    if (await isSupabaseReady()) {
-      const supabase = await getSupabaseClient();
-      const { data: existingProfile, error: selectError } = await supabase
-        .from('profiles')
-        .select('id, username')
-        .eq('username', trimmedUsername)
-        .maybeSingle();
-
-      if (selectError && selectError.code !== 'PGRST116') {
-        throw selectError;
-      }
-
-      if (existingProfile) {
-        return {
-          success: false,
-          error: 'Pseudo déjà pris',
-          reason: 'USERNAME_TAKEN',
-        };
-      }
-
-      const { data, error } = await supabase
-        .from('profiles')
-        .insert([{ username: trimmedUsername }])
-        .select('id, username')
-        .single();
-
-      if (error) {
-        if (error.code === '23505') {
-          return {
-            success: false,
-            error: 'Pseudo déjà pris',
-            reason: 'USERNAME_TAKEN',
-          };
-        }
-        throw error;
-      }
-
-      const profile = {
-        id: data.id,
-        username: data.username || trimmedUsername,
-        source: 'supabase',
-        createdAt: new Date().toISOString(),
-      };
-      storeProfile(profile);
-      logInfo(`Player registered with Supabase (id=${profile.id}).`);
-      return {
-        success: true,
-        profileId: profile.id,
-        username: profile.username,
-        source: 'supabase',
-      };
+    supabaseAvailable = await isSupabaseReady();
+    if (supabaseAvailable) {
+      logInfo(
+        'registerPlayer called while Supabase is ready – player rows are managed via auth triggers. Creating local shadow profile.'
+      );
     }
   } catch (error) {
     logError('registerPlayer failed, switching to local fallback.', error);
   }
 
   const profile = ensureLocalProfile(trimmedUsername);
+  const fallback = supabaseAvailable
+    ? 'supabase-managed'
+    : !isSupabaseEnabledInConfig()
+      ? 'disabled'
+      : getSupabaseInitializationError()
+        ? 'init-error'
+        : 'runtime-error';
   return {
     success: true,
     profileId: profile.id,
     username: profile.username,
     source: 'local',
-    fallback: !isSupabaseEnabledInConfig() ? 'disabled' : getSupabaseInitializationError() ? 'init-error' : 'runtime-error',
+    fallback,
   };
 }
 
@@ -404,7 +366,7 @@ async function ping() {
     if (await isSupabaseReady()) {
       const supabase = await getSupabaseClient();
       const { data, error } = await supabase
-        .from('profiles')
+        .from('players')
         .select('id')
         .limit(1);
 
