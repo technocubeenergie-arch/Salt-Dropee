@@ -211,31 +211,6 @@ class AuthController {
     }
   }
 
-  async createProfileForUser(user, username) {
-    const trimmedUsername = typeof username === 'string' ? username.trim() : '';
-    if (!trimmedUsername) {
-      return { success: false, message: 'Pseudo requis.', reason: 'USERNAME_REQUIRED' };
-    }
-    if (!user?.id) {
-      return { success: false, message: 'Utilisateur invalide.' };
-    }
-    try {
-      const { error } = await this.supabase
-        .from('profiles')
-        .insert([{ id: user.id, username: trimmedUsername }]);
-      if (error) {
-        if (error.code === '23505') {
-          return { success: false, message: 'Ce pseudo est déjà utilisé.', reason: 'USERNAME_TAKEN' };
-        }
-        return { success: false, message: 'Enregistrement du pseudo impossible.' };
-      }
-      return { success: true };
-    } catch (error) {
-      console.error('[auth] createProfileForUser failed', error);
-      return { success: false, message: 'Enregistrement du pseudo impossible.' };
-    }
-  }
-
   async signUp({ email, password, username }) {
     const availability = this.ensureAuthAvailable();
     if (!availability.available) {
@@ -261,18 +236,13 @@ class AuthController {
         password,
         options: {
           emailRedirectTo: redirectTo,
+          data: { username: trimmedUsername },
         },
       });
       if (error) {
         return { success: false, message: describeSupabaseError(error) };
       }
       const user = data?.user || null;
-      if (user) {
-        const profileResult = await this.createProfileForUser(user, trimmedUsername);
-        if (!profileResult.success) {
-          return { success: false, message: profileResult.message, reason: profileResult.reason };
-        }
-      }
       const requiresEmailConfirmation = !data?.session;
       const enrichedUser = await this.enrichUserWithProfile(user, { usernameHint: trimmedUsername });
       if (enrichedUser && !requiresEmailConfirmation) {
@@ -285,7 +255,7 @@ class AuthController {
         message: requiresEmailConfirmation ? EMAIL_CONFIRMATION_MESSAGE : null,
       };
     } catch (error) {
-      console.error('[auth] signUp failed', error);
+      console.error('[auth] signUp failed', error?.message, error);
       return { success: false, message: 'Création de compte impossible pour le moment.' };
     }
   }
