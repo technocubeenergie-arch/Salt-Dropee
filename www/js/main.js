@@ -840,6 +840,7 @@ const DEFAULT_AUTH_FRONT_STATE = Object.freeze({
   ready: false,
   loading: true,
   user: null,
+  profile: null,
   lastError: null,
 });
 
@@ -873,14 +874,14 @@ function updateTitleAccountStatus(){
   const buttonEl = document.getElementById('btnAccount');
   if (!statusEl && !buttonEl) return;
   const state = getAuthStateSnapshot();
+  const username = state?.profile?.username || state?.user?.username || '';
   let statusText = 'Connexion en cours…';
   if (!state.enabled && !state.loading) {
     statusText = 'Compte indisponible';
-  } else if (state.user && (state.user.username || state.user.email)) {
-    const identifier = state.user.username || state.user.email;
-    statusText = `Connecté : ${identifier}`;
+  } else if (state.user) {
+    statusText = username ? `Connecté : ${username}` : 'Connecté';
   } else if (state.ready) {
-    statusText = 'Vous n’êtes pas connecté';
+    statusText = 'Non connecté';
   } else if (state.lastError) {
     statusText = 'Service indisponible';
   }
@@ -3875,13 +3876,18 @@ class Game{
     if (state.user) {
       const safeEmail = escapeHtml(state.user.email || '');
       const safeUsername = escapeHtml(state.user.username || '');
-      const identifier = safeUsername || safeEmail || 'Utilisateur connecté';
-      const secondaryLine = safeUsername && safeEmail && safeUsername !== safeEmail
+      const safeProfileUsername = escapeHtml(state.profile?.username || '');
+      const identifier = safeProfileUsername || safeUsername || safeEmail || 'Utilisateur connecté';
+      const pseudoLine = safeProfileUsername || safeUsername
+        ? `<p class="account-field-note account-field-readonly">Pseudo actuel : <strong>${safeProfileUsername || safeUsername}</strong></p>`
+        : '<p class="account-field-note account-field-readonly">Pseudo actuel non renseigné.</p>';
+      const secondaryLine = safeEmail && identifier !== safeEmail
         ? `<br><small>${safeEmail}</small>`
         : '';
       if (body) {
         body.innerHTML = `
           <p class="account-status-line">Connecté en tant que <strong>${identifier}</strong>.${secondaryLine}</p>
+          ${pseudoLine}
           <div class="btnrow">
             <button type="button" id="btnAccountSignOut">Se déconnecter</button>
             <button type="button" data-account-close>Fermer</button>

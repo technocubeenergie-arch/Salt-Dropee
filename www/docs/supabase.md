@@ -19,6 +19,8 @@ await api.getLeaderboard(1);
 
 Chaque fonction renvoie un objet `{ success, ... }` avec des informations sur la source utilisée (`supabase` ou `local`). En mode dégradé, les données sont conservées via `localStorage`.
 
+L'authentification charge désormais le profil joueur (`public.players`) au démarrage et après chaque connexion. L'objet exposé par `window.SaltAuth.getState()` inclut `profile` (id, authUserId, username, etc.) pour afficher le pseudo et préparer l'affichage du leaderboard.
+
 ## Provisioning côté Supabase
 
 Le client JavaScript se base sur le schéma SQL fourni (tables `players`, `progress`, `scores`, etc.) avec RLS activé. Pour relier un compte Supabase Auth à un profil joueur et stocker le pseudo unique, créez un trigger `AFTER INSERT` sur `auth.users` qui insère la ligne correspondante dans `public.players`. Exemple minimal :
