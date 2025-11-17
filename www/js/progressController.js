@@ -109,10 +109,13 @@ async function saveProgress(snapshot = {}) {
 
     const { error } = await supabase
       .from('progress')
-      .insert(payload);
+      .upsert(payload, { onConflict: 'player_id' });
 
     if (error) {
-      console.warn('[progress] save failed', { error, payload });
+      console.warn('[progress] save failed', {
+        error: { message: error.message, code: error.code, details: error.details },
+        payload,
+      });
       return null;
     }
 
