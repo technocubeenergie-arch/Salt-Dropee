@@ -10,6 +10,7 @@ const DEFAULT_STATE = Object.freeze({
   ready: false,
   loading: true,
   user: null,
+  profile: null,
   lastError: null,
 });
 
@@ -134,22 +135,32 @@ class AuthController {
     }
   }
 
-  async fetchUsernameForUser(userId) {
+  async loadProfileForUser(userId) {
     if (!this.supabase || !userId) {
       return null;
     }
     try {
       const { data, error } = await this.supabase
         .from('players')
-        .select('username')
+        .select('id, auth_user_id, username, display_name, device_id, referral_code')
         .eq('auth_user_id', userId)
         .maybeSingle();
       if (error && error.code !== 'PGRST116') {
         throw error;
       }
-      return data?.username || null;
+      if (!data) {
+        return null;
+      }
+      return {
+        id: data.id || null,
+        authUserId: data.auth_user_id || userId,
+        username: data.username || null,
+        displayName: data.display_name || null,
+        deviceId: data.device_id || null,
+        referralCode: data.referral_code || null,
+      };
     } catch (error) {
-      console.warn('[auth] failed to load player username', { error, userId });
+      console.error('[auth] loadProfile failed', error);
       return null;
     }
   }
@@ -159,13 +170,18 @@ class AuthController {
       return null;
     }
     const enriched = { ...user };
+    if (options.profile && options.profile.username && !enriched.username) {
+      enriched.username = options.profile.username;
+    }
     if (options.usernameHint) {
       enriched.username = options.usernameHint;
       return enriched;
     }
-    const username = await this.fetchUsernameForUser(user.id);
-    if (username) {
-      enriched.username = username;
+    if (!enriched.username) {
+      const profile = await this.loadProfileForUser(user.id);
+      if (profile?.username) {
+        enriched.username = profile.username;
+      }
     }
     return enriched;
   }
@@ -203,8 +219,9 @@ class AuthController {
 
       const { data } = this.supabase.auth.onAuthStateChange(async (_event, session) => {
         const user = session?.user || null;
-        const enrichedUser = await this.enrichUserWithProfile(user);
-        this.notify({ user: enrichedUser, ready: true, loading: false, lastError: null });
+        const profile = user ? await this.loadProfileForUser(user.id) : null;
+        const enrichedUser = await this.enrichUserWithProfile(user, { profile });
+        this.notify({ user: enrichedUser, profile, ready: true, loading: false, lastError: null });
       });
       this.authSubscription = data;
     } catch (error) {
@@ -228,8 +245,11 @@ class AuthController {
         this.notify({ lastError: error.message });
         return;
       }
-      const enrichedUser = await this.enrichUserWithProfile(data?.user || null);
+      const user = data?.user || null;
+      const profile = user ? await this.loadProfileForUser(user.id) : null;
+      const enrichedUser = await this.enrichUserWithProfile(user, { profile });
       this.state.user = enrichedUser;
+      this.state.profile = profile;
     } catch (error) {
       console.error('[auth] hydrate user failed', error);
     }
@@ -256,9 +276,10 @@ class AuthController {
         return { success: false, message: describeSupabaseError(error) };
       }
       const user = data?.user || null;
-      const enrichedUser = await this.enrichUserWithProfile(user);
+      const profile = user ? await this.loadProfileForUser(user.id) : null;
+      const enrichedUser = await this.enrichUserWithProfile(user, { profile });
       if (enrichedUser) {
-        this.notify({ user: enrichedUser, lastError: null });
+        this.notify({ user: enrichedUser, profile, lastError: null });
       }
       return { success: true, user: enrichedUser };
     } catch (error) {
@@ -334,9 +355,10 @@ class AuthController {
       }
       const user = data?.user || null;
       const requiresEmailConfirmation = !data?.session;
-      const enrichedUser = await this.enrichUserWithProfile(user, { usernameHint: trimmedUsername });
+      const profile = user ? await this.loadProfileForUser(user.id) : null;
+      const enrichedUser = await this.enrichUserWithProfile(user, { profile, usernameHint: trimmedUsername });
       if (enrichedUser && !requiresEmailConfirmation) {
-        this.notify({ user: enrichedUser, lastError: null });
+        this.notify({ user: enrichedUser, profile, lastError: null });
       }
       return {
         success: true,
@@ -360,7 +382,7 @@ class AuthController {
       if (error) {
         return { success: false, message: describeSupabaseError(error) };
       }
-      this.notify({ user: null, lastError: null });
+      this.notify({ user: null, profile: null, lastError: null });
       return { success: true };
     } catch (error) {
       console.error('[auth] signOut failed', error);

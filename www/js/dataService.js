@@ -259,8 +259,8 @@ async function loadProgress() {
   };
 }
 
-async function submitScore(level, score) {
-  const profile = getStoredProfile();
+async function submitScore(level, score, options = {}) {
+  const profile = options?.profile || getStoredProfile();
   if (!profile) {
     return {
       success: false,
@@ -274,6 +274,7 @@ async function submitScore(level, score) {
     score: Number(score) || 0,
     profileId: profile.id,
     username: profile.username,
+    authUserId: profile.authUserId || profile.auth_user_id || null,
     createdAt: new Date().toISOString(),
   };
 
@@ -291,6 +292,7 @@ async function submitScore(level, score) {
       }
 
       logInfo(`Score submitted to Supabase for profile ${profile.id}.`);
+      // TODO leaderboard: utiliser players.username comme nom affiché dans le classement
       return {
         success: true,
         source: 'supabase',
