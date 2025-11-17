@@ -757,6 +757,8 @@ async function applyProgressSnapshot(snapshot){
   if (typeof setHUDLives === 'function') setHUDLives(restoredLives);
   if (typeof setHUDTime === 'function') setHUDTime(restoredTime);
 
+  hasAppliedProgressSnapshot = true;
+
   console.info('[progress] applied saved snapshot', debugFormatContext({ levelNumber, restoredScore, restoredLives, restoredTime }));
 }
 
@@ -778,6 +780,7 @@ async function syncProgressFromAuthState(state){
   if (!service || !playerId || !state?.user) {
     pendingProgressSnapshot = null;
     lastProgressPlayerId = null;
+    latestProgressSyncPromise = Promise.resolve();
     return;
   }
 
@@ -787,12 +790,42 @@ async function syncProgressFromAuthState(state){
 
   lastProgressPlayerId = playerId;
 
-  try {
-    const snapshot = await service.loadProgress();
-    pendingProgressSnapshot = snapshot;
-    await applyPendingProgressIfPossible();
-  } catch (error) {
-    console.warn('[progress] failed to load progression', error);
+  latestProgressSyncPromise = (async () => {
+    try {
+      const snapshot = await service.loadProgress();
+      pendingProgressSnapshot = snapshot;
+      await applyPendingProgressIfPossible();
+    } catch (error) {
+      console.warn('[progress] failed to load progression', error);
+    }
+  })();
+
+  await latestProgressSyncPromise;
+}
+
+async function waitForInitialProgressHydration(){
+  // Wait for any in-flight Supabase progress retrieval triggered by auth hydration
+  // before loading the initial level, so saved snapshots take priority over
+  // default level initialization.
+  let lastSeenPromise = null;
+  while (true) {
+    const current = latestProgressSyncPromise || Promise.resolve();
+    if (current === lastSeenPromise) break;
+    lastSeenPromise = current;
+    try {
+      await current;
+    } catch (error) {
+      console.warn('[progress] sync wait failed', error);
+    }
+    if (current === latestProgressSyncPromise) break;
+  }
+
+  if (progressHydrationInFlight) {
+    try {
+      await progressHydrationInFlight;
+    } catch (error) {
+      console.warn('[progress] hydration wait failed', error);
+    }
   }
 }
 
@@ -1002,6 +1035,8 @@ let authBridgeTimer = null;
 let pendingProgressSnapshot = null;
 let lastProgressPlayerId = null;
 let progressHydrationInFlight = null;
+let latestProgressSyncPromise = Promise.resolve();
+let hasAppliedProgressSnapshot = false;
 
 function getAuthService(){
   if (authFacade) return authFacade;
@@ -4510,7 +4545,7 @@ function getCanvasPoint(evt){
   return projectClientToCanvas(point.clientX, point.clientY);
 }
 
-function startGame(){
+async function startGame(){
   if (window.__saltDroppeeStarted) return;
 
   canvas = document.getElementById('gameCanvas');
@@ -4538,19 +4573,24 @@ function startGame(){
   game = new Game();
   if (game && game.wallet) targetX = game.wallet.x + game.wallet.w / 2;
 
-  // Synchronisation de la progression Supabase dès que l'instance de jeu existe.
-  applyPendingProgressIfPossible();
+  // Synchronisation de la progression Supabase avant le tout premier chargement de niveau
+  // pour éviter de lancer startLevel(0) avant d'avoir récupéré un snapshot éventuel.
+  await waitForInitialProgressHydration();
+  await applyPendingProgressIfPossible();
 
-  startLevel1().then(() => {
-    if (!game) return;
-    if (typeof game.renderTitle === 'function' && game.state === 'title') {
-      game.renderTitle();
-    } else if (typeof game.render === 'function') {
-      game.render();
-    }
-    // Application éventuelle d'une progression Supabase après le premier chargement.
-    applyPendingProgressIfPossible();
-  });
+  if (!hasAppliedProgressSnapshot) {
+    await startLevel1();
+  }
+
+  if (!game) return;
+  if (typeof game.renderTitle === 'function' && game.state === 'title') {
+    game.renderTitle();
+  } else if (typeof game.render === 'function') {
+    game.render();
+  }
+
+  // Application tardive d'une progression Supabase si elle s'est résolue pendant le rendu initial.
+  await applyPendingProgressIfPossible();
 
   addEvent(document, 'visibilitychange', ()=>{ if (document.hidden && game.state==='playing'){ const now = performance.now(); if (game.ignoreVisibilityUntil && now < game.ignoreVisibilityUntil) return; resetPointerDragState({ releaseCapture: true }); game.state='paused'; game.renderPause(); } });
 
