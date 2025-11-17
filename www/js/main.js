@@ -854,6 +854,45 @@ async function persistProgressSnapshot(reason = 'unspecified'){
   }
 }
 
+function computeLegendDurationSeconds(){
+  const timeLimit = Number.isFinite(levelState?.timeLimit) ? levelState.timeLimit : null;
+  if (timeLimit === null || !Number.isFinite(timeLeft)) {
+    return null;
+  }
+  return Math.max(0, Math.round(timeLimit - timeLeft));
+}
+
+async function submitLegendScoreIfNeeded(reason = 'end'){
+  if (!isLegendLevel()) return;
+
+  const scoreService = getScoreService();
+  if (!scoreService || typeof scoreService.submitLegendScore !== 'function') {
+    return;
+  }
+
+  if (legendScoreSubmissionAttempted) {
+    return;
+  }
+
+  legendScoreSubmissionAttempted = true;
+
+  const numericScore = Number.isFinite(score) ? score : Number(score) || 0;
+  const durationSeconds = computeLegendDurationSeconds();
+  const authState = getAuthStateSnapshot?.() || {};
+  const playerId = authState?.profile?.id || null;
+
+  try {
+    await scoreService.submitLegendScore({
+      playerId,
+      score: numericScore,
+      durationSeconds,
+      reason,
+    });
+  } catch (error) {
+    console.warn('[leaderboard] unexpected legend score submission failure', error);
+  }
+}
+
 function updateComboChipVisual(color){
   const chip = document.getElementById('hudComboChip');
   if (chip){
@@ -1053,6 +1092,13 @@ function getProgressService(){
   return null;
 }
 
+function getScoreService(){
+  if (typeof window !== 'undefined' && window.ScoreController) {
+    return window.ScoreController;
+  }
+  return null;
+}
+
 function getAuthStateSnapshot(){
   return authState;
 }
@@ -1188,6 +1234,7 @@ let levelState = { targetScore: 0, timeLimit: 0, lives: 0 };
 // --- Game state & guards ---
 let gameState = "playing";  // "playing" | "paused" | "inter"
 let levelEnded = false;
+let legendScoreSubmissionAttempted = false;
 
 function canEndLevel(){
   return !levelEnded && gameState === "playing";
@@ -1330,6 +1377,8 @@ async function loadLevel(index, options = {}) {
     : (Number.isFinite(L.targetScore) ? L.targetScore : 0);
   levelState.timeLimit   = L.timeLimit;
   levelState.lives       = L.lives;
+
+  legendScoreSubmissionAttempted = false;
 
   resetIntraLevelSpeedRamp(levelState.timeLimit);
 
@@ -2920,6 +2969,7 @@ function showLegendResultScreen(reason = "time"){
 
   // Sauvegarde également l'échec / réussite du mode Légende côté Supabase.
   persistProgressSnapshot(`legend-${reason || 'end'}`);
+  submitLegendScoreIfNeeded(reason || 'end');
 
   if (typeof Game !== "undefined" && Game.instance) {
     Game.instance.settingsReturnView = "legend";
@@ -2974,6 +3024,7 @@ function bindInterLevelButtons(){
       }
 
       try {
+        submitLegendScoreIfNeeded('save-quit');
         await persistProgressSnapshot('save-quit');
       } catch (error) {
         console.warn('[progress] manual save failed', error);
@@ -4388,21 +4439,111 @@ class Game{
   }
   renderLeaderboard(){
     if (overlay) overlay.classList.remove('overlay-title');
-    let runs=[];
-    try{ runs = JSON.parse(localStorage.getItem(LS.runs)||'[]'); }catch(e){}
-    const best = parseInt(localStorage.getItem(LS.bestScore)||'0',10);
-    const bestC = parseInt(localStorage.getItem(LS.bestCombo)||'0',10);
     overlay.innerHTML = `
-    <div class="panel">
-      <h1>Leaderboard (local)</h1>
-      <p>Record: <b>${best}</b> | Combo max: <b>${bestC}</b></p>
-      <div style="text-align:left; max-height:200px; overflow:auto; border:1px solid var(--ui); padding:6px;">
-        ${runs.map((r,i)=>`#${i+1} — ${new Date(r.ts).toLocaleString()} — Score ${r.score} — Combo ${r.combo} — N${r.lvl}`).join('<br/>') || 'Aucune partie'}
+    <div class="panel leaderboard-panel">
+      <h1>Leaderboard Legend</h1>
+      <p class="leaderboard-subtitle">Top 5 des meilleurs scores du mode Légende.</p>
+      <div id="leaderboardStatus" class="leaderboard-status">Chargement du classement…</div>
+      <ol id="leaderboardList" class="leaderboard-list"></ol>
+      <div id="leaderboardEmpty" class="leaderboard-empty" style="display:none;">Aucun score Legend pour le moment.</div>
+      <div id="leaderboardStickyWrapper" class="leaderboard-sticky" style="display:none;">
+        <h2>Votre rang</h2>
+        <div id="leaderboardStickyEntry" class="leaderboard-entry"></div>
       </div>
       <div class="btnrow"><button id="back">Retour</button></div>
     </div>`;
     showExclusiveOverlay(overlay);
     addEvent(document.getElementById('back'), INPUT.tap, ()=>{ playSound("click"); this.renderTitle(); });
+
+    const scoreService = getScoreService();
+    const listEl = overlay.querySelector('#leaderboardList');
+    const statusEl = overlay.querySelector('#leaderboardStatus');
+    const emptyEl = overlay.querySelector('#leaderboardEmpty');
+    const stickyWrapper = overlay.querySelector('#leaderboardStickyWrapper');
+    const stickyEntry = overlay.querySelector('#leaderboardStickyEntry');
+
+    const formatValue = (value) => {
+      if (typeof formatScore === 'function') {
+        return formatScore(value);
+      }
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed.toString() : '0';
+    };
+
+    const renderEntry = (target, entry, rank) => {
+      if (!target || !entry) return;
+      target.innerHTML = '';
+      const rankEl = document.createElement('span');
+      rankEl.className = 'lb-rank';
+      rankEl.textContent = `#${rank}`;
+
+      const nameEl = document.createElement('span');
+      nameEl.className = 'lb-name';
+      nameEl.textContent = entry.username || 'Anonyme';
+
+      const scoreEl = document.createElement('span');
+      scoreEl.className = 'lb-score';
+      scoreEl.textContent = formatValue(entry.best_score);
+
+      target.appendChild(rankEl);
+      target.appendChild(nameEl);
+      target.appendChild(scoreEl);
+    };
+
+    const renderTop = (entries = []) => {
+      listEl.innerHTML = '';
+      const hasEntries = Array.isArray(entries) && entries.length > 0;
+      emptyEl.style.display = hasEntries ? 'none' : '';
+
+      if (!hasEntries) {
+        return;
+      }
+
+      entries.forEach((entry, index) => {
+        const li = document.createElement('li');
+        li.className = 'leaderboard-row';
+        renderEntry(li, entry, index + 1);
+        listEl.appendChild(li);
+      });
+    };
+
+    const renderSticky = (sticky) => {
+      if (!sticky?.available || !sticky.entry) {
+        stickyWrapper.style.display = 'none';
+        return;
+      }
+      stickyWrapper.style.display = '';
+      // On laisse la ligne sticky affichée même si le joueur est dans le top 5.
+      renderEntry(stickyEntry, sticky.entry, sticky.entry.rank);
+    };
+
+    const renderError = (message) => {
+      if (statusEl) {
+        statusEl.textContent = message;
+      }
+    };
+
+    if (!scoreService || typeof scoreService.fetchLegendTop !== 'function') {
+      renderError('Leaderboard indisponible pour le moment.');
+      return;
+    }
+
+    (async () => {
+      try {
+        renderError('Chargement du classement…');
+        const { entries, error } = await scoreService.fetchLegendTop(5);
+        renderTop(entries);
+        renderError(error ? 'Classement indisponible pour le moment.' : '');
+
+        if (typeof scoreService.fetchMyLegendRank === 'function') {
+          const sticky = await scoreService.fetchMyLegendRank();
+          renderSticky(sticky);
+        }
+      } catch (error) {
+        console.warn('[leaderboard] rendering failed', error);
+        renderError('Impossible de charger le leaderboard.');
+      }
+    })();
   }
   renderPause(){
     setActiveScreen('paused', { via: 'renderPause' });
