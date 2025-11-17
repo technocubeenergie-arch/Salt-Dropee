@@ -17,6 +17,28 @@ const DEFAULT_STATE = Object.freeze({
 const EMAIL_CONFIRMATION_MESSAGE = 'Vérifiez votre boîte mail pour confirmer votre inscription.';
 const USERNAME_CONFLICT_MESSAGE = 'Ce pseudo est déjà utilisé. Merci d’en choisir un autre.';
 
+function normalizeUsername(candidate) {
+  if (typeof candidate !== 'string') {
+    return '';
+  }
+  const trimmed = candidate.trim();
+  return trimmed.length > 0 ? trimmed : '';
+}
+
+function mapProfileRow(row, fallbackUserId) {
+  if (!row) {
+    return null;
+  }
+  return {
+    id: row.id || null,
+    authUserId: row.auth_user_id || fallbackUserId || null,
+    username: row.username || null,
+    displayName: row.display_name || null,
+    deviceId: row.device_id || null,
+    referralCode: row.referral_code || null,
+  };
+}
+
 function collectErrorTexts(error) {
   if (!error) {
     return [];
@@ -148,20 +170,50 @@ class AuthController {
       if (error && error.code !== 'PGRST116') {
         throw error;
       }
-      if (!data) {
-        return null;
-      }
-      return {
-        id: data.id || null,
-        authUserId: data.auth_user_id || userId,
-        username: data.username || null,
-        displayName: data.display_name || null,
-        deviceId: data.device_id || null,
-        referralCode: data.referral_code || null,
-      };
+      return mapProfileRow(data, userId);
     } catch (error) {
       console.error('[auth] loadProfile failed', error);
       return null;
+    }
+  }
+
+  async ensureProfileForUser(user, options = {}) {
+    if (!this.supabase || !user?.id) {
+      return { profile: null, error: null };
+    }
+
+    const existingProfile = await this.loadProfileForUser(user.id);
+    if (existingProfile) {
+      return { profile: existingProfile, error: null };
+    }
+
+    const usernameHint = normalizeUsername(options.usernameHint)
+      || normalizeUsername(user.username)
+      || normalizeUsername(user.user_metadata?.username);
+    const payload = { auth_user_id: user.id };
+    if (usernameHint) {
+      payload.username = usernameHint;
+    }
+
+    try {
+      const { data, error } = await this.supabase
+        .from('players')
+        .upsert(payload, { onConflict: 'auth_user_id' })
+        .select('id, auth_user_id, username, display_name, device_id, referral_code')
+        .maybeSingle();
+
+      if (error) {
+        throw error;
+      }
+
+      return { profile: mapProfileRow(data, user.id), error: null };
+    } catch (error) {
+      console.error('[auth] ensureProfileForUser failed', {
+        error,
+        userId: user.id,
+        usernameAttempt: payload.username,
+      });
+      return { profile: existingProfile, error };
     }
   }
 
@@ -170,12 +222,14 @@ class AuthController {
       return null;
     }
     const enriched = { ...user };
+    const usernameHint = normalizeUsername(options.usernameHint)
+      || normalizeUsername(user.user_metadata?.username)
+      || '';
     if (options.profile && options.profile.username && !enriched.username) {
       enriched.username = options.profile.username;
     }
-    if (options.usernameHint) {
-      enriched.username = options.usernameHint;
-      return enriched;
+    if (!enriched.username && usernameHint) {
+      enriched.username = usernameHint;
     }
     if (!enriched.username) {
       const profile = await this.loadProfileForUser(user.id);
@@ -219,7 +273,10 @@ class AuthController {
 
       const { data } = this.supabase.auth.onAuthStateChange(async (_event, session) => {
         const user = session?.user || null;
-        const profile = user ? await this.loadProfileForUser(user.id) : null;
+        const { profile, error } = user ? await this.ensureProfileForUser(user) : { profile: null, error: null };
+        if (error) {
+          console.warn('[auth] profile sync during auth state change failed', error);
+        }
         const enrichedUser = await this.enrichUserWithProfile(user, { profile });
         this.notify({ user: enrichedUser, profile, ready: true, loading: false, lastError: null });
       });
@@ -246,7 +303,10 @@ class AuthController {
         return;
       }
       const user = data?.user || null;
-      const profile = user ? await this.loadProfileForUser(user.id) : null;
+      const { profile, error: profileError } = user ? await this.ensureProfileForUser(user) : { profile: null, error: null };
+      if (profileError) {
+        console.warn('[auth] profile hydration failed', profileError);
+      }
       const enrichedUser = await this.enrichUserWithProfile(user, { profile });
       this.state.user = enrichedUser;
       this.state.profile = profile;
@@ -276,7 +336,10 @@ class AuthController {
         return { success: false, message: describeSupabaseError(error) };
       }
       const user = data?.user || null;
-      const profile = user ? await this.loadProfileForUser(user.id) : null;
+      const { profile, error: profileError } = user ? await this.ensureProfileForUser(user) : { profile: null, error: null };
+      if (profileError) {
+        console.warn('[auth] profile sync after signIn failed', profileError);
+      }
       const enrichedUser = await this.enrichUserWithProfile(user, { profile });
       if (enrichedUser) {
         this.notify({ user: enrichedUser, profile, lastError: null });
@@ -355,7 +418,18 @@ class AuthController {
       }
       const user = data?.user || null;
       const requiresEmailConfirmation = !data?.session;
-      const profile = user ? await this.loadProfileForUser(user.id) : null;
+      const hasSession = Boolean(data?.session?.access_token);
+      const { profile, error: profileError } = user && hasSession
+        ? await this.ensureProfileForUser(user, { usernameHint: trimmedUsername })
+        : { profile: null, error: null };
+      if (profileError) {
+        const usernameTaken = isUsernameConflictError(profileError);
+        return {
+          success: false,
+          message: usernameTaken ? USERNAME_CONFLICT_MESSAGE : describeSupabaseError(profileError),
+          reason: usernameTaken ? 'USERNAME_TAKEN' : undefined,
+        };
+      }
       const enrichedUser = await this.enrichUserWithProfile(user, { profile, usernameHint: trimmedUsername });
       if (enrichedUser && !requiresEmailConfirmation) {
         this.notify({ user: enrichedUser, profile, lastError: null });

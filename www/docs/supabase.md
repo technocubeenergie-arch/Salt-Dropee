@@ -23,7 +23,9 @@ L'authentification charge désormais le profil joueur (`public.players`) au dém
 
 ## Provisioning côté Supabase
 
-Le client JavaScript se base sur le schéma SQL fourni (tables `players`, `progress`, `scores`, etc.) avec RLS activé. Pour relier un compte Supabase Auth à un profil joueur et stocker le pseudo unique, créez un trigger `AFTER INSERT` sur `auth.users` qui insère la ligne correspondante dans `public.players`. Exemple minimal :
+Le client JavaScript se base sur le schéma SQL fourni (tables `players`, `progress`, `scores`, etc.) avec RLS activé. Lorsqu'un utilisateur dispose d'une session Supabase (inscription sans confirmation ou première connexion après confirmation), le front effectue un `upsert` explicite dans `public.players` avec `auth_user_id = auth.users.id` et le pseudo saisi. Cette opération est lancée dès que l'utilisateur est authentifié (signUp avec session, signIn, restauration de session, onAuthStateChange) et alimente `window.SaltAuth.getState().profile` (id, authUserId, username…). Le pseudo suit la contrainte d'unicité `players_username_key` et toute collision est remontée côté UI.
+
+Un trigger `AFTER INSERT` sur `auth.users` reste possible en complément (pour couvrir des inscriptions réalisées via d'autres canaux), par exemple :
 
 ```sql
 create or replace function public.handle_new_player()
@@ -46,4 +48,4 @@ after insert on auth.users
 for each row execute function public.handle_new_player();
 ```
 
-Le pseudo reste soumis à la contrainte d'unicité `players_username_key`. Le client vérifie désormais la disponibilité du pseudo avant d'appeler `supabase.auth.signUp`, mais le trigger continue de faire foi en dernier ressort (en cas de course, l'erreur est capturée et un message compréhensible est affiché à l'utilisateur).
+Si le trigger est absent ou différent, le client continue malgré tout d'assurer la création/synchronisation du profil lors de la connexion, sans rompre le mode hors-ligne (fallback `localStorage`).
