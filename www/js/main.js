@@ -788,6 +788,44 @@ let activeScreen = 'boot';
 let lastNonSettingsScreen = 'boot';
 const NAV_SCREEN_LOG_TARGETS = new Set(['title', 'running', 'paused', 'interLevel', 'settings', 'gameover']);
 
+function isFormFieldElement(el) {
+  if (!el) return false;
+  const tag = (el.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || tag === 'select' || tag === 'button') return true;
+  if (el.isContentEditable) return true;
+  const role = typeof el.getAttribute === 'function' ? el.getAttribute('role') : null;
+  return role === 'textbox' || role === 'combobox' || role === 'searchbox';
+}
+
+function getFocusedElementForShortcuts(evt) {
+  if (evt && evt.target && evt.target !== window && evt.target !== document) {
+    return evt.target;
+  }
+  if (typeof document !== 'undefined') {
+    return document.activeElement;
+  }
+  return null;
+}
+
+function shouldBlockGameplayShortcuts(evt) {
+  const focusEl = getFocusedElementForShortcuts(evt);
+  const blockedByFocus = isFormFieldElement(focusEl);
+  const blockedByScreen = activeScreen === 'account';
+  if (blockedByFocus || blockedByScreen) {
+    console.info(
+      `[input] ignore global key${debugFormatContext({
+        reason: blockedByScreen ? 'account' : 'form-focus',
+        key: evt?.key,
+        code: evt?.code,
+        screen: activeScreen,
+        target: debugDescribeElement(focusEl),
+      })}`
+    );
+    return true;
+  }
+  return false;
+}
+
 function normalizeScreenName(name) {
   if (typeof name !== 'string' || name.trim() === '') return 'unknown';
   const key = name.trim();
@@ -2823,7 +2861,11 @@ function bindLegendResultButtons(){
 
 // --- Test manuel temporaire : appuyer sur 'i' pour afficher l’écran ---
 addEvent(window, 'keydown', (e) => {
-  if (e.key === "i" || e.key === "I") showInterLevelScreen("win");
+  if (shouldBlockGameplayShortcuts(e)) return;
+  if (e.key === "i" || e.key === "I") {
+    console.info('[nav] debug shortcut -> interLevel');
+    showInterLevelScreen("win");
+  }
 });
 
 // Appeler le binding après chargement du DOM / init jeu
@@ -2959,6 +3001,7 @@ function handleTouchZoneEvent(evt) {
   return true;
 }
 function onKeyDown(e){
+  if (shouldBlockGameplayShortcuts(e)) return;
   const allowTitleStart = (e.code === 'Enter');
   const canTriggerTitleStart = allowTitleStart && activeScreen === 'title';
   if (!inputEnabled && !canTriggerTitleStart) return;
@@ -2992,6 +3035,7 @@ function onKeyDown(e){
   }
 }
 function onKeyUp(e){
+  if (shouldBlockGameplayShortcuts(e)) return;
   let changed = false;
   if (e.code === 'ArrowLeft' || e.code === 'KeyA') {
     directionalSourceState.keyboardLeft = false;
@@ -3746,6 +3790,7 @@ class Game{
   }
   uiStartFromTitle(){
     if (this.state === 'title'){
+      console.info(`[progress] start requested${debugFormatContext({ via: 'uiStartFromTitle', screen: activeScreen })}`);
       leaveTitleScreen();
       overlay.innerHTML = '';
       hideOverlay(overlay);
@@ -3800,6 +3845,8 @@ class Game{
     addEvent(document.getElementById('btnPlay'), INPUT.tap, async (e)=>{
       e.preventDefault(); e.stopPropagation();
       playSound("click");
+      const authSnapshot = getAuthStateSnapshot();
+      console.info(`[progress] play clicked${debugFormatContext({ screen: activeScreen, auth: authSnapshot?.user ? 'authenticated' : 'guest' })}`);
       await new Promise(r=>requestAnimationFrame(r));
       try{ const prev=ctx.imageSmoothingEnabled; ctx.imageSmoothingEnabled=false; const imgs=[walletImage, GoldImg, SilverImg, BronzeImg, DiamondImg, BombImg, Hand.open, Hand.pinch]; for (const im of imgs){ if (im && im.naturalWidth) ctx.drawImage(im,0,0,1,1); } ctx.save(); ctx.shadowColor='rgba(0,0,0,0.15)'; ctx.shadowBlur=4; ctx.shadowOffsetY=1; ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(4,4,2,0,Math.PI*2); ctx.fill(); ctx.restore(); ctx.imageSmoothingEnabled=prev; ctx.clearRect(0,0,8,8); }catch(_){ }
       this.uiStartFromTitle();
