@@ -2968,11 +2968,18 @@ function bindInterLevelButtons(){
   }
 
   if (bSave){
-    bSave.onclick = () => {
-      hideInterLevelScreen();
+    bSave.onclick = async () => {
       if (typeof playSound === "function") {
         playSound("click");
       }
+
+      try {
+        await persistProgressSnapshot('save-quit');
+      } catch (error) {
+        console.warn('[progress] manual save failed', error);
+      }
+
+      hideInterLevelScreen();
 
       const instance = (typeof Game !== "undefined" && Game.instance)
         ? Game.instance
