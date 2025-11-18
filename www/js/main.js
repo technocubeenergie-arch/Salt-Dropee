@@ -3100,8 +3100,9 @@ function showLegendResultScreen(reason = "time"){
 
   setActiveScreen('interLevel', { via: 'showLegendResultScreen', reason });
 
-  // Sauvegarde également l'échec / réussite du mode Légende côté Supabase.
-  persistProgressSnapshot(`legend-${reason || 'end'}`);
+  // Les résultats du mode Légende sont enregistrés uniquement dans la table "scores".
+  // On évite ici toute sauvegarde de progression automatique afin de ne pas écrire
+  // dans la table "progress" qui est réservée aux sauvegardes manuelles.
   submitLegendScoreIfNeeded(reason || 'end');
   markLegendRunComplete();
 
