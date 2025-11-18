@@ -1121,6 +1121,12 @@ let lastProgressPlayerId = null;
 let progressHydrationInFlight = null;
 let latestProgressSyncPromise = Promise.resolve();
 let hasAppliedProgressSnapshot = false;
+const SAVE_AND_QUIT_TIMEOUT_MS = 4500;
+const SAVE_AND_QUIT_LABELS = Object.freeze({
+  default: 'Sauvegarder & Quitter',
+  loginRequired: 'Connexion requise (quitter sans sauvegarde)',
+  unavailable: 'Quitter (sauvegarde indisponible)',
+});
 
 function getAuthService(){
   if (authFacade) return authFacade;
@@ -1152,6 +1158,7 @@ function handleAuthStateUpdate(nextState){
   authState = { ...DEFAULT_AUTH_FRONT_STATE, ...(nextState || {}) };
   updateTitleAccountStatus();
   refreshAccountPanelIfVisible();
+  updateInterLevelSaveButtonState();
   syncProgressFromAuthState(authState);
 }
 
@@ -2919,6 +2926,71 @@ function resumeGameplay(){
 
 let lastInterLevelResult = "win";
 
+function getSaveQuitStatus(){
+  const state = getAuthStateSnapshot?.() || {};
+
+  if (!state.enabled) {
+    return { attemptSave: false, reason: 'supabase-disabled', message: 'Sauvegarde en ligne désactivée pour cette version.' };
+  }
+
+  if (state.lastError) {
+    return { attemptSave: false, reason: 'service-error', message: state.lastError };
+  }
+
+  if (!state.ready) {
+    return { attemptSave: false, reason: 'service-not-ready', message: 'Initialisation du service en cours.' };
+  }
+
+  if (!state.user || !state.profile) {
+    return { attemptSave: false, reason: 'no-auth', message: 'Connexion requise pour sauvegarder en ligne.' };
+  }
+
+  return { attemptSave: true, reason: 'ok', message: 'Sauvegarde en ligne disponible.' };
+}
+
+function updateInterLevelSaveButtonState(){
+  const btnSave = document.getElementById('btnSaveQuit');
+  if (!btnSave) return;
+
+  const status = getSaveQuitStatus();
+  const label = status.attemptSave
+    ? SAVE_AND_QUIT_LABELS.default
+    : status.reason === 'no-auth'
+      ? SAVE_AND_QUIT_LABELS.loginRequired
+      : SAVE_AND_QUIT_LABELS.unavailable;
+
+  btnSave.textContent = label;
+  btnSave.title = status.message || '';
+  btnSave.dataset.saveAvailable = status.attemptSave ? 'yes' : 'no';
+  btnSave.dataset.saveReason = status.reason || 'unknown';
+  btnSave.setAttribute('aria-disabled', status.attemptSave ? 'false' : 'true');
+}
+
+function navigateToTitleAfterSaveQuit(context = {}){
+  const { saveResult = 'skipped', reason = null } = context;
+  console.info('[progress] returning to title from save-quit', { saveResult, reason });
+
+  hideInterLevelScreen();
+
+  const instance = (typeof Game !== "undefined" && Game.instance)
+    ? Game.instance
+    : null;
+
+  if (instance && typeof instance.reset === "function") {
+    instance.reset({ showTitle: true });
+    return;
+  }
+
+  setInterLevelUiState(false);
+  enterTitleScreen();
+  const mainOverlay = overlay || document.getElementById("overlay");
+  if (mainOverlay) {
+    mainOverlay.innerHTML = "";
+    hideOverlay(mainOverlay);
+  }
+  setBackgroundImageSrc(MENU_BACKGROUND_SRC);
+}
+
 function setInterLevelUiState(active) {
   const isActive = !!active;
   const body = typeof document !== 'undefined' ? document.body : null;
@@ -3011,6 +3083,7 @@ function showInterLevelScreen(result = "win", options = {}){
   }
 
   setInterLevelUiState(true);
+  updateInterLevelSaveButtonState();
   showExclusiveOverlay(screen);
 }
 
@@ -3071,6 +3144,8 @@ function bindInterLevelButtons(){
   const bNext = document.getElementById("btnNextLevel");
   const bSave = document.getElementById("btnSaveQuit");
 
+  updateInterLevelSaveButtonState();
+
   if (bNext){
     bNext.onclick = () => {
       hideInterLevelScreen();
@@ -3084,34 +3159,40 @@ function bindInterLevelButtons(){
         playSound("click");
       }
 
-      try {
-        if (isLegendLevel()) {
-          await submitLegendScoreIfNeeded('save-quit');
+      const status = getSaveQuitStatus();
+      console.info('[progress] save-quit clicked', {
+        attemptSave: status.attemptSave,
+        reason: status.reason,
+        user: getAuthStateSnapshot?.()?.user ? 'yes' : 'no',
+      });
+
+      let saveResult = 'skipped';
+
+      if (status.attemptSave) {
+        const saveAction = (async () => {
+          if (isLegendLevel()) {
+            await submitLegendScoreIfNeeded('save-quit');
+          }
+          await persistProgressSnapshot('save-quit');
+          return 'saved';
+        })();
+
+        saveResult = await Promise.race([
+          saveAction.catch((error) => {
+            console.warn('[progress] manual save failed', error);
+            return 'failed';
+          }),
+          new Promise((resolve) => setTimeout(() => resolve('timeout'), SAVE_AND_QUIT_TIMEOUT_MS)),
+        ]);
+
+        if (saveResult === 'timeout') {
+          console.warn('[progress] manual save timed out; navigating back to title.');
         }
-        await persistProgressSnapshot('save-quit');
-      } catch (error) {
-        console.warn('[progress] manual save failed', error);
+      } else {
+        console.info('[progress] save-quit skipping save attempt', status);
       }
 
-      hideInterLevelScreen();
-
-      const instance = (typeof Game !== "undefined" && Game.instance)
-        ? Game.instance
-        : null;
-
-      if (instance && typeof instance.reset === "function") {
-        instance.reset({ showTitle: true });
-        return;
-      }
-
-      setInterLevelUiState(false);
-      enterTitleScreen();
-      const mainOverlay = overlay || document.getElementById("overlay");
-      if (mainOverlay) {
-        mainOverlay.innerHTML = "";
-        hideOverlay(mainOverlay);
-      }
-      setBackgroundImageSrc(MENU_BACKGROUND_SRC);
+      navigateToTitleAfterSaveQuit({ saveResult, reason: status.reason });
     };
   }
 }
