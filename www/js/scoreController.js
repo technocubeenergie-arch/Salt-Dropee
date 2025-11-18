@@ -80,13 +80,53 @@ async function submitLegendScore({ playerId, score, durationSeconds } = {}) {
       return { success: false, reason: 'MISSING_AUTH' };
     }
 
+    const numericScore = coerceScore(score);
+    const durationPayload = Number.isFinite(durationSeconds)
+      ? Math.max(0, Math.floor(durationSeconds))
+      : null;
+
+    const { data: existingBest, error: selectError } = await supabase
+      .from('scores')
+      .select('id, score')
+      .eq('player_id', resolvedPlayerId)
+      .eq('level', 6)
+      .order('score', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (selectError && selectError.code !== 'PGRST116') {
+      console.warn('[score] submit legend score select failed', { error: describeError(selectError) });
+      return { success: false, reason: selectError.code || 'SELECT_FAILED' };
+    }
+
+    if (existingBest && Number.isFinite(existingBest.score)) {
+      const bestScore = coerceScore(existingBest.score);
+      if (numericScore <= bestScore) {
+        console.info('[score] legend score not improved, skip update', { score: numericScore, bestScore });
+        return { success: true, skipped: true, payload: { score: numericScore, bestScore } };
+      }
+
+      const { error: updateError } = await supabase
+        .from('scores')
+        .update({
+          score: numericScore,
+          duration_seconds: durationPayload,
+        })
+        .eq('id', existingBest.id);
+
+      if (updateError) {
+        console.warn('[score] submit legend score update failed', { error: describeError(updateError) });
+        return { success: false, reason: updateError.code || 'UPDATE_FAILED' };
+      }
+
+      return { success: true, payload: { ...existingBest, score: numericScore, duration_seconds: durationPayload } };
+    }
+
     const payload = {
       player_id: resolvedPlayerId,
       level: 6,
-      score: coerceScore(score),
-      duration_seconds: Number.isFinite(durationSeconds)
-        ? Math.max(0, Math.floor(durationSeconds))
-        : null,
+      score: numericScore,
+      duration_seconds: durationPayload,
     };
 
     const { error } = await supabase.from('scores').insert(payload);

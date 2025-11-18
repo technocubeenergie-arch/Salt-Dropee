@@ -854,6 +854,39 @@ async function persistProgressSnapshot(reason = 'unspecified'){
   }
 }
 
+async function refreshProgressSnapshotForTitleStart() {
+  const service = getProgressService();
+  const auth = getAuthStateSnapshot?.();
+  const playerId = auth?.profile?.id || null;
+
+  if (!service || !playerId || !auth?.user) {
+    return;
+  }
+
+  try {
+    await latestProgressSyncPromise;
+  } catch (error) {
+    console.warn('[progress] sync wait before refresh failed', error);
+  }
+
+  if (progressHydrationInFlight) {
+    try {
+      await progressHydrationInFlight;
+    } catch (error) {
+      console.warn('[progress] hydration wait before refresh failed', error);
+    }
+  }
+
+  try {
+    const snapshot = await service.loadProgress();
+    pendingProgressSnapshot = snapshot;
+    lastProgressPlayerId = playerId;
+    await applyPendingProgressIfPossible();
+  } catch (error) {
+    console.warn('[progress] failed to refresh progression on title start', error);
+  }
+}
+
 function computeLegendDurationSeconds(){
   const timeLimit = Number.isFinite(levelState?.timeLimit) ? levelState.timeLimit : null;
   if (timeLimit === null || !Number.isFinite(timeLeft)) {
@@ -863,7 +896,8 @@ function computeLegendDurationSeconds(){
 }
 
 async function submitLegendScoreIfNeeded(reason = 'end'){
-  if (!isLegendLevel()) return;
+  const levelNumber = Math.max(1, (Number.isFinite(currentLevelIndex) ? Math.floor(currentLevelIndex) : 0) + 1);
+  if (!isLegendLevel() || levelNumber !== 6 || !legendRunActive) return;
 
   const scoreService = getScoreService();
   if (!scoreService || typeof scoreService.submitLegendScore !== 'function') {
@@ -1235,9 +1269,25 @@ let levelState = { targetScore: 0, timeLimit: 0, lives: 0 };
 let gameState = "playing";  // "playing" | "paused" | "inter"
 let levelEnded = false;
 let legendScoreSubmissionAttempted = false;
+let legendRunActive = false;
 
 function canEndLevel(){
   return !levelEnded && gameState === "playing";
+}
+
+function resetLegendState(options = {}) {
+  const { resetLevelIndex = false } = options;
+  legendRunActive = false;
+  legendScoreSubmissionAttempted = false;
+  if (resetLevelIndex) {
+    currentLevelIndex = 0;
+    window.currentLevelIndex = currentLevelIndex;
+  }
+}
+
+function markLegendRunComplete() {
+  legendRunActive = false;
+  legendScoreSubmissionAttempted = false;
 }
 
 /* global */ let score = 0;   // nombre
@@ -1379,6 +1429,7 @@ async function loadLevel(index, options = {}) {
   levelState.lives       = L.lives;
 
   legendScoreSubmissionAttempted = false;
+  legendRunActive = isLegendLevel(index);
 
   resetIntraLevelSpeedRamp(levelState.timeLimit);
 
@@ -2970,6 +3021,7 @@ function showLegendResultScreen(reason = "time"){
   // Sauvegarde également l'échec / réussite du mode Légende côté Supabase.
   persistProgressSnapshot(`legend-${reason || 'end'}`);
   submitLegendScoreIfNeeded(reason || 'end');
+  markLegendRunComplete();
 
   if (typeof Game !== "undefined" && Game.instance) {
     Game.instance.settingsReturnView = "legend";
@@ -3024,7 +3076,9 @@ function bindInterLevelButtons(){
       }
 
       try {
-        submitLegendScoreIfNeeded('save-quit');
+        if (isLegendLevel()) {
+          await submitLegendScoreIfNeeded('save-quit');
+        }
         await persistProgressSnapshot('save-quit');
       } catch (error) {
         console.warn('[progress] manual save failed', error);
@@ -3821,13 +3875,14 @@ class HUD{
 // =====================
 class Game{
   static instance=null;
-  constructor(){ Game.instance=this; this.rulesReturnView = "title"; this.accountMode = 'signin'; this.reset({ showTitle:true }); }
+  constructor(){ Game.instance=this; this.rulesReturnView = "title"; this.accountMode = 'signin'; this.titleStartInFlight = false; this.reset({ showTitle:true }); }
   reset({showTitle=true}={}){
     window.__saltDroppeeLoopStarted = false;
     setInterLevelUiState(false);
     gameState = "paused";
     levelEnded = false;
     spawningEnabled = false;
+    resetLegendState({ resetLevelIndex: showTitle });
     resumeAllAnimations();
     if (window.gsap?.killTweensOf) {
       gsap.killTweensOf("*");
@@ -4013,13 +4068,22 @@ class Game{
   endGame(){ this.fx?.clearAll(); resetActiveBonuses(); resetShieldState({ silent: true }); resetControlInversion({ silent: true }); this.state='over'; this.render(); try{ const best=parseInt(localStorage.getItem(LS.bestScore)||'0',10); if (this.score>best) localStorage.setItem(LS.bestScore, String(this.score)); const bestC=parseInt(localStorage.getItem(LS.bestCombo)||'0',10); if (this.maxCombo>bestC) localStorage.setItem(LS.bestCombo, String(this.maxCombo)); const runs=JSON.parse(localStorage.getItem(LS.runs)||'[]'); runs.unshift({ ts:Date.now(), score:this.score, combo:this.maxCombo, lvl:this.levelReached }); while (runs.length>20) runs.pop(); localStorage.setItem(LS.runs, JSON.stringify(runs)); }catch(e){}
     this.renderGameOver(); if (TG){ try{ TG.sendData(JSON.stringify({ score:this.score, duration:CONFIG.runSeconds, version:VERSION })); }catch(e){} }
   }
-  uiStartFromTitle(){
-    if (this.state === 'title'){
+  async uiStartFromTitle(){
+    if (this.state !== 'title' || this.titleStartInFlight){
+      return;
+    }
+
+    this.titleStartInFlight = true;
+
+    try {
       console.info(`[progress] start requested${debugFormatContext({ via: 'uiStartFromTitle', screen: activeScreen })}`);
+      await refreshProgressSnapshotForTitleStart();
       leaveTitleScreen();
       overlay.innerHTML = '';
       hideOverlay(overlay);
       this.start();
+    } finally {
+      this.titleStartInFlight = false;
     }
   }
   renderTitle(){
