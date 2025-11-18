@@ -66,13 +66,9 @@ async function submitLegendScore({ playerId, score, durationSeconds, level } = {
       return { success: false, reason: 'DISABLED' };
     }
 
-    const supabasePromise = getSupabase();
-    if (!supabasePromise) {
-      return { success: false, reason: 'NOT_READY' };
-    }
-
-    const supabase = await supabasePromise;
+    const supabase = await getSupabase();
     if (!supabase) {
+      console.info('[score] submitLegendScore skipped', { reason: 'notReady' });
       return { success: false, reason: 'NOT_READY' };
     }
 
@@ -99,6 +95,12 @@ async function submitLegendScore({ playerId, score, durationSeconds, level } = {
       ? Math.max(0, Math.floor(durationSeconds))
       : null;
 
+    console.info('[score] legend score write starting', {
+      playerId: resolvedPlayerId,
+      score: numericScore,
+      durationSeconds: durationPayload,
+    });
+
     const { data: existingBest, error: selectError } = await supabase
       .from('scores')
       .select('id, score')
@@ -111,6 +113,13 @@ async function submitLegendScore({ playerId, score, durationSeconds, level } = {
     if (selectError && selectError.code !== 'PGRST116') {
       console.warn('[score] read best legend score failed', describeError(selectError));
       // continue and try insert anyway
+    } else if (!existingBest) {
+      console.info('[score] no existing legend score found for player');
+    } else {
+      console.info('[score] existing legend score found', {
+        id: existingBest?.id || null,
+        bestScore: coerceScore(existingBest.score),
+      });
     }
 
     if (existingBest && Number.isFinite(existingBest.score)) {
@@ -148,7 +157,7 @@ async function submitLegendScore({ playerId, score, durationSeconds, level } = {
     const { error } = await supabase.from('scores').insert(payload);
 
     if (error) {
-      console.warn('[score] insert legend score failed', error);
+      console.warn('[score] insert legend score failed', describeError(error));
       return { success: false, reason: error.code || 'INSERT_FAILED' };
     }
 
