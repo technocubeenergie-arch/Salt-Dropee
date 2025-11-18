@@ -52,9 +52,17 @@ function coerceScore(value) {
   return Number.isFinite(parsed) ? Math.floor(parsed) : 0;
 }
 
-async function submitLegendScore({ playerId, score, durationSeconds } = {}) {
+async function submitLegendScore({ playerId, score, durationSeconds, level } = {}) {
   try {
+    console.info('[score] submitLegendScore called', { playerId, score, durationSeconds, level });
+
+    if (Number.isFinite(level) && Math.floor(level) !== 6) {
+      console.info('[score] submitLegendScore skipped', { reason: 'notLegendLevel', level });
+      return { success: false, reason: 'NOT_LEGEND_LEVEL' };
+    }
+
     if (!isSupabaseEnabledInConfig()) {
+      console.info('[score] submitLegendScore skipped', { reason: 'disabled' });
       return { success: false, reason: 'DISABLED' };
     }
 
@@ -73,7 +81,8 @@ async function submitLegendScore({ playerId, score, durationSeconds } = {}) {
     const resolvedPlayerId = playerId || authState?.profile?.id || null;
 
     if (!user || !user.id || !resolvedPlayerId) {
-      console.warn('[score] cannot submit legend score: missing user or player', {
+      console.info('[score] submitLegendScore skipped', {
+        reason: 'missingAuth',
         hasUser: Boolean(user?.id),
         playerId: resolvedPlayerId,
       });
@@ -81,6 +90,11 @@ async function submitLegendScore({ playerId, score, durationSeconds } = {}) {
     }
 
     const numericScore = coerceScore(score);
+
+    if (!Number.isFinite(numericScore) || numericScore <= 0) {
+      console.info('[score] submitLegendScore skipped', { reason: 'invalidScore', score });
+      return { success: false, reason: 'INVALID_SCORE' };
+    }
     const durationPayload = Number.isFinite(durationSeconds)
       ? Math.max(0, Math.floor(durationSeconds))
       : null;
@@ -95,14 +109,14 @@ async function submitLegendScore({ playerId, score, durationSeconds } = {}) {
       .maybeSingle();
 
     if (selectError && selectError.code !== 'PGRST116') {
-      console.warn('[score] submit legend score select failed', { error: describeError(selectError) });
-      return { success: false, reason: selectError.code || 'SELECT_FAILED' };
+      console.warn('[score] read best legend score failed', describeError(selectError));
+      // continue and try insert anyway
     }
 
     if (existingBest && Number.isFinite(existingBest.score)) {
       const bestScore = coerceScore(existingBest.score);
       if (numericScore <= bestScore) {
-        console.info('[score] legend score not improved, skip update', { score: numericScore, bestScore });
+        console.info('[score] legend score not improved', { score: numericScore, existing: bestScore });
         return { success: true, skipped: true, payload: { score: numericScore, bestScore } };
       }
 
@@ -115,9 +129,11 @@ async function submitLegendScore({ playerId, score, durationSeconds } = {}) {
         .eq('id', existingBest.id);
 
       if (updateError) {
-        console.warn('[score] submit legend score update failed', { error: describeError(updateError) });
+        console.warn('[score] update best legend score failed', describeError(updateError));
         return { success: false, reason: updateError.code || 'UPDATE_FAILED' };
       }
+
+      console.info('[score] legend best score updated', { score: numericScore });
 
       return { success: true, payload: { ...existingBest, score: numericScore, duration_seconds: durationPayload } };
     }
@@ -132,9 +148,11 @@ async function submitLegendScore({ playerId, score, durationSeconds } = {}) {
     const { error } = await supabase.from('scores').insert(payload);
 
     if (error) {
-      console.warn('[score] submit legend score failed', { payload, error: describeError(error) });
+      console.warn('[score] insert legend score failed', error);
       return { success: false, reason: error.code || 'INSERT_FAILED' };
     }
+
+    console.info('[score] legend best score inserted', { score: numericScore });
 
     return { success: true, payload };
   } catch (error) {

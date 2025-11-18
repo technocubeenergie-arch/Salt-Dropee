@@ -897,6 +897,18 @@ function computeLegendDurationSeconds(){
 
 async function submitLegendScoreIfNeeded(reason = 'end'){
   const levelNumber = Math.max(1, (Number.isFinite(currentLevelIndex) ? Math.floor(currentLevelIndex) : 0) + 1);
+  const numericScore = Number.isFinite(score) ? score : Number(score) || 0;
+  const durationSeconds = computeLegendDurationSeconds();
+
+  console.info('[score] legend run end', {
+    level: levelNumber,
+    finalScore: numericScore,
+    durationSeconds,
+    legendRunSubmitted: legendScoreSubmissionAttempted,
+    legendRunActive,
+    reason,
+  });
+
   if (!isLegendLevel() || levelNumber !== 6 || !legendRunActive) return;
 
   const scoreService = getScoreService();
@@ -910,8 +922,6 @@ async function submitLegendScoreIfNeeded(reason = 'end'){
 
   legendScoreSubmissionAttempted = true;
 
-  const numericScore = Number.isFinite(score) ? score : Number(score) || 0;
-  const durationSeconds = computeLegendDurationSeconds();
   const authState = getAuthStateSnapshot?.() || {};
   const playerId = authState?.profile?.id || null;
 
@@ -920,6 +930,7 @@ async function submitLegendScoreIfNeeded(reason = 'end'){
       playerId,
       score: numericScore,
       durationSeconds,
+      level: levelNumber,
       reason,
     });
   } catch (error) {
@@ -1278,7 +1289,6 @@ function canEndLevel(){
 function resetLegendState(options = {}) {
   const { resetLevelIndex = false } = options;
   legendRunActive = false;
-  legendScoreSubmissionAttempted = false;
   if (resetLevelIndex) {
     currentLevelIndex = 0;
     window.currentLevelIndex = currentLevelIndex;
@@ -1287,7 +1297,6 @@ function resetLegendState(options = {}) {
 
 function markLegendRunComplete() {
   legendRunActive = false;
-  legendScoreSubmissionAttempted = false;
 }
 
 /* global */ let score = 0;   // nombre
