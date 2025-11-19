@@ -780,6 +780,7 @@ async function syncProgressFromAuthState(state){
   if (!service || !playerId || !state?.user) {
     pendingProgressSnapshot = null;
     lastProgressPlayerId = null;
+    progressSyncInFlightPlayerId = null;
     latestProgressSyncPromise = Promise.resolve();
     return;
   }
@@ -788,15 +789,31 @@ async function syncProgressFromAuthState(state){
     return;
   }
 
-  lastProgressPlayerId = playerId;
+  if (playerId === progressSyncInFlightPlayerId) {
+    try {
+      await latestProgressSyncPromise;
+    } catch (error) {
+      console.warn('[progress] sync wait while in flight failed', error);
+    }
+    return;
+  }
+
+  progressSyncInFlightPlayerId = playerId;
 
   latestProgressSyncPromise = (async () => {
-    const { ok, snapshot } = await loadProgressSnapshotWithTimeout({ service, reason: 'auth-sync' });
-    if (!ok) {
-      return;
+    try {
+      const { ok, snapshot } = await loadProgressSnapshotWithTimeout({ service, reason: 'auth-sync' });
+      if (!ok) {
+        return;
+      }
+      pendingProgressSnapshot = snapshot;
+      lastProgressPlayerId = playerId;
+      await applyPendingProgressIfPossible();
+    } finally {
+      if (progressSyncInFlightPlayerId === playerId) {
+        progressSyncInFlightPlayerId = null;
+      }
     }
-    pendingProgressSnapshot = snapshot;
-    await applyPendingProgressIfPossible();
   })();
 
   await latestProgressSyncPromise;
@@ -1139,6 +1156,7 @@ let authBridgeAttempts = 0;
 let authBridgeTimer = null;
 let pendingProgressSnapshot = null;
 let lastProgressPlayerId = null;
+let progressSyncInFlightPlayerId = null;
 let progressHydrationInFlight = null;
 let latestProgressSyncPromise = Promise.resolve();
 let hasAppliedProgressSnapshot = false;
