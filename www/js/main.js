@@ -763,14 +763,41 @@ async function applyProgressSnapshot(snapshot){
 }
 
 async function applyPendingProgressIfPossible(){
-  if (!pendingProgressSnapshot || !game || progressHydrationInFlight) return;
-  progressHydrationInFlight = applyProgressSnapshot(pendingProgressSnapshot)
-    .catch((error) => console.warn('[progress] hydration failed', error))
-    .finally(() => {
-      pendingProgressSnapshot = null;
-      progressHydrationInFlight = null;
+  if (!pendingProgressSnapshot || !game) return;
+
+  if (progressHydrationInFlight) {
+    try {
+      await progressHydrationInFlight;
+    } catch (error) {
+      console.warn('[progress] previous hydration failed', error);
+    }
+
+    if (!pendingProgressSnapshot || !game) {
+      return;
+    }
+  }
+
+  const snapshotToApply = pendingProgressSnapshot;
+  pendingProgressSnapshot = null;
+
+  const hydrationPromise = applyProgressSnapshot(snapshotToApply);
+
+  progressHydrationInFlight = hydrationPromise.finally(() => {
+      if (progressHydrationInFlight === hydrationPromise) {
+        progressHydrationInFlight = null;
+      }
     });
-  await progressHydrationInFlight;
+
+  try {
+    await hydrationPromise;
+  } catch (error) {
+    console.warn('[progress] hydration failed', error);
+  } finally {
+    await progressHydrationInFlight;
+    if (pendingProgressSnapshot && game) {
+      await applyPendingProgressIfPossible();
+    }
+  }
 }
 
 async function syncProgressFromAuthState(state){
