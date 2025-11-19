@@ -791,13 +791,12 @@ async function syncProgressFromAuthState(state){
   lastProgressPlayerId = playerId;
 
   latestProgressSyncPromise = (async () => {
-    try {
-      const snapshot = await service.loadProgress();
-      pendingProgressSnapshot = snapshot;
-      await applyPendingProgressIfPossible();
-    } catch (error) {
-      console.warn('[progress] failed to load progression', error);
+    const { ok, snapshot } = await loadProgressSnapshotWithTimeout({ service, reason: 'auth-sync' });
+    if (!ok) {
+      return;
     }
+    pendingProgressSnapshot = snapshot;
+    await applyPendingProgressIfPossible();
   })();
 
   await latestProgressSyncPromise;
@@ -878,7 +877,10 @@ async function refreshProgressSnapshotForTitleStart() {
   }
 
   try {
-    const snapshot = await service.loadProgress();
+    const { ok, snapshot } = await loadProgressSnapshotWithTimeout({ service, reason: 'title-start' });
+    if (!ok) {
+      return;
+    }
     pendingProgressSnapshot = snapshot;
     lastProgressPlayerId = playerId;
     await applyPendingProgressIfPossible();
@@ -1067,6 +1069,22 @@ function logNavigation(target, context = {}) {
   console.info(`[nav] goto(${target})${navContext}`);
 }
 
+function logPlayClickIgnored(reason, extra = {}) {
+  const details = debugFormatContext({
+    reason,
+    ...extra,
+  });
+  console.info(`[nav] play click ignored because ${reason}${details}`);
+}
+
+function logLogoutClickIgnored(reason, extra = {}) {
+  const details = debugFormatContext({
+    reason,
+    ...extra,
+  });
+  console.info(`[auth] logout click ignored because ${reason}${details}`);
+}
+
 function setActiveScreen(next, context = {}) {
   const normalized = normalizeScreenName(next);
   const prev = activeScreen;
@@ -1111,6 +1129,9 @@ const DEFAULT_AUTH_FRONT_STATE = Object.freeze({
   lastError: null,
 });
 
+const PROGRESS_REQUEST_TIMEOUT_MS = 4000;
+const AUTH_SIGN_OUT_TIMEOUT_MS = 5000;
+
 let authState = { ...DEFAULT_AUTH_FRONT_STATE };
 let authFacade = null;
 let authUnsubscribe = null;
@@ -1121,6 +1142,7 @@ let lastProgressPlayerId = null;
 let progressHydrationInFlight = null;
 let latestProgressSyncPromise = Promise.resolve();
 let hasAppliedProgressSnapshot = false;
+let logoutInFlight = false;
 const SAVE_AND_QUIT_TIMEOUT_MS = 4500;
 const SAVE_AND_QUIT_LABELS = Object.freeze({
   default: 'Sauvegarder & Quitter',
@@ -1148,6 +1170,68 @@ function getScoreService(){
     return window.ScoreController;
   }
   return null;
+}
+
+async function resolveWithTimeout(promise, options = {}) {
+  const { timeoutMs = 3000, label = 'operation', onTimeout } = options || {};
+  if (!promise || typeof promise.then !== 'function') {
+    return { timedOut: false, value: promise };
+  }
+
+  const safeTimeout = Number.isFinite(timeoutMs) ? Math.max(50, timeoutMs) : 3000;
+  let timeoutId = null;
+  let timeoutFired = false;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      timeoutFired = true;
+      const error = new Error(`${label} timed out after ${safeTimeout}ms`);
+      error.code = 'timeout';
+      reject(error);
+    }, safeTimeout);
+  });
+
+  try {
+    const value = await Promise.race([promise, timeoutPromise]);
+    return { timedOut: false, value };
+  } catch (error) {
+    if (timeoutFired || error?.code === 'timeout') {
+      if (typeof onTimeout === 'function') {
+        try {
+          onTimeout(error);
+        } catch (err) {
+          console.warn('[util] onTimeout callback failed', err);
+        }
+      }
+      return { timedOut: true, value: undefined };
+    }
+    throw error;
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  }
+}
+
+async function loadProgressSnapshotWithTimeout(options = {}) {
+  const { service = getProgressService(), reason = 'load' } = options || {};
+  if (!service || typeof service.loadProgress !== 'function') {
+    return { ok: false, snapshot: null, reason: 'unavailable' };
+  }
+
+  try {
+    const { timedOut, value } = await resolveWithTimeout(
+      service.loadProgress(),
+      { timeoutMs: PROGRESS_REQUEST_TIMEOUT_MS, label: `progress:${reason}` }
+    );
+    if (timedOut) {
+      console.warn(`[progress] ${reason} timed out after ${PROGRESS_REQUEST_TIMEOUT_MS}ms`);
+      return { ok: false, snapshot: null, reason: 'timeout' };
+    }
+    return { ok: true, snapshot: value ?? null };
+  } catch (error) {
+    console.warn(`[progress] ${reason} failed`, error);
+    return { ok: false, snapshot: null, reason: 'error' };
+  }
 }
 
 function getAuthStateSnapshot(){
@@ -1263,6 +1347,19 @@ function enterTitleScreen() {
     overlay.classList.remove('overlay-rules');
     overlay.classList.add('overlay-title');
   }
+
+  const runtimeInstance = (typeof Game !== 'undefined' && Game.instance)
+    ? Game.instance
+    : (game || null);
+  if (runtimeInstance && runtimeInstance.state !== 'title') {
+    console.info(
+      `[nav] syncing runtime state to title${debugFormatContext({
+        previous: runtimeInstance.state,
+      })}`
+    );
+    runtimeInstance.state = 'title';
+  }
+
   playMenuMusic();
 }
 
@@ -4160,8 +4257,21 @@ class Game{
     this.renderGameOver(); if (TG){ try{ TG.sendData(JSON.stringify({ score:this.score, duration:CONFIG.runSeconds, version:VERSION })); }catch(e){} }
   }
   async uiStartFromTitle(){
-    if (this.state !== 'title' || this.titleStartInFlight){
+    if (this.titleStartInFlight){
+      logPlayClickIgnored('start-in-flight', { screen: activeScreen, state: this.state });
       return;
+    }
+
+    if (this.state !== 'title'){
+      if (activeScreen === 'title') {
+        console.warn(
+          `[nav] title start recovery${debugFormatContext({ previous: this.state })}`
+        );
+        this.state = 'title';
+      } else {
+        logPlayClickIgnored('invalid-state', { screen: activeScreen, state: this.state });
+        return;
+      }
     }
 
     this.titleStartInFlight = true;
@@ -4322,25 +4432,50 @@ class Game{
       }
       wireCloseButtons();
       const signOutBtn = document.getElementById('btnAccountSignOut');
-      if (signOutBtn) {
-        addEvent(signOutBtn, INPUT.tap, async (evt)=>{
-          evt.preventDefault();
-          evt.stopPropagation();
-          playSound("click");
-          if (!service || typeof service.signOut !== 'function') {
-            setMessage('Service indisponible.', 'error');
-            return;
-          }
-          const result = await service.signOut();
-          if (!result?.success) {
-            setMessage(result?.message || 'Déconnexion impossible.', 'error');
-          } else {
+        if (signOutBtn) {
+          addEvent(signOutBtn, INPUT.tap, async (evt)=>{
+            evt.preventDefault();
+            evt.stopPropagation();
+            playSound("click");
+
+            if (logoutInFlight) {
+              logLogoutClickIgnored('in-flight', { screen: activeScreen });
+              return;
+            }
+
+            const liveService = getAuthService();
+            if (!liveService || typeof liveService.signOut !== 'function') {
+              logLogoutClickIgnored('service-unavailable', { screen: activeScreen });
+              setMessage('Service indisponible.', 'error');
+              return;
+            }
+
+            logoutInFlight = true;
             setMessage('Déconnexion en cours…');
-          }
-        }, { passive:false });
+
+            try {
+              const { timedOut, value: result } = await resolveWithTimeout(
+                Promise.resolve().then(() => liveService.signOut()),
+                { timeoutMs: AUTH_SIGN_OUT_TIMEOUT_MS, label: 'auth:signOut' }
+              );
+              if (timedOut) {
+                console.warn('[auth] logout timed out');
+                setMessage('La déconnexion prend plus de temps que prévu. Réessayez.', 'error');
+                return;
+              }
+              if (!result?.success) {
+                setMessage(result?.message || 'Déconnexion impossible.', 'error');
+              }
+            } catch (error) {
+              console.error('[auth] logout handler failed', error);
+              setMessage('Déconnexion impossible pour le moment.', 'error');
+            } finally {
+              logoutInFlight = false;
+            }
+          }, { passive:false });
+        }
+        return;
       }
-      return;
-    }
 
     const mode = this.accountMode === 'signup' ? 'signup' : 'signin';
     if (body) {
