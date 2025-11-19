@@ -463,6 +463,21 @@ class AuthController {
       return { success: false, message: 'Déconnexion impossible pour le moment.' };
     }
   }
+
+  async forceLocalSignOut(options = {}) {
+    const reason = typeof options.reason === 'string' && options.reason.trim()
+      ? options.reason.trim()
+      : 'local-forced';
+    try {
+      if (this.supabase?.auth && typeof this.supabase.auth.signOut === 'function') {
+        await this.supabase.auth.signOut({ scope: 'local' });
+      }
+    } catch (error) {
+      console.warn('[auth] local-only signOut cleanup failed', error);
+    }
+    this.notify({ user: null, profile: null, lastError: null });
+    return { success: true, forced: true, reason };
+  }
 }
 
 const authController = new AuthController();
@@ -474,6 +489,7 @@ function buildFacade(controller) {
     signIn: (payload) => controller.signIn(payload || {}),
     signUp: (payload) => controller.signUp(payload || {}),
     signOut: () => controller.signOut(),
+    forceLocalSignOut: (payload) => controller.forceLocalSignOut(payload || {}),
   };
 }
 
