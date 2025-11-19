@@ -935,6 +935,15 @@ async function applySnapshotForPlayer(snapshot, playerId, reason = 'unspecified'
     return;
   }
 
+  if (isActiveGameplayInProgress()) {
+    if (snapshot) {
+      console.info(
+        `[progress] ignoring snapshot${debugFormatContext({ reason, playerId, activePlayerId, run: game?.state, screen: activeScreen })}`
+      );
+    }
+    return;
+  }
+
   pendingProgressSnapshot = snapshot || null;
   lastProgressPlayerId = playerId;
 
@@ -945,10 +954,13 @@ async function applySnapshotForPlayer(snapshot, playerId, reason = 'unspecified'
   await applyPendingProgressIfPossible();
 }
 
-async function refreshProgressSnapshotForTitleStart() {
+async function refreshProgressSnapshotForTitleStart(options = {}) {
   const service = getProgressService();
   const auth = getAuthStateSnapshot?.();
   const playerId = auth?.profile?.id || null;
+  const eagerWaitRaw = Number.isFinite(options.eagerWaitMs) ? options.eagerWaitMs : null;
+  const eagerWaitMs = eagerWaitRaw !== null ? Math.max(0, eagerWaitRaw) : PROGRESS_LOAD_TIMEOUT_MS;
+  const effectiveTimeout = Math.min(PROGRESS_LOAD_TIMEOUT_MS, eagerWaitMs);
 
   if (!service || !playerId || !auth?.user) {
     return;
@@ -972,10 +984,13 @@ async function refreshProgressSnapshotForTitleStart() {
 
   const loadOutcome = await waitForPromiseWithTimeout(loadPromise, {
     label: 'title-start snapshot load',
-    timeoutMs: PROGRESS_LOAD_TIMEOUT_MS,
+    timeoutMs: effectiveTimeout,
   });
 
   if (!loadOutcome.completed) {
+    console.info(
+      `[progress] continuing title start without snapshot${debugFormatContext({ playerId, waitedMs: effectiveTimeout })}`
+    );
     loadPromise
       .then((snapshot) => applySnapshotForPlayer(snapshot, playerId, 'title-refresh-late'))
       .catch((error) => console.warn('[progress] failed to refresh progression on title start (late)', error));
@@ -1225,6 +1240,10 @@ let ctx;
 let overlay;
 let game;
 
+function isActiveGameplayInProgress(){
+  return Boolean(game && game.state === 'playing' && activeScreen === 'running');
+}
+
 const DEFAULT_AUTH_FRONT_STATE = Object.freeze({
   enabled: false,
   ready: false,
@@ -1248,6 +1267,7 @@ let logoutInFlight = false;
 let logoutWatchdogTimer = null;
 const PROGRESS_PROMISE_TIMEOUT_MS = 3500;
 const PROGRESS_LOAD_TIMEOUT_MS = 5000;
+const TITLE_START_PROGRESS_EAGER_WAIT_MS = 900;
 const LOGOUT_WATCHDOG_TIMEOUT_MS = 7000;
 const SAVE_AND_QUIT_TIMEOUT_MS = 4500;
 const SAVE_AND_QUIT_LABELS = Object.freeze({
@@ -4322,7 +4342,7 @@ class Game{
 
     try {
       console.info(`[progress] start requested${debugFormatContext({ via: 'uiStartFromTitle', screen: activeScreen })}`);
-      await refreshProgressSnapshotForTitleStart();
+      await refreshProgressSnapshotForTitleStart({ eagerWaitMs: TITLE_START_PROGRESS_EAGER_WAIT_MS });
       leaveTitleScreen();
       overlay.innerHTML = '';
       hideOverlay(overlay);
@@ -4497,20 +4517,46 @@ class Game{
             logoutInFlight = true;
             if (logoutWatchdogTimer) {
               clearTimeout(logoutWatchdogTimer);
-            }
-            logoutWatchdogTimer = setTimeout(() => {
-              if (!logoutInFlight) {
-                return;
-              }
-              logoutInFlight = false;
-              console.warn('[auth] logout watchdog triggered after timeout');
-              setMessage('Déconnexion trop longue. Réessayez.', 'error');
               logoutWatchdogTimer = null;
-            }, LOGOUT_WATCHDOG_TIMEOUT_MS);
+            }
             setMessage('Déconnexion en cours…');
 
             try {
-              const result = await liveService.signOut();
+              const timeoutToken = Symbol('logout-timeout');
+              const signOutPromise = liveService.signOut();
+              const watchdogPromise = new Promise((resolve) => {
+                logoutWatchdogTimer = setTimeout(() => {
+                  console.warn('[auth] logout watchdog triggered after timeout');
+                  setMessage('Déconnexion trop longue. Réessayez.', 'error');
+                  logoutWatchdogTimer = null;
+                  resolve(timeoutToken);
+                }, LOGOUT_WATCHDOG_TIMEOUT_MS);
+              });
+
+              const result = await Promise.race([signOutPromise, watchdogPromise]);
+              if (result === timeoutToken) {
+                if (typeof liveService.forceLocalSignOut === 'function') {
+                  try {
+                    await liveService.forceLocalSignOut({ reason: 'watchdog-timeout' });
+                  } catch (error) {
+                    console.warn('[auth] local logout fallback failed', error);
+                  }
+                }
+                if (signOutPromise && typeof signOutPromise.then === 'function') {
+                  signOutPromise
+                    .then((lateResult) => {
+                      if (lateResult?.success) {
+                        console.info('[auth] remote signOut confirmed after local fallback');
+                      } else if (lateResult) {
+                        console.warn('[auth] remote signOut reported failure after local fallback', lateResult);
+                      }
+                    })
+                    .catch((error) => console.warn('[auth] remote signOut rejected after local fallback', error));
+                }
+                console.warn('[auth] Supabase signOut not confirmed in time. Forced local logout.');
+                return;
+              }
+
               if (!result?.success) {
                 setMessage(result?.message || 'Déconnexion impossible.', 'error');
               }
