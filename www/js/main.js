@@ -1067,6 +1067,22 @@ function logNavigation(target, context = {}) {
   console.info(`[nav] goto(${target})${navContext}`);
 }
 
+function logPlayClickIgnored(reason, extra = {}) {
+  const details = debugFormatContext({
+    reason,
+    ...extra,
+  });
+  console.info(`[nav] play click ignored because ${reason}${details}`);
+}
+
+function logLogoutClickIgnored(reason, extra = {}) {
+  const details = debugFormatContext({
+    reason,
+    ...extra,
+  });
+  console.info(`[auth] logout click ignored because ${reason}${details}`);
+}
+
 function setActiveScreen(next, context = {}) {
   const normalized = normalizeScreenName(next);
   const prev = activeScreen;
@@ -1121,6 +1137,7 @@ let lastProgressPlayerId = null;
 let progressHydrationInFlight = null;
 let latestProgressSyncPromise = Promise.resolve();
 let hasAppliedProgressSnapshot = false;
+let logoutInFlight = false;
 const SAVE_AND_QUIT_TIMEOUT_MS = 4500;
 const SAVE_AND_QUIT_LABELS = Object.freeze({
   default: 'Sauvegarder & Quitter',
@@ -1263,6 +1280,19 @@ function enterTitleScreen() {
     overlay.classList.remove('overlay-rules');
     overlay.classList.add('overlay-title');
   }
+
+  const runtimeInstance = (typeof Game !== 'undefined' && Game.instance)
+    ? Game.instance
+    : (game || null);
+  if (runtimeInstance && runtimeInstance.state !== 'title') {
+    console.info(
+      `[nav] syncing runtime state to title${debugFormatContext({
+        previous: runtimeInstance.state,
+      })}`
+    );
+    runtimeInstance.state = 'title';
+  }
+
   playMenuMusic();
 }
 
@@ -4160,8 +4190,21 @@ class Game{
     this.renderGameOver(); if (TG){ try{ TG.sendData(JSON.stringify({ score:this.score, duration:CONFIG.runSeconds, version:VERSION })); }catch(e){} }
   }
   async uiStartFromTitle(){
-    if (this.state !== 'title' || this.titleStartInFlight){
+    if (this.titleStartInFlight){
+      logPlayClickIgnored('start-in-flight', { screen: activeScreen, state: this.state });
       return;
+    }
+
+    if (this.state !== 'title'){
+      if (activeScreen === 'title') {
+        console.warn(
+          `[nav] title start recovery${debugFormatContext({ previous: this.state })}`
+        );
+        this.state = 'title';
+      } else {
+        logPlayClickIgnored('invalid-state', { screen: activeScreen, state: this.state });
+        return;
+      }
     }
 
     this.titleStartInFlight = true;
@@ -4322,25 +4365,42 @@ class Game{
       }
       wireCloseButtons();
       const signOutBtn = document.getElementById('btnAccountSignOut');
-      if (signOutBtn) {
-        addEvent(signOutBtn, INPUT.tap, async (evt)=>{
-          evt.preventDefault();
-          evt.stopPropagation();
-          playSound("click");
-          if (!service || typeof service.signOut !== 'function') {
-            setMessage('Service indisponible.', 'error');
-            return;
-          }
-          const result = await service.signOut();
-          if (!result?.success) {
-            setMessage(result?.message || 'Déconnexion impossible.', 'error');
-          } else {
+        if (signOutBtn) {
+          addEvent(signOutBtn, INPUT.tap, async (evt)=>{
+            evt.preventDefault();
+            evt.stopPropagation();
+            playSound("click");
+
+            if (logoutInFlight) {
+              logLogoutClickIgnored('in-flight', { screen: activeScreen });
+              return;
+            }
+
+            const liveService = getAuthService();
+            if (!liveService || typeof liveService.signOut !== 'function') {
+              logLogoutClickIgnored('service-unavailable', { screen: activeScreen });
+              setMessage('Service indisponible.', 'error');
+              return;
+            }
+
+            logoutInFlight = true;
             setMessage('Déconnexion en cours…');
-          }
-        }, { passive:false });
+
+            try {
+              const result = await liveService.signOut();
+              if (!result?.success) {
+                setMessage(result?.message || 'Déconnexion impossible.', 'error');
+              }
+            } catch (error) {
+              console.error('[auth] logout handler failed', error);
+              setMessage('Déconnexion impossible pour le moment.', 'error');
+            } finally {
+              logoutInFlight = false;
+            }
+          }, { passive:false });
+        }
+        return;
       }
-      return;
-    }
 
     const mode = this.accountMode === 'signup' ? 'signup' : 'signin';
     if (body) {
