@@ -763,14 +763,41 @@ async function applyProgressSnapshot(snapshot){
 }
 
 async function applyPendingProgressIfPossible(){
-  if (!pendingProgressSnapshot || !game || progressHydrationInFlight) return;
-  progressHydrationInFlight = applyProgressSnapshot(pendingProgressSnapshot)
-    .catch((error) => console.warn('[progress] hydration failed', error))
-    .finally(() => {
-      pendingProgressSnapshot = null;
-      progressHydrationInFlight = null;
+  if (!pendingProgressSnapshot || !game) return;
+
+  if (progressHydrationInFlight) {
+    try {
+      await progressHydrationInFlight;
+    } catch (error) {
+      console.warn('[progress] previous hydration failed', error);
+    }
+
+    if (!pendingProgressSnapshot || !game) {
+      return;
+    }
+  }
+
+  const snapshotToApply = pendingProgressSnapshot;
+  pendingProgressSnapshot = null;
+
+  const hydrationPromise = applyProgressSnapshot(snapshotToApply);
+
+  progressHydrationInFlight = hydrationPromise.finally(() => {
+      if (progressHydrationInFlight === hydrationPromise) {
+        progressHydrationInFlight = null;
+      }
     });
-  await progressHydrationInFlight;
+
+  try {
+    await hydrationPromise;
+  } catch (error) {
+    console.warn('[progress] hydration failed', error);
+  } finally {
+    await progressHydrationInFlight;
+    if (pendingProgressSnapshot && game) {
+      await applyPendingProgressIfPossible();
+    }
+  }
 }
 
 async function syncProgressFromAuthState(state){
@@ -793,8 +820,7 @@ async function syncProgressFromAuthState(state){
   latestProgressSyncPromise = (async () => {
     try {
       const snapshot = await service.loadProgress();
-      pendingProgressSnapshot = snapshot;
-      await applyPendingProgressIfPossible();
+      await applySnapshotForPlayer(snapshot, playerId, 'auth-sync');
     } catch (error) {
       console.warn('[progress] failed to load progression', error);
     }
@@ -854,6 +880,71 @@ async function persistProgressSnapshot(reason = 'unspecified'){
   }
 }
 
+async function waitForPromiseWithTimeout(promise, options = {}) {
+  if (!promise) {
+    return { completed: true, timedOut: false };
+  }
+
+  const { timeoutMs = PROGRESS_PROMISE_TIMEOUT_MS, label = 'async operation' } = options;
+  const timeoutToken = Symbol('progress-timeout');
+  let timeoutId = null;
+
+  const timeoutPromise = new Promise((resolve) => {
+    timeoutId = setTimeout(() => resolve(timeoutToken), Math.max(0, timeoutMs));
+  });
+
+  const wrappedPromise = promise.then(
+    (value) => ({ status: 'fulfilled', value }),
+    (error) => ({ status: 'rejected', error })
+  );
+
+  try {
+    const result = await Promise.race([wrappedPromise, timeoutPromise]);
+    if (result === timeoutToken) {
+      console.warn(`[progress] ${label} timed out after ${timeoutMs}ms`);
+      return { completed: false, timedOut: true };
+    }
+    if (result.status === 'rejected') {
+      console.warn(`[progress] ${label} failed`, result.error);
+      return { completed: true, timedOut: false, error: result.error };
+    }
+    return { completed: true, timedOut: false, value: result.value };
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  }
+}
+
+async function applySnapshotForPlayer(snapshot, playerId, reason = 'unspecified') {
+  if (!playerId) {
+    return;
+  }
+
+  const currentAuth = typeof getAuthStateSnapshot === 'function'
+    ? getAuthStateSnapshot()
+    : null;
+  const activePlayerId = currentAuth?.profile?.id || null;
+
+  if (!currentAuth?.user || playerId !== activePlayerId) {
+    if (snapshot) {
+      console.info(
+        `[progress] ignoring snapshot${debugFormatContext({ reason, playerId, activePlayerId })}`
+      );
+    }
+    return;
+  }
+
+  pendingProgressSnapshot = snapshot || null;
+  lastProgressPlayerId = playerId;
+
+  if (!pendingProgressSnapshot) {
+    return;
+  }
+
+  await applyPendingProgressIfPossible();
+}
+
 async function refreshProgressSnapshotForTitleStart() {
   const service = getProgressService();
   const auth = getAuthStateSnapshot?.();
@@ -863,27 +954,43 @@ async function refreshProgressSnapshotForTitleStart() {
     return;
   }
 
-  try {
-    await latestProgressSyncPromise;
-  } catch (error) {
-    console.warn('[progress] sync wait before refresh failed', error);
-  }
+  await waitForPromiseWithTimeout(latestProgressSyncPromise, {
+    label: 'title-start sync wait',
+  });
 
-  if (progressHydrationInFlight) {
-    try {
-      await progressHydrationInFlight;
-    } catch (error) {
-      console.warn('[progress] hydration wait before refresh failed', error);
-    }
-  }
+  await waitForPromiseWithTimeout(progressHydrationInFlight, {
+    label: 'title-start hydration wait',
+  });
 
+  let loadPromise;
   try {
-    const snapshot = await service.loadProgress();
-    pendingProgressSnapshot = snapshot;
-    lastProgressPlayerId = playerId;
-    await applyPendingProgressIfPossible();
+    loadPromise = service.loadProgress();
   } catch (error) {
     console.warn('[progress] failed to refresh progression on title start', error);
+    return;
+  }
+
+  const loadOutcome = await waitForPromiseWithTimeout(loadPromise, {
+    label: 'title-start snapshot load',
+    timeoutMs: PROGRESS_LOAD_TIMEOUT_MS,
+  });
+
+  if (!loadOutcome.completed) {
+    loadPromise
+      .then((snapshot) => applySnapshotForPlayer(snapshot, playerId, 'title-refresh-late'))
+      .catch((error) => console.warn('[progress] failed to refresh progression on title start (late)', error));
+    return;
+  }
+
+  if (loadOutcome.error) {
+    console.warn('[progress] failed to refresh progression on title start', loadOutcome.error);
+    return;
+  }
+
+  try {
+    await applySnapshotForPlayer(loadOutcome.value, playerId, 'title-refresh');
+  } catch (error) {
+    console.warn('[progress] failed to apply refreshed progression', error);
   }
 }
 
@@ -1138,6 +1245,10 @@ let progressHydrationInFlight = null;
 let latestProgressSyncPromise = Promise.resolve();
 let hasAppliedProgressSnapshot = false;
 let logoutInFlight = false;
+let logoutWatchdogTimer = null;
+const PROGRESS_PROMISE_TIMEOUT_MS = 3500;
+const PROGRESS_LOAD_TIMEOUT_MS = 5000;
+const LOGOUT_WATCHDOG_TIMEOUT_MS = 7000;
 const SAVE_AND_QUIT_TIMEOUT_MS = 4500;
 const SAVE_AND_QUIT_LABELS = Object.freeze({
   default: 'Sauvegarder & Quitter',
@@ -4384,6 +4495,18 @@ class Game{
             }
 
             logoutInFlight = true;
+            if (logoutWatchdogTimer) {
+              clearTimeout(logoutWatchdogTimer);
+            }
+            logoutWatchdogTimer = setTimeout(() => {
+              if (!logoutInFlight) {
+                return;
+              }
+              logoutInFlight = false;
+              console.warn('[auth] logout watchdog triggered after timeout');
+              setMessage('Déconnexion trop longue. Réessayez.', 'error');
+              logoutWatchdogTimer = null;
+            }, LOGOUT_WATCHDOG_TIMEOUT_MS);
             setMessage('Déconnexion en cours…');
 
             try {
@@ -4396,6 +4519,10 @@ class Game{
               setMessage('Déconnexion impossible pour le moment.', 'error');
             } finally {
               logoutInFlight = false;
+              if (logoutWatchdogTimer) {
+                clearTimeout(logoutWatchdogTimer);
+                logoutWatchdogTimer = null;
+              }
             }
           }, { passive:false });
         }
