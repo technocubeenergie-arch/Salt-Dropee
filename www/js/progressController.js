@@ -60,7 +60,7 @@ async function loadProgress() {
     const { supabase, playerId } = context;
     const { data, error } = await supabase
       .from('progress')
-      .select('level, score, lives, time_left, state, updated_at')
+      .select('level, score, state, updated_at')
       .eq('player_id', playerId)
       // on lit toujours la ligne la plus récente
       .order('updated_at', { ascending: false })
@@ -79,8 +79,6 @@ async function loadProgress() {
     return {
       level: data.level ?? null,
       score: data.score ?? null,
-      lives: data.lives ?? null,
-      timeLeft: data.time_left ?? null,
       state: data.state ?? null,
       updatedAt: data.updated_at || null,
     };
@@ -102,8 +100,6 @@ async function saveProgress(snapshot = {}) {
       player_id: playerId,
       level: snapshot.level ?? null,
       score: snapshot.score ?? null,
-      lives: snapshot.lives ?? null,
-      time_left: snapshot.timeLeft ?? null,
       state: snapshot.state ?? null,
     };
 

@@ -715,9 +715,40 @@ function normalizeProgressLevel(level){
   return clamped;
 }
 
-async function applyProgressSnapshot(snapshot){
+function getActivePlayerId(){
+  const auth = typeof getAuthStateSnapshot === 'function' ? getAuthStateSnapshot() : null;
+  return auth?.profile?.id || null;
+}
+
+function resetProgressRuntime(reason = 'reset') {
+  progressRuntime.pending = null;
+  progressRuntime.inFlight = null;
+  progressRuntime.phase = 'idle';
+  progressRuntime.requestId += 1; // invalidate late promises
+  progressRuntime.lastAppliedPlayerId = null;
+  if (reason) {
+    console.info(`[progress] runtime reset${debugFormatContext({ reason })}`);
+  }
+}
+
+function selectNewestSnapshot(existingMeta, nextMeta) {
+  if (!nextMeta?.snapshot) return existingMeta || null;
+  if (!existingMeta?.snapshot) return nextMeta;
+  const existingTs = Date.parse(existingMeta.snapshot.updatedAt || '') || 0;
+  const nextTs = Date.parse(nextMeta.snapshot.updatedAt || '') || 0;
+  return nextTs >= existingTs ? nextMeta : existingMeta;
+}
+
+async function applyProgressSnapshot(snapshot, playerId){
   if (!snapshot || !game) return;
+
   const levelNumber = normalizeProgressLevel(snapshot.level || 1);
+  const currentLevelNumber = Math.max(1, (Number.isFinite(currentLevelIndex) ? Math.floor(currentLevelIndex) : 0) + 1);
+  if (currentLevelNumber > levelNumber) {
+    console.info('[progress] ignoring older snapshot', debugFormatContext({ levelNumber, currentLevelNumber }));
+    return;
+  }
+
   const levelIndex = Math.max(0, levelNumber - 1);
 
   try {
@@ -729,75 +760,126 @@ async function applyProgressSnapshot(snapshot){
   const restoredScore = Number.isFinite(snapshot.score)
     ? snapshot.score
     : Number(snapshot.score) || 0;
-  const restoredLives = Number.isFinite(snapshot.lives)
-    ? Math.max(0, Math.floor(snapshot.lives))
-    : levelState?.lives || 0;
-  const restoredTime = Number.isFinite(snapshot.timeLeft)
-    ? Math.max(0, Math.round(snapshot.timeLeft))
-    : Math.max(0, Math.round(levelState?.timeLimit || 0));
 
   currentLevelIndex = levelIndex;
   window.currentLevelIndex = currentLevelIndex;
 
   score = restoredScore;
-  lives = restoredLives;
-  timeLeft = restoredTime;
 
   if (game) {
     game.score = restoredScore;
-    game.lives = restoredLives;
-    game.timeLeft = restoredTime;
     game.levelReached = Math.max(game.levelReached || 1, levelNumber);
+    game.state = 'inter';
     if (typeof game.render === 'function') {
       game.render();
     }
   }
 
   if (typeof setHUDScore === 'function') setHUDScore(restoredScore);
-  if (typeof setHUDLives === 'function') setHUDLives(restoredLives);
-  if (typeof setHUDTime === 'function') setHUDTime(restoredTime);
+
+  gameState = 'inter';
+  levelEnded = true;
+  spawningEnabled = false;
+  disablePlayerInput?.('progress-apply');
 
   hasAppliedProgressSnapshot = true;
+  progressRuntime.lastAppliedPlayerId = playerId || getActivePlayerId();
 
-  console.info('[progress] applied saved snapshot', debugFormatContext({ levelNumber, restoredScore, restoredLives, restoredTime }));
+  showInterLevelScreen('win', { replaySound: false });
+
+  console.info('[progress] applied saved snapshot', debugFormatContext({ levelNumber, restoredScore }));
 }
 
 async function applyPendingProgressIfPossible(){
-  if (!pendingProgressSnapshot || !game) return;
-
-  if (progressHydrationInFlight) {
-    try {
-      await progressHydrationInFlight;
-    } catch (error) {
-      console.warn('[progress] previous hydration failed', error);
-    }
-
-    if (!pendingProgressSnapshot || !game) {
-      return;
-    }
+  const pending = progressRuntime.pending;
+  if (!pending || !game) return;
+  if (isActiveGameplayInProgress()) {
+    return;
   }
 
-  const snapshotToApply = pendingProgressSnapshot;
-  pendingProgressSnapshot = null;
-
-  const hydrationPromise = applyProgressSnapshot(snapshotToApply);
-
-  progressHydrationInFlight = hydrationPromise.finally(() => {
-      if (progressHydrationInFlight === hydrationPromise) {
-        progressHydrationInFlight = null;
-      }
-    });
+  progressRuntime.pending = null;
+  progressRuntime.phase = 'applying';
 
   try {
-    await hydrationPromise;
+    await applyProgressSnapshot(pending.snapshot, pending.playerId);
   } catch (error) {
     console.warn('[progress] hydration failed', error);
   } finally {
-    await progressHydrationInFlight;
-    if (pendingProgressSnapshot && game) {
-      await applyPendingProgressIfPossible();
-    }
+    progressRuntime.phase = 'idle';
   }
+}
+
+function isProgressRequestCurrent(requestId, playerId) {
+  return progressRuntime.requestId === requestId && playerId === getActivePlayerId();
+}
+
+function queueProgressSnapshot(snapshot, playerId, reason = 'unspecified') {
+  const activePlayerId = getActivePlayerId();
+  if (!playerId || playerId !== activePlayerId) {
+    if (snapshot) {
+      console.info(
+        `[progress] ignoring snapshot${debugFormatContext({ reason, playerId, activePlayerId })}`
+      );
+    }
+    return;
+  }
+
+  if (!snapshot) {
+    progressRuntime.pending = null;
+    return;
+  }
+
+  const nextMeta = { snapshot, playerId, reason };
+
+  progressRuntime.pending = selectNewestSnapshot(progressRuntime.pending, nextMeta);
+
+  // Do not disrupt a running game; application is attempted when safe.
+  applyPendingProgressIfPossible();
+}
+
+function startProgressLoadForPlayer(playerId, reason = 'auth-sync') {
+  const service = getProgressService();
+  if (!service || !playerId) {
+    return null;
+  }
+
+  const requestId = progressRuntime.requestId + 1;
+  progressRuntime.requestId = requestId;
+  progressRuntime.phase = 'loading';
+
+  const promise = Promise.resolve()
+    .then(() => service.loadProgress())
+    .catch((error) => {
+      throw error;
+    });
+
+  progressRuntime.inFlight = { requestId, promise, label: reason };
+
+  promise
+    .then((snapshot) => {
+      if (!isProgressRequestCurrent(requestId, playerId)) {
+        console.info('[progress] late snapshot ignored', debugFormatContext({ reason, playerId }));
+        return;
+      }
+      queueProgressSnapshot(snapshot, playerId, reason);
+    })
+    .catch((error) => {
+      if (isProgressRequestCurrent(requestId, playerId)) {
+        console.warn('[progress] failed to load progression', error);
+      } else {
+        console.info('[progress] late progression load ignored', debugFormatContext({ reason, playerId }));
+      }
+    })
+    .finally(() => {
+      if (progressRuntime.inFlight?.requestId === requestId) {
+        progressRuntime.inFlight = null;
+      }
+      if (progressRuntime.phase === 'loading' && progressRuntime.requestId === requestId) {
+        progressRuntime.phase = 'idle';
+      }
+    });
+
+  return promise;
 }
 
 async function syncProgressFromAuthState(state){
@@ -805,54 +887,28 @@ async function syncProgressFromAuthState(state){
   const playerId = state?.profile?.id || null;
 
   if (!service || !playerId || !state?.user) {
-    pendingProgressSnapshot = null;
-    lastProgressPlayerId = null;
-    latestProgressSyncPromise = Promise.resolve();
+    resetProgressRuntime('auth-missing');
     return;
   }
 
-  if (playerId === lastProgressPlayerId && pendingProgressSnapshot === null) {
+  if (progressRuntime.inFlight && progressRuntime.inFlight.requestId && isProgressRequestCurrent(progressRuntime.inFlight.requestId, playerId)) {
     return;
   }
 
-  lastProgressPlayerId = playerId;
-
-  latestProgressSyncPromise = (async () => {
-    try {
-      const snapshot = await service.loadProgress();
-      await applySnapshotForPlayer(snapshot, playerId, 'auth-sync');
-    } catch (error) {
-      console.warn('[progress] failed to load progression', error);
-    }
-  })();
-
-  await latestProgressSyncPromise;
+  startProgressLoadForPlayer(playerId, 'auth-sync');
 }
 
 async function waitForInitialProgressHydration(){
-  // Wait for any in-flight Supabase progress retrieval triggered by auth hydration
-  // before loading the initial level, so saved snapshots take priority over
-  // default level initialization.
-  let lastSeenPromise = null;
-  while (true) {
-    const current = latestProgressSyncPromise || Promise.resolve();
-    if (current === lastSeenPromise) break;
-    lastSeenPromise = current;
-    try {
-      await current;
-    } catch (error) {
-      console.warn('[progress] sync wait failed', error);
-    }
-    if (current === latestProgressSyncPromise) break;
+  const inFlightPromise = progressRuntime.inFlight?.promise || null;
+  const hydrationOutcome = await waitForPromiseWithTimeout(inFlightPromise, {
+    label: 'initial progress hydration',
+  });
+
+  if (!hydrationOutcome.completed && progressRuntime.phase === 'loading') {
+    progressRuntime.phase = 'idle';
   }
 
-  if (progressHydrationInFlight) {
-    try {
-      await progressHydrationInFlight;
-    } catch (error) {
-      console.warn('[progress] hydration wait failed', error);
-    }
-  }
+  await applyPendingProgressIfPossible();
 }
 
 async function persistProgressSnapshot(reason = 'unspecified'){
@@ -863,8 +919,6 @@ async function persistProgressSnapshot(reason = 'unspecified'){
   const snapshot = {
     level: levelNumber,
     score: Number.isFinite(score) ? score : Number(score) || 0,
-    lives: Number.isFinite(lives) ? Math.max(0, Math.floor(lives)) : 0,
-    timeLeft: Number.isFinite(timeLeft) ? Math.max(0, Math.round(timeLeft)) : null,
     state: {
       reason,
       level: levelNumber,
@@ -917,68 +971,29 @@ async function waitForPromiseWithTimeout(promise, options = {}) {
 }
 
 async function applySnapshotForPlayer(snapshot, playerId, reason = 'unspecified') {
-  if (!playerId) {
-    return;
-  }
-
-  const currentAuth = typeof getAuthStateSnapshot === 'function'
-    ? getAuthStateSnapshot()
-    : null;
-  const activePlayerId = currentAuth?.profile?.id || null;
-
-  if (!currentAuth?.user || playerId !== activePlayerId) {
-    if (snapshot) {
-      console.info(
-        `[progress] ignoring snapshot${debugFormatContext({ reason, playerId, activePlayerId })}`
-      );
-    }
-    return;
-  }
-
-  if (isActiveGameplayInProgress()) {
-    if (snapshot) {
-      console.info(
-        `[progress] ignoring snapshot${debugFormatContext({ reason, playerId, activePlayerId, run: game?.state, screen: activeScreen })}`
-      );
-    }
-    return;
-  }
-
-  pendingProgressSnapshot = snapshot || null;
-  lastProgressPlayerId = playerId;
-
-  if (!pendingProgressSnapshot) {
-    return;
-  }
-
+  queueProgressSnapshot(snapshot, playerId, reason);
   await applyPendingProgressIfPossible();
 }
 
 async function refreshProgressSnapshotForTitleStart(options = {}) {
-  const service = getProgressService();
   const auth = getAuthStateSnapshot?.();
   const playerId = auth?.profile?.id || null;
   const eagerWaitRaw = Number.isFinite(options.eagerWaitMs) ? options.eagerWaitMs : null;
   const eagerWaitMs = eagerWaitRaw !== null ? Math.max(0, eagerWaitRaw) : PROGRESS_LOAD_TIMEOUT_MS;
   const effectiveTimeout = Math.min(PROGRESS_LOAD_TIMEOUT_MS, eagerWaitMs);
 
-  if (!service || !playerId || !auth?.user) {
+  if (!playerId || !auth?.user) {
     return;
   }
 
-  await waitForPromiseWithTimeout(latestProgressSyncPromise, {
+  await waitForPromiseWithTimeout(progressRuntime.inFlight?.promise, {
     label: 'title-start sync wait',
   });
 
-  await waitForPromiseWithTimeout(progressHydrationInFlight, {
-    label: 'title-start hydration wait',
-  });
+  await applyPendingProgressIfPossible();
 
-  let loadPromise;
-  try {
-    loadPromise = service.loadProgress();
-  } catch (error) {
-    console.warn('[progress] failed to refresh progression on title start', error);
+  const loadPromise = startProgressLoadForPlayer(playerId, 'title-refresh');
+  if (!loadPromise) {
     return;
   }
 
@@ -992,7 +1007,7 @@ async function refreshProgressSnapshotForTitleStart(options = {}) {
       `[progress] continuing title start without snapshot${debugFormatContext({ playerId, waitedMs: effectiveTimeout })}`
     );
     loadPromise
-      .then((snapshot) => applySnapshotForPlayer(snapshot, playerId, 'title-refresh-late'))
+      .then(() => applyPendingProgressIfPossible())
       .catch((error) => console.warn('[progress] failed to refresh progression on title start (late)', error));
     return;
   }
@@ -1003,7 +1018,7 @@ async function refreshProgressSnapshotForTitleStart(options = {}) {
   }
 
   try {
-    await applySnapshotForPlayer(loadOutcome.value, playerId, 'title-refresh');
+    await applyPendingProgressIfPossible();
   } catch (error) {
     console.warn('[progress] failed to apply refreshed progression', error);
   }
@@ -1258,10 +1273,13 @@ let authFacade = null;
 let authUnsubscribe = null;
 let authBridgeAttempts = 0;
 let authBridgeTimer = null;
-let pendingProgressSnapshot = null;
-let lastProgressPlayerId = null;
-let progressHydrationInFlight = null;
-let latestProgressSyncPromise = Promise.resolve();
+const progressRuntime = {
+  phase: 'idle', // idle | loading | applying
+  pending: null,
+  inFlight: null,
+  requestId: 0,
+  lastAppliedPlayerId: null,
+};
 let hasAppliedProgressSnapshot = false;
 let logoutInFlight = false;
 let logoutWatchdogTimer = null;
@@ -1425,6 +1443,8 @@ function enterTitleScreen() {
   }
 
   playMenuMusic();
+
+  applyPendingProgressIfPossible();
 }
 
 function leaveTitleScreen({ stopMusic = true } = {}) {
