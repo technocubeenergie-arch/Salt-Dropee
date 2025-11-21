@@ -4367,6 +4367,22 @@ class Game{
       isProgressApplicationEnabled = true;
       console.info(`[progress] start requested${debugFormatContext({ via: 'uiStartFromTitle', screen: activeScreen })}`);
       await refreshProgressSnapshotForTitleStart({ eagerWaitMs: TITLE_START_PROGRESS_EAGER_WAIT_MS });
+
+      const resumedFromSnapshot = hasAppliedProgressSnapshot && activeScreen === 'interLevel';
+
+      if (resumedFromSnapshot) {
+        overlay.innerHTML = '';
+        hideOverlay(overlay);
+        if (typeof document !== 'undefined' && document.body) {
+          document.body.classList.remove('is-title');
+        }
+        if (overlay) {
+          overlay.classList.remove('overlay-title');
+        }
+        stopMenuMusic();
+        return;
+      }
+
       leaveTitleScreen();
       overlay.innerHTML = '';
       hideOverlay(overlay);
