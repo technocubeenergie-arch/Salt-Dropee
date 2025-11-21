@@ -793,6 +793,7 @@ async function applyProgressSnapshot(snapshot, playerId){
 async function applyPendingProgressIfPossible(){
   const pending = progressRuntime.pending;
   if (!pending || !game) return;
+  if (!isProgressApplicationEnabled) return;
   if (isActiveGameplayInProgress()) {
     return;
   }
@@ -1280,6 +1281,7 @@ const progressRuntime = {
   requestId: 0,
   lastAppliedPlayerId: null,
 };
+let isProgressApplicationEnabled = false;
 let hasAppliedProgressSnapshot = false;
 let logoutInFlight = false;
 let logoutWatchdogTimer = null;
@@ -1422,6 +1424,7 @@ tryConnectAuthFacade();
 
 function enterTitleScreen() {
   setActiveScreen('title', { via: 'enterTitleScreen' });
+  isProgressApplicationEnabled = false;
   if (typeof document !== 'undefined' && document.body) {
     document.body.classList.add('is-title');
   }
@@ -4361,6 +4364,7 @@ class Game{
     this.titleStartInFlight = true;
 
     try {
+      isProgressApplicationEnabled = true;
       console.info(`[progress] start requested${debugFormatContext({ via: 'uiStartFromTitle', screen: activeScreen })}`);
       await refreshProgressSnapshotForTitleStart({ eagerWaitMs: TITLE_START_PROGRESS_EAGER_WAIT_MS });
       leaveTitleScreen();
