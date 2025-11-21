@@ -116,18 +116,28 @@ async function submitLegendScore({ playerId, score, durationSeconds, level } = {
     } else if (!existingBest) {
       console.info('[score] no existing legend score found for player');
     } else {
-      console.info('[score] existing legend score found', {
+      console.info('[score] existing legend score for player', {
         id: existingBest?.id || null,
         bestScore: coerceScore(existingBest.score),
       });
     }
 
-    if (existingBest && Number.isFinite(existingBest.score)) {
-      const bestScore = coerceScore(existingBest.score);
+    const bestScore = coerceScore(existingBest?.score);
+    const hasExistingBest = Number.isFinite(bestScore);
+
+    if (existingBest && hasExistingBest) {
       if (numericScore <= bestScore) {
-        console.info('[score] legend score not improved', { score: numericScore, existing: bestScore });
+        console.info('[score] new legend score <= existing, keeping existing', {
+          score: numericScore,
+          existing: bestScore,
+        });
         return { success: true, skipped: true, payload: { score: numericScore, bestScore } };
       }
+
+      console.info('[score] new legend score > existing, updating', {
+        score: numericScore,
+        existing: bestScore,
+      });
 
       const { error: updateError } = await supabase
         .from('scores')
@@ -135,7 +145,9 @@ async function submitLegendScore({ playerId, score, durationSeconds, level } = {
           score: numericScore,
           duration_seconds: durationPayload,
         })
-        .eq('id', existingBest.id);
+        .eq('id', existingBest.id)
+        .eq('player_id', resolvedPlayerId)
+        .eq('level', 6);
 
       if (updateError) {
         console.warn('[score] update best legend score failed', describeError(updateError));
