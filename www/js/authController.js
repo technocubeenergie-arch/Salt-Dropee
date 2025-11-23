@@ -33,8 +33,6 @@ function mapProfileRow(row, fallbackUserId) {
     id: row.id || null,
     authUserId: row.auth_user_id || fallbackUserId || null,
     username: row.username || null,
-    displayName: row.display_name || null,
-    deviceId: row.device_id || null,
     referralCode: row.referral_code || null,
   };
 }
@@ -164,7 +162,7 @@ class AuthController {
     try {
       const { data, error } = await this.supabase
         .from('players')
-        .select('id, auth_user_id, username, display_name, device_id, referral_code')
+        .select('id, auth_user_id, username, referral_code')
         .eq('auth_user_id', userId)
         .maybeSingle();
       if (error && error.code !== 'PGRST116') {
@@ -199,7 +197,7 @@ class AuthController {
       const { data, error } = await this.supabase
         .from('players')
         .upsert(payload, { onConflict: 'auth_user_id' })
-        .select('id, auth_user_id, username, display_name, device_id, referral_code')
+        .select('id, auth_user_id, username, referral_code')
         .maybeSingle();
 
       if (error) {
