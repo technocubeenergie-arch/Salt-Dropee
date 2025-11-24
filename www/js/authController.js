@@ -121,7 +121,6 @@ class AuthController {
     this.supabase = null;
     this.listeners = new Set();
     this.state = { ...DEFAULT_STATE };
-    this.authSubscription = null;
     this.init();
   }
 
@@ -269,7 +268,7 @@ class AuthController {
       await this.hydrateCurrentUser();
       this.notify({ ready: true, loading: false, lastError: null });
 
-      const { data } = this.supabase.auth.onAuthStateChange(async (_event, session) => {
+      this.supabase.auth.onAuthStateChange(async (_event, session) => {
         const user = session?.user || null;
         const { profile, error } = user ? await this.ensureProfileForUser(user) : { profile: null, error: null };
         if (error) {
@@ -278,7 +277,6 @@ class AuthController {
         const enrichedUser = await this.enrichUserWithProfile(user, { profile });
         this.notify({ user: enrichedUser, profile, ready: true, loading: false, lastError: null });
       });
-      this.authSubscription = data;
     } catch (error) {
       console.error('[auth] init failed', error);
       this.notify({
