@@ -2848,7 +2848,6 @@ function fxMagnetActive(wallet, fxManager) {
 // =====================
 // UTILS
 // =====================
-const snap = v => Math.round(v);
 const rand = (a,b)=> Math.random()*(b-a)+a;
 function choiceWeighted(entries){ const total = entries.reduce((s,e)=>s+e.w,0); let r = Math.random()*total; for (const e of entries){ if ((r-=e.w) <= 0) return e.k; } return entries[entries.length-1].k; }
 
