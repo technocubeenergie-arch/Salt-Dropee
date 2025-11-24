@@ -972,11 +972,6 @@ async function waitForPromiseWithTimeout(promise, options = {}) {
   }
 }
 
-async function applySnapshotForPlayer(snapshot, playerId, reason = 'unspecified') {
-  queueProgressSnapshot(snapshot, playerId, reason);
-  await applyPendingProgressIfPossible();
-}
-
 async function refreshProgressSnapshotForTitleStart(options = {}) {
   const auth = getAuthStateSnapshot?.();
   const playerId = auth?.profile?.id || null;
@@ -4005,17 +4000,6 @@ class Spawner{
     else if (r < pGood + pBad){ const bw = CONFIG.badWeights; const sub = choiceWeighted([{k:'bomb',w:bw.bomb*(isLate?1.2:1)},{k:'shitcoin',w:bw.shitcoin},{k:'anvil',w:bw.anvil},{k:'rugpull',w:bw.rugpull},{k:'fakeAirdrop',w:bw.fakeAirdrop}]); spawnItem(this.g,'bad',sub,x,y); }
     else { const pu = choiceWeighted([{k:'magnet',w:1},{k:'x2',w:1},{k:'shield',w:1},{k:'timeShard',w:1}]); spawnItem(this.g,'power',pu,x,y); }
   }
-}
-
-function roundRect(ctx, x, y, w, h, r) {
-  const rr = Math.min(r, w / 2, h / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + rr, y);
-  ctx.arcTo(x + w, y, x + w, y + h, rr);
-  ctx.arcTo(x + w, y + h, x, y + h, rr);
-  ctx.arcTo(x, y + h, x, y, rr);
-  ctx.arcTo(x, y, x + w, y, rr);
-  ctx.closePath();
 }
 
 function drawCompactHUD(ctx, g) {
