@@ -1314,6 +1314,20 @@ function getScoreService(){
   return null;
 }
 
+function getReferralService(){
+  if (typeof window !== 'undefined' && window.ReferralController) {
+    return window.ReferralController;
+  }
+  if (typeof window !== 'undefined' && typeof window.getReferralService === 'function') {
+    try {
+      return window.getReferralService();
+    } catch (error) {
+      console.warn('[referral] failed to read service from window', error);
+    }
+  }
+  return null;
+}
+
 function getAuthStateSnapshot(){
   return authState;
 }
@@ -4113,7 +4127,14 @@ class HUD{
 // =====================
 class Game{
   static instance=null;
-  constructor(){ Game.instance=this; this.rulesReturnView = "title"; this.accountMode = 'signin'; this.titleStartInFlight = false; this.reset({ showTitle:true }); }
+  constructor(){
+    Game.instance=this;
+    this.rulesReturnView = "title";
+    this.accountMode = 'signin';
+    this.titleStartInFlight = false;
+    this.accountFlashMessage = null;
+    this.reset({ showTitle:true });
+  }
   reset({showTitle=true}={}){
     window.__saltDroppeeLoopStarted = false;
     setInterLevelUiState(false);
@@ -4439,6 +4460,11 @@ class Game{
       if (variant === 'success') messageEl.classList.add('is-success');
     };
 
+    if (this.accountFlashMessage) {
+      setMessage(this.accountFlashMessage.text, this.accountFlashMessage.variant || 'info');
+      this.accountFlashMessage = null;
+    }
+
     const wireCloseButtons = () => {
       const closeButtons = overlay.querySelectorAll('[data-account-close]');
       closeButtons.forEach((btn) => {
@@ -4488,10 +4514,25 @@ class Game{
       const secondaryLine = safeEmail && identifier !== safeEmail
         ? `<br><small>${safeEmail}</small>`
         : '';
+      const referralCode = escapeHtml(state.profile?.referralCode || '—');
+      const referralSection = `
+          <div class="account-referral-section">
+            <p class="account-field-note account-field-readonly">Ton code de parrainage : <strong>${referralCode}</strong></p>
+            ${state.profile?.referredBy
+              ? '<p class="account-field-note account-field-readonly">Tu as déjà utilisé un code de parrainage.</p>'
+              : `<label>Code de parrainage (optionnel)
+                <input type="text" name="referralCode" data-referral-input autocomplete="off" spellcheck="false" maxlength="24" />
+              </label>
+              <div class="btnrow account-referral-actions">
+                <button type="button" data-referral-submit>Valider</button>
+              </div>
+              <p class="account-field-note account-field-error" data-referral-feedback role="status" aria-live="polite"></p>`}
+          </div>`;
       if (body) {
         body.innerHTML = `
           <p class="account-status-line">Connecté en tant que <strong>${identifier}</strong>.${secondaryLine}</p>
           ${pseudoLine}
+          ${referralSection}
           <div class="btnrow">
             <button type="button" id="btnAccountSignOut">Se déconnecter</button>
             <button type="button" data-account-close>Fermer</button>
@@ -4572,6 +4613,90 @@ class Game{
                 clearTimeout(logoutWatchdogTimer);
                 logoutWatchdogTimer = null;
               }
+            }
+          }, { passive:false });
+        }
+
+        const referralInput = overlay.querySelector('[data-referral-input]');
+        const referralSubmit = overlay.querySelector('[data-referral-submit]');
+        const referralFeedback = overlay.querySelector('[data-referral-feedback]');
+        const setReferralFeedback = (text = '', variant = 'info') => {
+          if (!referralFeedback) return;
+          referralFeedback.textContent = text || '';
+          referralFeedback.classList.remove('is-error', 'is-success');
+          if (variant === 'error') referralFeedback.classList.add('is-error');
+          if (variant === 'success') referralFeedback.classList.add('is-success');
+        };
+
+        if (referralSubmit) {
+          addEvent(referralSubmit, INPUT.tap, async (evt)=>{
+            evt.preventDefault();
+            evt.stopPropagation();
+            playSound("click");
+
+            const service = getReferralService();
+            if (!service || typeof service.applyReferralCode !== 'function') {
+              setMessage('Service de parrainage indisponible.', 'error');
+              return;
+            }
+
+            const rawCode = (referralInput?.value || '').trim();
+            setReferralFeedback('');
+            setMessage('Vérification du code…');
+
+            referralSubmit.disabled = true;
+            if (referralInput) referralInput.disabled = true;
+
+            try {
+              const result = await service.applyReferralCode({ code: rawCode });
+              if (!result?.ok) {
+                switch (result?.reason) {
+                  case 'EMPTY_CODE':
+                    setMessage('Merci de saisir un code avant de valider.', 'error');
+                    setReferralFeedback('Code manquant.', 'error');
+                    break;
+                  case 'CODE_NOT_FOUND':
+                    setMessage('Code introuvable.', 'error');
+                    setReferralFeedback('Ce code n’existe pas ou a déjà expiré.', 'error');
+                    break;
+                  case 'SELF_REFERRAL_NOT_ALLOWED':
+                    setMessage('Tu ne peux pas utiliser ton propre code.', 'error');
+                    setReferralFeedback('Choisis le code d’un autre joueur.', 'error');
+                    break;
+                  case 'ALREADY_REFERRED':
+                    setMessage('Tu as déjà utilisé un code de parrainage.', 'error');
+                    setReferralFeedback('Un code est déjà associé à ton compte.', 'error');
+                    break;
+                  case 'AUTH_REQUIRED':
+                    setMessage('Connexion requise pour appliquer un code.', 'error');
+                    setReferralFeedback('Reconnecte-toi puis réessaie.', 'error');
+                    break;
+                  default:
+                    setMessage('Impossible d’appliquer le code pour le moment.', 'error');
+                    setReferralFeedback('Réessaie dans quelques instants.', 'error');
+                    console.warn('[referral] applyReferralCode failed', result);
+                    break;
+                }
+                return;
+              }
+
+              this.accountFlashMessage = { text: 'Code accepté, merci !', variant: 'success' };
+
+              const liveService = getAuthService();
+              if (liveService?.refreshProfile) {
+                await liveService.refreshProfile();
+              } else if (typeof service.refreshProfileSnapshotFromSupabase === 'function') {
+                await service.refreshProfileSnapshotFromSupabase();
+              }
+
+              this.renderAccountPanel({ keepMode: true });
+            } catch (error) {
+              console.warn('[referral] applyReferralCode handler failed', error);
+              setMessage('Code impossible à valider pour le moment.', 'error');
+              setReferralFeedback('Réessaie dans quelques instants.', 'error');
+            } finally {
+              referralSubmit.disabled = false;
+              if (referralInput) referralInput.disabled = false;
             }
           }, { passive:false });
         }

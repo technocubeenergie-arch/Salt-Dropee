@@ -34,6 +34,7 @@ function mapProfileRow(row, fallbackUserId) {
     authUserId: row.auth_user_id || fallbackUserId || null,
     username: row.username || null,
     referralCode: row.referral_code || null,
+    referredBy: row.referred_by || null,
   };
 }
 
@@ -161,7 +162,7 @@ class AuthController {
     try {
       const { data, error } = await this.supabase
         .from('players')
-        .select('id, auth_user_id, username, referral_code')
+        .select('id, auth_user_id, username, referral_code, referred_by')
         .eq('auth_user_id', userId)
         .maybeSingle();
       if (error && error.code !== 'PGRST116') {
@@ -196,7 +197,7 @@ class AuthController {
       const { data, error } = await this.supabase
         .from('players')
         .upsert(payload, { onConflict: 'auth_user_id' })
-        .select('id, auth_user_id, username, referral_code')
+        .select('id, auth_user_id, username, referral_code, referred_by')
         .maybeSingle();
 
       if (error) {
@@ -308,6 +309,27 @@ class AuthController {
       this.state.profile = profile;
     } catch (error) {
       console.error('[auth] hydrate user failed', error);
+    }
+  }
+
+  async refreshProfile() {
+    if (!this.supabase) {
+      return { success: false, reason: 'UNAVAILABLE' };
+    }
+    const userId = this.state?.user?.id || null;
+    if (!userId) {
+      return { success: false, reason: 'NO_USER' };
+    }
+    try {
+      const profile = await this.loadProfileForUser(userId);
+      if (profile) {
+        this.notify({ profile });
+        return { success: true, profile };
+      }
+      return { success: false, reason: 'NOT_FOUND' };
+    } catch (error) {
+      console.warn('[auth] refreshProfile failed', error);
+      return { success: false, reason: 'ERROR', message: error?.message || 'refresh_failed' };
     }
   }
 
@@ -486,6 +508,7 @@ function buildFacade(controller) {
     signUp: (payload) => controller.signUp(payload || {}),
     signOut: () => controller.signOut(),
     forceLocalSignOut: (payload) => controller.forceLocalSignOut(payload || {}),
+    refreshProfile: () => controller.refreshProfile(),
   };
 }
 
