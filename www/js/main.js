@@ -929,7 +929,9 @@ async function persistProgressSnapshot(reason = 'unspecified'){
   };
 
   try {
+    console.info(`[progress] save requested${debugFormatContext({ reason, level: levelNumber })}`);
     await service.saveProgress(snapshot);
+    console.info(`[progress] save completed${debugFormatContext({ reason, level: levelNumber })}`);
   } catch (error) {
     console.warn('[progress] failed to save progression', error);
   }
@@ -3211,10 +3213,8 @@ function showInterLevelScreen(result = "win", options = {}){
 
   setActiveScreen('interLevel', { via: 'showInterLevelScreen', result });
 
-  if (!screenAlreadyVisible) {
-    // Synchronisation de la progression Supabase à chaque fin de niveau / game over.
-    persistProgressSnapshot(result === "win" ? "level-complete" : "game-over");
-  }
+  // Important : la sauvegarde de progression reste manuelle (bouton "Sauvegarder & Quitter").
+  // Aucun appel à persistProgressSnapshot ne doit être déclenché automatiquement ici.
 
   if (typeof Game !== "undefined" && Game.instance) {
     Game.instance.settingsReturnView = "inter";
