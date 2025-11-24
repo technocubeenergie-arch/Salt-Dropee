@@ -348,7 +348,6 @@ function applyLevelBackground(src) {
 }
 
 // --- Wallet ---
-const ENABLE_SCORE_BASED_WALLET = false;
 let walletImage = null;
 
 function setWalletSprite(img) {
@@ -3720,25 +3719,6 @@ class Wallet{
     this.y = BASE_H - this.h - CONFIG.wallet.bottomOffset;
     targetX = this.x + this.w / 2;
   }
-  evolveByScore(score){
-    if (!ENABLE_SCORE_BASED_WALLET) {
-      return;
-    }
-    // --- ANCIEN CODE DÉSACTIVÉ ---
-    const th = CONFIG.evolveThresholds;
-    let lvl = 1;
-    for (let i = 0; i < th.length; i++) {
-      if (score >= th[i]) lvl = i + 1;
-    }
-    if (lvl !== this.level) {
-      this.level = lvl;
-      applyWalletForLevel(lvl);
-      this.applyCaps();
-      this.g.fx.burst(this.x, this.y, '#ffcd75', 12);
-      playSound("bonusok");
-      this.squashTimer = 0.12;
-    }
-  }
   update(dt){
     const sens = this.g.settings.sensitivity || 1.0;
     const bounds = computeWalletCenterBounds(this);
@@ -4213,7 +4193,7 @@ class Game{
     }
   }
   diffMult(){ return Math.pow(CONFIG.spawnRampFactor, Math.floor(this.timeElapsed/CONFIG.spawnRampEverySec)); }
-  updateBgByScore(){ const th=CONFIG.evolveThresholds; let idx=0; for (let i=0;i<th.length;i++){ if (this.score>=th[i]) idx=i; } if (idx!==this.bgIndex){ this.bgIndex=idx; this.wallet.evolveByScore(this.score); this.levelReached = Math.max(this.levelReached, this.wallet.level); } }
+  updateBgByScore(){ const th=CONFIG.evolveThresholds; let idx=0; for (let i=0;i<th.length;i++){ if (this.score>=th[i]) idx=i; } if (idx!==this.bgIndex){ this.bgIndex=idx; } }
   start(){
     const levelCfg = LEVELS[currentLevelIndex];
     if (levelCfg?.background) {
