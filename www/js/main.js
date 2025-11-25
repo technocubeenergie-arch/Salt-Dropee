@@ -4430,7 +4430,7 @@ class Game{
       this.uiStartFromTitle();
     }, { passive:false });
   }
-  renderAccountPanel(options = {}){
+  async renderAccountPanel(options = {}){
     const keepMode = options && options.keepMode;
     if (!overlay) return;
     const service = getAuthService();
@@ -4504,6 +4504,26 @@ class Game{
     }
 
     if (state.user) {
+      let referralStats = { ok: true, creditedCount: 0 };
+      const referralService = getReferralService();
+      if (referralService && typeof referralService.fetchReferralStatsForCurrentPlayer === 'function') {
+        try {
+          const result = await referralService.fetchReferralStatsForCurrentPlayer();
+          if (result) {
+            referralStats = result;
+          }
+        } catch (error) {
+          console.warn('[referral] failed to fetch referral stats for account panel', error);
+        }
+      }
+
+      const creditedCount = referralStats?.ok ? Math.max(0, referralStats.creditedCount || 0) : 0;
+      const referralStatsLine = referralStats?.ok
+        ? (creditedCount > 0
+          ? `<p class="account-field-note account-field-readonly">Tu as déjà parrainé ${creditedCount === 1 ? '1 joueur.' : `${creditedCount} joueurs.`}</p>`
+          : '<p class="account-field-note account-field-readonly account-referral-empty">Tu n’as pas encore parrainé de joueur.</p>')
+        : '';
+
       const safeEmail = escapeHtml(state.user.email || '');
       const safeUsername = escapeHtml(state.user.username || '');
       const safeProfileUsername = escapeHtml(state.profile?.username || '');
@@ -4518,6 +4538,7 @@ class Game{
       const referralSection = `
           <div class="account-referral-section">
             <p class="account-field-note account-field-readonly">Ton code de parrainage : <strong>${referralCode}</strong></p>
+            ${referralStatsLine}
             ${state.profile?.referredBy
               ? '<p class="account-field-note account-field-readonly">Ton code de parrainage a bien été pris en compte.</p>'
               : `<label>Code de parrainage (optionnel)

@@ -91,6 +91,57 @@ async function refreshProfileSnapshotFromSupabase() {
   }
 }
 
+async function fetchReferralStatsForPlayer(playerId) {
+  if (!playerId) {
+    return { ok: false, reason: 'MISSING_PLAYER_ID' };
+  }
+
+  try {
+    const supabase = await getSupabase();
+    if (!supabase) {
+      console.warn('[referral] referral stats skipped: Supabase not ready');
+      return { ok: false, reason: 'LOAD_FAILED' };
+    }
+
+    const { data, error } = await supabase
+      .from('referral_rewards')
+      .select('credited_count')
+      .eq('player_id', playerId)
+      .maybeSingle();
+
+    if (error && error.code !== 'PGRST116') {
+      console.warn('[referral] failed to load referral stats', describeError(error));
+      return { ok: false, reason: 'LOAD_FAILED' };
+    }
+
+    if (!data) {
+      console.info(`[referral] no referral stats yet for player ${playerId}`);
+      return { ok: true, creditedCount: 0 };
+    }
+
+    const creditedCount = Number.isInteger(data?.credited_count)
+      ? Math.max(0, data.credited_count)
+      : 0;
+
+    console.info(`[referral] loaded referral stats for player ${playerId}: ${creditedCount}`);
+    return { ok: true, creditedCount };
+  } catch (error) {
+    console.warn('[referral] unexpected referral stats failure', error);
+    return { ok: false, reason: 'LOAD_FAILED' };
+  }
+}
+
+async function fetchReferralStatsForCurrentPlayer() {
+  const authState = getAuthSnapshot();
+  const playerId = authState?.profile?.id || null;
+
+  if (!authState?.user || !playerId) {
+    return { ok: true, creditedCount: 0 };
+  }
+
+  return fetchReferralStatsForPlayer(playerId);
+}
+
 async function applyReferralCode({ code } = {}) {
   try {
     const normalizedCode = typeof code === 'string'
@@ -214,6 +265,8 @@ async function getMyReferralInfo() {
 
 const ReferralController = {
   applyReferralCode,
+  fetchReferralStatsForCurrentPlayer,
+  fetchReferralStatsForPlayer,
   getMyReferralInfo,
   refreshProfileSnapshotFromSupabase,
 };
@@ -223,5 +276,11 @@ if (typeof window !== 'undefined') {
   window.getReferralService = () => ReferralController;
 }
 
-export { applyReferralCode, getMyReferralInfo, refreshProfileSnapshotFromSupabase };
+export {
+  applyReferralCode,
+  fetchReferralStatsForCurrentPlayer,
+  fetchReferralStatsForPlayer,
+  getMyReferralInfo,
+  refreshProfileSnapshotFromSupabase,
+};
 export default ReferralController;
