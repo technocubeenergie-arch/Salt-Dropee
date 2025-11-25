@@ -4519,7 +4519,7 @@ class Game{
           <div class="account-referral-section">
             <p class="account-field-note account-field-readonly">Ton code de parrainage : <strong>${referralCode}</strong></p>
             ${state.profile?.referredBy
-              ? '<p class="account-field-note account-field-readonly">Tu as déjà utilisé un code de parrainage.</p>'
+              ? '<p class="account-field-note account-field-readonly">Ton code de parrainage a bien été pris en compte.</p>'
               : `<label>Code de parrainage (optionnel)
                 <input type="text" name="referralCode" data-referral-input autocomplete="off" spellcheck="false" maxlength="24" />
               </label>
@@ -4643,11 +4643,11 @@ class Game{
             const currentAuthState = getAuthStateSnapshot();
             const alreadyReferred = !!currentAuthState?.profile?.referredBy;
 
-            if (alreadyReferred) {
-              setMessage('Tu as déjà utilisé un code de parrainage.', 'error');
-              setReferralFeedback('Un code est déjà associé à ton compte.', 'error');
-              return;
-            }
+              if (alreadyReferred) {
+                setMessage('Un code de parrainage est déjà associé à ton compte.', 'error');
+                setReferralFeedback('Tu ne peux pas appliquer un second code.', 'error');
+                return;
+              }
 
             const rawCode = (referralInput?.value || '').trim();
             setReferralFeedback('');
@@ -4673,8 +4673,8 @@ class Game{
                     setReferralFeedback('Choisis le code d’un autre joueur.', 'error');
                     break;
                   case 'ALREADY_REFERRED':
-                    setMessage('Tu as déjà utilisé un code de parrainage.', 'error');
-                    setReferralFeedback('Un code est déjà associé à ton compte.', 'error');
+                    setMessage('Un code de parrainage est déjà associé à ton compte.', 'error');
+                    setReferralFeedback('Tu ne peux pas appliquer un second code.', 'error');
                     break;
                   case 'AUTH_REQUIRED':
                     setMessage('Connexion requise pour appliquer un code.', 'error');
