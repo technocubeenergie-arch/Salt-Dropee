@@ -4640,6 +4640,15 @@ class Game{
               return;
             }
 
+            const currentAuthState = getAuthStateSnapshot();
+            const alreadyReferred = !!currentAuthState?.profile?.referredBy;
+
+            if (alreadyReferred) {
+              setMessage('Tu as déjà utilisé un code de parrainage.', 'error');
+              setReferralFeedback('Un code est déjà associé à ton compte.', 'error');
+              return;
+            }
+
             const rawCode = (referralInput?.value || '').trim();
             setReferralFeedback('');
             setMessage('Vérification du code…');
@@ -4656,8 +4665,8 @@ class Game{
                     setReferralFeedback('Code manquant.', 'error');
                     break;
                   case 'CODE_NOT_FOUND':
-                    setMessage('Code introuvable.', 'error');
-                    setReferralFeedback('Ce code n’existe pas ou a déjà expiré.', 'error');
+                    setMessage('Ce code de parrainage est invalide.', 'error');
+                    setReferralFeedback('Code invalide ou inexistant.', 'error');
                     break;
                   case 'SELF_REFERRAL_NOT_ALLOWED':
                     setMessage('Tu ne peux pas utiliser ton propre code.', 'error');
@@ -4680,7 +4689,9 @@ class Game{
                 return;
               }
 
-              this.accountFlashMessage = { text: 'Code accepté, merci !', variant: 'success' };
+              this.accountFlashMessage = { text: 'Code de parrainage appliqué avec succès 🎉', variant: 'success' };
+
+              setReferralFeedback('Code appliqué avec succès.', 'success');
 
               const liveService = getAuthService();
               if (liveService?.refreshProfile) {
