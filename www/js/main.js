@@ -4590,10 +4590,14 @@ class Game{
       const referralCode = escapeHtml(referralCodeRaw || '—');
       const referralLink = `${window.location.origin}${window.location.pathname}${referralCodeRaw ? `?${REFERRAL_URL_PARAM}=${encodeURIComponent(referralCodeRaw)}` : ''}`;
       const safeReferralLink = escapeHtml(referralLink);
+      const referralCopyButton = referralCodeRaw
+        ? `<div class="btnrow account-referral-actions account-referral-copy">\n                <button type="button" class="btn btn-secondary" data-referral-copy>Copier le lien</button>\n              </div>`
+        : '';
       const referralSection = `
           <div class="account-referral-section">
             <p class="account-field-note account-field-readonly">Ton code de parrainage : <strong>${referralCode}</strong></p>
             <p class="account-field-note account-field-readonly">Ton lien de parrainage : <strong>${safeReferralLink}</strong></p>
+            ${referralCopyButton}
             ${referralStatsLine}
             ${state.profile?.referredBy
               ? '<p class="account-field-note account-field-readonly">Ton code de parrainage a bien été pris en compte.</p>'
@@ -4799,6 +4803,58 @@ class Game{
               if (referralInput) referralInput.disabled = false;
             }
           }, { passive:false });
+        }
+
+        const referralCopyButtonEl = overlay.querySelector('[data-referral-copy]');
+        if (referralCopyButtonEl && referralLink) {
+          addEvent(referralCopyButtonEl, INPUT.tap, async (evt) => {
+            evt.preventDefault();
+            evt.stopPropagation();
+            playSound("click");
+
+            const showCopyError = (error) => {
+              console.warn('[referral] clipboard copy failed', error);
+              setMessage('Impossible de copier le lien pour le moment.', 'error');
+            };
+
+            const showCopySuccess = () => {
+              setMessage('Lien de parrainage copié dans le presse-papiers ✅', 'success');
+            };
+
+            if (!referralLink) {
+              showCopyError(new Error('referral link unavailable'));
+              return;
+            }
+
+            try {
+              if (navigator?.clipboard?.writeText) {
+                await navigator.clipboard.writeText(referralLink);
+                showCopySuccess();
+                return;
+              }
+
+              const textarea = document.createElement('textarea');
+              textarea.value = referralLink;
+              textarea.setAttribute('readonly', '');
+              textarea.style.position = 'fixed';
+              textarea.style.left = '-9999px';
+              document.body.appendChild(textarea);
+
+              textarea.select();
+              textarea.setSelectionRange(0, referralLink.length);
+
+              const succeeded = document.execCommand && document.execCommand('copy');
+              document.body.removeChild(textarea);
+
+              if (succeeded) {
+                showCopySuccess();
+              } else {
+                showCopyError(new Error('execCommand copy failed'));
+              }
+            } catch (error) {
+              showCopyError(error);
+            }
+          }, { passive: false });
         }
         return;
       }
