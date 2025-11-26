@@ -1328,12 +1328,59 @@ function getReferralService(){
   return null;
 }
 
+const REFERRAL_URL_PARAM = 'ref';
+
+function normalizeReferralCodeFromInput(code){
+  if (typeof code !== 'string') return '';
+  const trimmed = code.trim();
+  return trimmed ? trimmed.toUpperCase() : '';
+}
+
+function reconcilePendingReferralCode(state){
+  const referralService = getReferralService();
+  if (!referralService || typeof referralService.getPendingReferralCode !== 'function') return;
+  const pending = referralService.getPendingReferralCode();
+  const hasReferrer = !!state?.profile?.referredBy;
+  if (pending && hasReferrer && typeof referralService.setPendingReferralCode === 'function') {
+    referralService.setPendingReferralCode(null);
+  }
+}
+
+function captureReferralCodeFromUrl(){
+  if (typeof window === 'undefined') return null;
+  try {
+    const url = new URL(window.location.href);
+    const refFromUrl = url.searchParams.get(REFERRAL_URL_PARAM);
+    const normalized = normalizeReferralCodeFromInput(refFromUrl);
+    if (!normalized) {
+      return null;
+    }
+
+    const state = getAuthStateSnapshot();
+    if (state?.profile?.referredBy) {
+      return null;
+    }
+
+    const referralService = getReferralService();
+    if (referralService?.setPendingReferralCode) {
+      referralService.setPendingReferralCode(normalized);
+      console.info(`[referral] captured code from URL: ${normalized}`);
+    }
+
+    return normalized;
+  } catch (error) {
+    console.warn('[referral] failed to read referral code from URL', error);
+    return null;
+  }
+}
+
 function getAuthStateSnapshot(){
   return authState;
 }
 
 function handleAuthStateUpdate(nextState){
   authState = { ...DEFAULT_AUTH_FRONT_STATE, ...(nextState || {}) };
+  reconcilePendingReferralCode(authState);
   updateTitleAccountStatus();
   refreshAccountPanelIfVisible();
   updateInterLevelSaveButtonState();
@@ -1429,6 +1476,8 @@ function isValidUsername(value){
   const trimmed = value.trim();
   return USERNAME_PATTERN.test(trimmed);
 }
+
+captureReferralCodeFromUrl();
 
 tryConnectAuthFacade();
 
@@ -4534,15 +4583,22 @@ class Game{
       const secondaryLine = safeEmail && identifier !== safeEmail
         ? `<br><small>${safeEmail}</small>`
         : '';
-      const referralCode = escapeHtml(state.profile?.referralCode || '—');
+      const pendingReferralCode = !state.profile?.referredBy && referralService?.getPendingReferralCode
+        ? referralService.getPendingReferralCode()
+        : null;
+      const referralCodeRaw = state.profile?.referralCode || '';
+      const referralCode = escapeHtml(referralCodeRaw || '—');
+      const referralLink = `${window.location.origin}${window.location.pathname}${referralCodeRaw ? `?${REFERRAL_URL_PARAM}=${encodeURIComponent(referralCodeRaw)}` : ''}`;
+      const safeReferralLink = escapeHtml(referralLink);
       const referralSection = `
           <div class="account-referral-section">
             <p class="account-field-note account-field-readonly">Ton code de parrainage : <strong>${referralCode}</strong></p>
+            <p class="account-field-note account-field-readonly">Ton lien de parrainage : <strong>${safeReferralLink}</strong></p>
             ${referralStatsLine}
             ${state.profile?.referredBy
               ? '<p class="account-field-note account-field-readonly">Ton code de parrainage a bien été pris en compte.</p>'
               : `<label>Code de parrainage (optionnel)
-                <input type="text" name="referralCode" data-referral-input autocomplete="off" spellcheck="false" maxlength="24" />
+                <input type="text" name="referralCode" data-referral-input autocomplete="off" spellcheck="false" maxlength="24" value="${escapeHtml(pendingReferralCode || '')}" />
               </label>
               <div class="btnrow account-referral-actions">
                 <button type="button" data-referral-submit>Valider</button>
@@ -4661,12 +4717,22 @@ class Game{
               return;
             }
 
+            const clearPendingReferral = () => {
+              if (service?.setPendingReferralCode) {
+                service.setPendingReferralCode(null);
+              }
+              if (referralInput) {
+                referralInput.value = '';
+              }
+            };
+
             const currentAuthState = getAuthStateSnapshot();
             const alreadyReferred = !!currentAuthState?.profile?.referredBy;
 
               if (alreadyReferred) {
                 setMessage('Un code de parrainage est déjà associé à ton compte.', 'error');
                 setReferralFeedback('Tu ne peux pas appliquer un second code.', 'error');
+                clearPendingReferral();
                 return;
               }
 
@@ -4688,6 +4754,7 @@ class Game{
                   case 'CODE_NOT_FOUND':
                     setMessage('Ce code de parrainage est invalide.', 'error');
                     setReferralFeedback('Code invalide ou inexistant.', 'error');
+                    clearPendingReferral();
                     break;
                   case 'SELF_REFERRAL_NOT_ALLOWED':
                     setMessage('Tu ne peux pas utiliser ton propre code.', 'error');
@@ -4696,6 +4763,7 @@ class Game{
                   case 'ALREADY_REFERRED':
                     setMessage('Un code de parrainage est déjà associé à ton compte.', 'error');
                     setReferralFeedback('Tu ne peux pas appliquer un second code.', 'error');
+                    clearPendingReferral();
                     break;
                   case 'AUTH_REQUIRED':
                     setMessage('Connexion requise pour appliquer un code.', 'error');

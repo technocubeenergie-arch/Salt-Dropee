@@ -53,6 +53,57 @@ function describeError(error) {
   };
 }
 
+const PENDING_REFERRAL_STORAGE_KEY = 'salt:pendingReferralCode';
+let pendingReferralCode = null;
+
+function normalizeReferralCode(code) {
+  if (typeof code !== 'string') return '';
+  const trimmed = code.trim();
+  return trimmed ? trimmed.toUpperCase() : '';
+}
+
+function loadPendingReferralFromStorage() {
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return null;
+  }
+  try {
+    const stored = window.localStorage.getItem(PENDING_REFERRAL_STORAGE_KEY);
+    const normalized = normalizeReferralCode(stored);
+    return normalized || null;
+  } catch (error) {
+    console.warn('[referral] failed to read pending referral from storage', error);
+    return null;
+  }
+}
+
+function persistPendingReferral(value) {
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return;
+  }
+  try {
+    if (value) {
+      window.localStorage.setItem(PENDING_REFERRAL_STORAGE_KEY, value);
+    } else {
+      window.localStorage.removeItem(PENDING_REFERRAL_STORAGE_KEY);
+    }
+  } catch (error) {
+    console.warn('[referral] failed to persist pending referral', error);
+  }
+}
+
+function getPendingReferralCode() {
+  if (pendingReferralCode) return pendingReferralCode;
+  pendingReferralCode = loadPendingReferralFromStorage();
+  return pendingReferralCode;
+}
+
+function setPendingReferralCode(code) {
+  const normalized = normalizeReferralCode(code);
+  pendingReferralCode = normalized || null;
+  persistPendingReferral(pendingReferralCode);
+  return pendingReferralCode;
+}
+
 async function refreshProfileSnapshotFromSupabase() {
   try {
     const authState = getAuthSnapshot();
@@ -225,6 +276,8 @@ async function applyReferralCode({ code } = {}) {
 
     await refreshProfileSnapshotFromSupabase();
 
+    setPendingReferralCode(null);
+
     return {
       ok: true,
       payload: {
@@ -268,7 +321,9 @@ const ReferralController = {
   fetchReferralStatsForCurrentPlayer,
   fetchReferralStatsForPlayer,
   getMyReferralInfo,
+  getPendingReferralCode,
   refreshProfileSnapshotFromSupabase,
+  setPendingReferralCode,
 };
 
 if (typeof window !== 'undefined') {
@@ -281,6 +336,8 @@ export {
   fetchReferralStatsForCurrentPlayer,
   fetchReferralStatsForPlayer,
   getMyReferralInfo,
+  getPendingReferralCode,
+  setPendingReferralCode,
   refreshProfileSnapshotFromSupabase,
 };
 export default ReferralController;
