@@ -1532,6 +1532,11 @@ let levelEnded = false;
 let legendScoreSubmissionAttempted = false;
 let legendRunActive = false;
 
+const DEFAULT_LEGEND_BOOSTS = { timeBonusSeconds: 0, extraShields: 0, scoreMultiplier: 1 };
+let legendBoostsCache = null;
+let legendBoostsPromise = null;
+let legendBoostsCacheProfileId = null;
+
 function canEndLevel(){
   return !levelEnded && gameState === "playing";
 }
@@ -1547,6 +1552,59 @@ function resetLegendState(options = {}) {
 
 function markLegendRunComplete() {
   legendRunActive = false;
+}
+
+function getLegendReferralService() {
+  if (typeof getReferralService === 'function') return getReferralService();
+  if (typeof window !== 'undefined' && typeof window.getReferralService === 'function') {
+    try {
+      return window.getReferralService();
+    } catch (_) {
+      return null;
+    }
+  }
+  if (typeof window !== 'undefined' && window.ReferralController) return window.ReferralController;
+  return null;
+}
+
+async function loadLegendBoostsForSession() {
+  const authState = typeof getAuthStateSnapshot === 'function' ? getAuthStateSnapshot() : null;
+  const activeProfileId = authState?.profile?.id || null;
+
+  if (legendBoostsCache && (!activeProfileId || legendBoostsCacheProfileId === activeProfileId)) return legendBoostsCache;
+  if (legendBoostsPromise) return legendBoostsPromise;
+
+  const referralService = getLegendReferralService();
+
+  legendBoostsPromise = (async () => {
+    if (!referralService?.fetchLegendBoostsForCurrentPlayer) {
+      return { ...DEFAULT_LEGEND_BOOSTS };
+    }
+
+    try {
+      const result = await referralService.fetchLegendBoostsForCurrentPlayer();
+      if (result?.ok && result.boosts) {
+        const normalized = { ...DEFAULT_LEGEND_BOOSTS, ...result.boosts };
+        console.info('[referral] legend boosts applied', {
+          referralCount: typeof result.referralCount === 'number' ? result.referralCount : undefined,
+          boosts: normalized,
+        });
+        return normalized;
+      }
+    } catch (error) {
+      console.warn('[referral] legend boosts fetch failed', error);
+    }
+
+    return { ...DEFAULT_LEGEND_BOOSTS };
+  })();
+
+  try {
+    legendBoostsCache = await legendBoostsPromise;
+    legendBoostsCacheProfileId = activeProfileId;
+    return legendBoostsCache;
+  } finally {
+    legendBoostsPromise = null;
+  }
 }
 
 /* global */ let score = 0;   // nombre
@@ -1681,15 +1739,25 @@ async function loadLevel(index, options = {}) {
 
   const endless = !!L.endless;
 
-  levelState.targetScore = endless
-    ? Number.POSITIVE_INFINITY
-    : (Number.isFinite(L.targetScore) ? L.targetScore : 0);
-  levelState.timeLimit   = L.timeLimit;
-  levelState.lives       = L.lives;
-
   legendScoreSubmissionAttempted = false;
   legendRunActive = isLegendLevel(index);
 
+  const legendBoosts = legendRunActive
+    ? await loadLegendBoostsForSession()
+    : { ...DEFAULT_LEGEND_BOOSTS };
+  const legendTimeBonus = legendRunActive
+    ? Math.max(0, Number(legendBoosts.timeBonusSeconds) || 0)
+    : 0;
+  const effectiveTimeLimit = (Number.isFinite(L.timeLimit) ? L.timeLimit : L.timeLimit) + legendTimeBonus;
+  const legendScoreMult = legendRunActive
+    ? Math.max(0, Number(legendBoosts.scoreMultiplier) || 1)
+    : 1;
+
+  levelState.targetScore = endless
+    ? Number.POSITIVE_INFINITY
+    : (Number.isFinite(L.targetScore) ? L.targetScore : 0);
+  levelState.timeLimit   = effectiveTimeLimit;
+  levelState.lives       = L.lives;
   resetIntraLevelSpeedRamp(levelState.timeLimit);
 
   const instance = game || Game.instance || null;
@@ -1698,7 +1766,7 @@ async function loadLevel(index, options = {}) {
   score    = 0;
   streak   = 0;
   combo    = 1.0;
-  timeLeft = L.timeLimit;
+  timeLeft = effectiveTimeLimit;
   lives    = L.lives;
 
   if (instance) {
@@ -1706,15 +1774,24 @@ async function loadLevel(index, options = {}) {
     instance.comboStreak = 0;
     instance.comboMult = comboTiers[0]?.mult ?? 1.0;
     instance.maxCombo = 0;
-    instance.timeLeft = L.timeLimit;
+    instance.timeLeft = effectiveTimeLimit;
     instance.timeElapsed = 0;
     instance.lives = L.lives;
     instance.targetScore = endless
       ? Number.POSITIVE_INFINITY
       : L.targetScore;
+    instance.legendScoreMultiplier = legendScoreMult;
     if (instance.arm && typeof instance.arm.applyLevelSpeed === "function") {
       instance.arm.applyLevelSpeed(index + 1);
     }
+  }
+
+  if (!legendRunActive && instance) {
+    instance.legendScoreMultiplier = 1;
+  }
+
+  if (legendRunActive) {
+    applyLegendShieldBoost(legendBoosts.extraShields);
   }
 
   if (applyBackground) {
@@ -1858,6 +1935,19 @@ let shield = {
 };
 
 let shieldConsumedThisFrame = false;
+
+function applyLegendShieldBoost(extraCount = 0) {
+  const additional = Number.isFinite(extraCount) ? Math.max(0, Math.floor(extraCount)) : 0;
+  if (additional <= 0) return;
+
+  shield.count = Math.max(0, shield.count) + additional;
+  shield.active = shield.count > 0;
+
+  if (shield.active) {
+    startShieldEffect();
+    updateShieldHUD();
+  }
+}
 
 // --- Control inversion state (Fake Airdrop malus) ---
 const controlInversionState = {
@@ -2339,7 +2429,8 @@ function resolvePositiveCollision(item, gameInstance, firstCatch) {
     const newTier = currentTier(gameInstance.comboStreak) || comboTiers[comboTiers.length - 1];
     gameInstance.comboMult = newTier.mult;
     gameInstance.maxCombo = Math.max(gameInstance.maxCombo, gameInstance.comboStreak);
-    pts = Math.floor(pts * gameInstance.comboMult);
+    const legendMult = Math.max(0, Number(gameInstance.legendScoreMultiplier) || 1);
+    pts = Math.floor(pts * gameInstance.comboMult * legendMult);
     gameInstance.score += pts;
 
     if (gsap?.to) {

@@ -53,6 +53,12 @@ function describeError(error) {
   };
 }
 
+const DEFAULT_LEGEND_BOOSTS = {
+  timeBonusSeconds: 0,
+  extraShields: 0,
+  scoreMultiplier: 1,
+};
+
 const PENDING_REFERRAL_STORAGE_KEY = 'salt:pendingReferralCode';
 let pendingReferralCode = null;
 
@@ -193,6 +199,120 @@ async function fetchReferralStatsForCurrentPlayer() {
   return fetchReferralStatsForPlayer(playerId);
 }
 
+async function fetchEventReferralCountForPlayer(playerId) {
+  if (!playerId) {
+    return { ok: true, count: 0 };
+  }
+
+  try {
+    const supabase = await getSupabase();
+    if (!supabase) {
+      console.warn('[referral] event referral count skipped: Supabase not ready');
+      return { ok: false, reason: 'LOAD_FAILED' };
+    }
+
+    const { data: resetRow, error: resetError } = await supabase
+      .from('events')
+      .select('created_at')
+      .eq('kind', 'referral_reset')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (resetError && resetError.code !== 'PGRST116') {
+      console.warn('[referral] failed to load last referral reset event', describeError(resetError));
+      return { ok: false, reason: 'LOAD_FAILED' };
+    }
+
+    const lastResetAt = resetRow?.created_at || null;
+
+    let query = supabase
+      .from('referrals')
+      .select('*', { count: 'exact', head: true })
+      .eq('referrer_id', playerId);
+
+    if (lastResetAt) {
+      query = query.gte('created_at', lastResetAt);
+    }
+
+    const { count, error } = await query;
+
+    if (error) {
+      console.warn('[referral] failed to load event referral count', describeError(error));
+      return { ok: false, reason: 'LOAD_FAILED' };
+    }
+
+    const safeCount = Number.isInteger(count) ? Math.max(0, count) : 0;
+    if (lastResetAt) {
+      console.info(`[referral] event referral count for player ${playerId} since ${lastResetAt}: ${safeCount}`);
+    } else {
+      console.info(`[referral] event referral count for player ${playerId}: ${safeCount}`);
+    }
+
+    return { ok: true, count: safeCount };
+  } catch (error) {
+    console.warn('[referral] unexpected event referral count failure', error);
+    return { ok: false, reason: 'LOAD_FAILED' };
+  }
+}
+
+function mapReferralCountToLegendBoosts(count) {
+  const safeCount = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
+
+  if (safeCount >= 20) return { timeBonusSeconds: 25, extraShields: 3, scoreMultiplier: 1.15 };
+  if (safeCount >= 12) return { timeBonusSeconds: 20, extraShields: 3, scoreMultiplier: 1.10 };
+  if (safeCount >= 8) return { timeBonusSeconds: 18, extraShields: 2, scoreMultiplier: 1.05 };
+  if (safeCount >= 5) return { timeBonusSeconds: 15, extraShields: 2, scoreMultiplier: 1.0 };
+  if (safeCount >= 3) return { timeBonusSeconds: 10, extraShields: 1, scoreMultiplier: 1.0 };
+  if (safeCount >= 1) return { timeBonusSeconds: 5, extraShields: 0, scoreMultiplier: 1.0 };
+
+  return { ...DEFAULT_LEGEND_BOOSTS };
+}
+
+let cachedLegendBoostsResult = null;
+let cachedLegendBoostsProfileId = null;
+let legendBoostsPromise = null;
+
+async function fetchLegendBoostsForCurrentPlayer() {
+  const authState = getAuthSnapshot();
+  const profile = authState?.profile || null;
+
+  if (!authState?.user || !profile?.id) {
+    return { ok: true, boosts: { ...DEFAULT_LEGEND_BOOSTS }, referralCount: 0 };
+  }
+
+  if (cachedLegendBoostsResult && cachedLegendBoostsProfileId === profile.id) {
+    return cachedLegendBoostsResult;
+  }
+  if (legendBoostsPromise) {
+    return legendBoostsPromise;
+  }
+
+  legendBoostsPromise = (async () => {
+    const countResult = await fetchEventReferralCountForPlayer(profile.id);
+    if (!countResult.ok) {
+      cachedLegendBoostsResult = { ok: true, boosts: { ...DEFAULT_LEGEND_BOOSTS }, referralCount: 0 };
+      cachedLegendBoostsProfileId = profile.id;
+      return cachedLegendBoostsResult;
+    }
+
+    const boosts = mapReferralCountToLegendBoosts(countResult.count);
+    cachedLegendBoostsResult = { ok: true, boosts, referralCount: countResult.count };
+    cachedLegendBoostsProfileId = profile.id;
+
+    console.info('[referral] legend boosts ready', {
+      referralCount: countResult.count,
+      boosts,
+    });
+
+    return cachedLegendBoostsResult;
+  })().finally(() => {
+    legendBoostsPromise = null;
+  });
+
+  return legendBoostsPromise;
+}
+
 async function applyReferralCode({ code } = {}) {
   try {
     const normalizedCode = typeof code === 'string'
@@ -318,6 +438,8 @@ async function getMyReferralInfo() {
 
 const ReferralController = {
   applyReferralCode,
+  fetchEventReferralCountForPlayer,
+  fetchLegendBoostsForCurrentPlayer,
   fetchReferralStatsForCurrentPlayer,
   fetchReferralStatsForPlayer,
   getMyReferralInfo,
@@ -333,10 +455,13 @@ if (typeof window !== 'undefined') {
 
 export {
   applyReferralCode,
+  fetchEventReferralCountForPlayer,
+  fetchLegendBoostsForCurrentPlayer,
   fetchReferralStatsForCurrentPlayer,
   fetchReferralStatsForPlayer,
   getMyReferralInfo,
   getPendingReferralCode,
+  mapReferralCountToLegendBoosts,
   setPendingReferralCode,
   refreshProfileSnapshotFromSupabase,
 };
