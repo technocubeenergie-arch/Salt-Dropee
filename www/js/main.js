@@ -5262,11 +5262,11 @@ class Game{
       target.innerHTML = '';
       const rankEl = document.createElement('span');
       rankEl.className = 'lb-rank';
-      rankEl.textContent = `#${rank}`;
+      rankEl.textContent = `#${rank} `;
 
       const nameEl = document.createElement('span');
       nameEl.className = 'lb-name';
-      nameEl.textContent = entry.username || 'Anonyme';
+      nameEl.textContent = `${entry.username || 'Anonyme'} : `;
 
       const scoreEl = document.createElement('span');
       scoreEl.className = 'lb-score';
