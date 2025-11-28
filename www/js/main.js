@@ -4207,17 +4207,27 @@ function drawCompactHUD(ctx, g) {
   const shouldShowLegendBoost = isLegendLevel() && legendBoostLevel > 0 && ctx && typeof ctx.save === 'function';
 
   if (shouldShowLegendBoost) {
+    const comboFontSize = Math.max(HUD_CONFIG.fontMin, Math.round(hudFontSize(W)));
+    const comboText = `x${Number(comboMult ?? 0).toFixed(1)} (${Math.max(0, streak)})`;
+    ctx.save();
+    ctx.font = `${comboFontSize}px "Roboto Mono", "Inter", monospace`;
+    const comboWidth = ctx.measureText(comboText).width;
+    ctx.restore();
+
+    const comboTextX = x + w / 2 - comboWidth / 2;
+    const comboTextY = y + h / 2;
     const boostFontSize = Math.max(HUD_CONFIG.fontMin - 1, Math.round(hudFontSize(W) * 0.7));
-    const boostX = x + w - HUD_CONFIG.padX;
-    const boostY = y + 2;
     const lineGap = Math.max(2, Math.round(boostFontSize * 0.2));
     const label = 'BOOST';
     const value = `Lvl ${legendBoostLevel}`;
+    const blockHeight = boostFontSize * 2 + lineGap;
+    const boostX = comboTextX + comboWidth + 14;
+    const boostY = comboTextY - blockHeight / 2;
 
     ctx.save();
-    ctx.fillStyle = '#fff';
+    ctx.fillStyle = color || '#fff';
     ctx.font = `${boostFontSize}px "Roboto Mono", "Inter", monospace`;
-    ctx.textAlign = 'right';
+    ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
     ctx.fillText(label, boostX, boostY);
     ctx.fillText(value, boostX, boostY + boostFontSize + lineGap);
