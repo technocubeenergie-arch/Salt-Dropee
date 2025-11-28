@@ -4708,7 +4708,6 @@ class Game{
         ? referralService.getPendingReferralCode()
         : null;
       const referralCodeRaw = state.profile?.referralCode || '';
-      const referralCode = escapeHtml(referralCodeRaw || '—');
       const referralLink = `${window.location.origin}${window.location.pathname}${referralCodeRaw ? `?${REFERRAL_URL_PARAM}=${encodeURIComponent(referralCodeRaw)}` : ''}`;
       const safeReferralLink = escapeHtml(referralLink);
       const referralCopyButton = referralCodeRaw
@@ -4716,7 +4715,6 @@ class Game{
         : '';
       const referralSection = `
           <div class="account-referral-section">
-            <p class="account-field-note account-field-readonly">Ton code de parrainage : <strong>${referralCode}</strong></p>
             <p class="account-field-note account-field-readonly">Ton lien de parrainage : <strong>${safeReferralLink}</strong></p>
             ${referralCopyButton}
             ${referralStatsLine}
