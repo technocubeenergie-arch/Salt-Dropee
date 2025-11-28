@@ -708,6 +708,20 @@ function setHUDTime(s){
   if (timeEl) timeEl.textContent = Math.max(0, (Number.isFinite(s) ? s : Number(s) || 0) | 0) + 's';
 }
 
+function setHUDLegendBoost(level, shouldShow, color){
+  const container = document.getElementById('hudLegendBoost');
+  const valueEl = document.getElementById('hudLegendBoostValue');
+  if (!container || !valueEl) return;
+
+  const visible = Boolean(shouldShow) && Math.max(0, Number(level) || 0) > 0;
+  container.style.display = visible ? 'flex' : 'none';
+
+  if (visible) {
+    valueEl.textContent = `Lvl ${Math.floor(level)}`;
+    container.style.color = color || '#fff';
+  }
+}
+
 function normalizeProgressLevel(level){
   const numeric = Number.isFinite(level) ? level : Number(level) || 1;
   const clamped = Math.min(Math.max(Math.floor(numeric), 1), LEVELS.length);
@@ -4204,35 +4218,7 @@ function drawCompactHUD(ctx, g) {
   setHUDTime(timeSeconds);
 
   const legendBoostLevel = Math.max(0, Math.floor(Number(g?.legendBoostLevel) || 0));
-  const shouldShowLegendBoost = isLegendLevel() && legendBoostLevel > 0 && ctx && typeof ctx.save === 'function';
-
-  if (shouldShowLegendBoost) {
-    const comboFontSize = Math.max(HUD_CONFIG.fontMin, Math.round(hudFontSize(W)));
-    const comboText = `x${Number(comboMult ?? 0).toFixed(1)} (${Math.max(0, streak)})`;
-    ctx.save();
-    ctx.font = `${comboFontSize}px "Roboto Mono", "Inter", monospace`;
-    const comboWidth = ctx.measureText(comboText).width;
-    ctx.restore();
-
-    const comboTextX = x + w / 2 - comboWidth / 2;
-    const comboTextY = y + h / 2;
-    const boostFontSize = Math.max(HUD_CONFIG.fontMin - 1, Math.round(hudFontSize(W) * 0.7));
-    const lineGap = Math.max(2, Math.round(boostFontSize * 0.2));
-    const label = 'BOOST';
-    const value = `Lvl ${legendBoostLevel}`;
-    const blockHeight = boostFontSize * 2 + lineGap;
-    const boostX = comboTextX + comboWidth + 14;
-    const boostY = comboTextY - blockHeight / 2;
-
-    ctx.save();
-    ctx.fillStyle = color || '#fff';
-    ctx.font = `${boostFontSize}px "Roboto Mono", "Inter", monospace`;
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    ctx.fillText(label, boostX, boostY);
-    ctx.fillText(value, boostX, boostY + boostFontSize + lineGap);
-    ctx.restore();
-  }
+  setHUDLegendBoost(legendBoostLevel, isLegendLevel(), color);
 
   return { x, y, w, h };
 }
