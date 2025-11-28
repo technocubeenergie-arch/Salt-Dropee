@@ -371,6 +371,27 @@ body.is-inter-level #hud {
 .hud-center{ display:flex; flex-direction:column; align-items:center; }
 .hud-right { display:flex; flex-direction:column; align-items:flex-end; }
 
+.hud-legend-boost{
+  display:none;
+  align-items:flex-end;
+  text-align:right;
+  padding:6px 8px;
+  border-radius:10px;
+  background: rgba(255,255,255,0.12);
+  line-height:1.05;
+  gap:2px;
+  font-variant-numeric: tabular-nums;
+}
+.hud-legend-boost-label{
+  font-size:.8rem;
+  letter-spacing:0.06em;
+  opacity:.85;
+}
+.hud-legend-boost-value{
+  font-size:1rem;
+  font-weight:800;
+}
+
 /* Score 2 lignes */
 .hud-score-label{ font-size: .9rem; opacity:.9; line-height:1; }
 .hud-score-value{
