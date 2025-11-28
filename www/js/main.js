@@ -3865,7 +3865,7 @@ const TG = window.Telegram?.WebApp; if (TG){ try{ TG.ready(); TG.expand(); }catc
 // SETTINGS & STORAGE
 // =====================
 const LS = { bestScore:'sd_bestScore', bestCombo:'sd_bestCombo', settings:'sd_settings', runs:'sd_runs' };
-const DefaultSettings = { sound:true, contrast:false, haptics:true, sensitivity:1.0, controlMode:'swipe' };
+const DefaultSettings = { sound:true, haptics:true, sensitivity:1.0, controlMode:'swipe' };
 function loadSettings(){ try{ const raw = JSON.parse(localStorage.getItem(LS.settings))||{}; const merged = { ...DefaultSettings, ...raw }; merged.controlMode = (merged.controlMode === 'zones' && hasTouch) ? 'zones' : 'swipe'; return merged; }catch(e){ return {...DefaultSettings}; } }
 function saveSettings(s){ try{ localStorage.setItem(LS.settings, JSON.stringify(s)); }catch(e){} }
 
@@ -4329,7 +4329,10 @@ class Game{
     resetShieldState({ silent: true });
     resetControlInversion({ silent: true });
     this.settings = loadSettings();
-    this.applyContrastSetting(this.settings.contrast);
+    if (typeof document !== 'undefined' && document.documentElement){
+      document.documentElement.classList.remove('contrast-high');
+    }
+    this.palette = CONFIG.palette.slice();
     setActiveControlMode(this.settings.controlMode);
     const u=new URLSearchParams(location.search); const seed=u.get('seed'); this.random = seed? (function(seed){ let t=seed>>>0; return function(){ t += 0x6D2B79F5; let r = Math.imul(t ^ t >>> 15, 1 | t); r ^= r + Math.imul(r ^ r >>> 7, 61 | r); return ((r ^ r >>> 14) >>> 0) / 4294967296; };})(parseInt(seed)||1) : Math.random;
     this.state='title';
@@ -4355,16 +4358,6 @@ class Game{
     this.shake=0; this.bgIndex=0; this.didFirstCatch=false; this.updateBgByScore();
     loadLevel(currentLevelIndex, { applyBackground: !showTitle, playMusic: !showTitle });
     if (showTitle) this.renderTitle(); else this.render();
-  }
-  applyContrastSetting(enabled){
-    const contrastOn = !!enabled;
-    if (typeof document !== 'undefined' && document.documentElement){
-      document.documentElement.classList.toggle('contrast-high', contrastOn);
-    }
-    this.palette = CONFIG.palette.slice();
-    if (contrastOn){
-      this.palette = ['#000','#444','#ff0044','#ffaa00','#ffffff','#00ffea','#00ff66','#66a6ff'];
-    }
   }
   diffMult(){ return Math.pow(CONFIG.spawnRampFactor, Math.floor(this.timeElapsed/CONFIG.spawnRampEverySec)); }
   updateBgByScore(){ const th=CONFIG.evolveThresholds; let idx=0; for (let i=0;i<th.length;i++){ if (this.score>=th[i]) idx=i; } if (idx!==this.bgIndex){ this.bgIndex=idx; } }
@@ -5118,7 +5111,6 @@ class Game{
     <div class="panel">
       <h1>Paramètres</h1>
       <p><label><input type="checkbox" id="sound" ${s.sound?'checked':''}/> Son</label></p>
-      <p><label><input type="checkbox" id="contrast" ${s.contrast?'checked':''}/> Contraste élevé</label></p>
       <p><label><input type="checkbox" id="haptics" ${s.haptics?'checked':''}/> Vibrations</label></p>
       ${hasTouch ? `
       <div class="control-mode-setting">
@@ -5133,18 +5125,6 @@ class Game{
     </div>`;
     showExclusiveOverlay(overlay);
     addEvent(document.getElementById('sound'), 'change', e=>{ playSound("click"); this.settings.sound = e.target.checked; saveSettings(this.settings); if (typeof setSoundEnabled === "function") { setSoundEnabled(this.settings.sound); } });
-    addEvent(document.getElementById('contrast'), 'change', e=>{
-      if (e && typeof e.stopImmediatePropagation === 'function') {
-        e.stopImmediatePropagation();
-      } else if (e && typeof e.stopPropagation === 'function') {
-        e.stopPropagation();
-      }
-      playSound("click");
-      const contrastEnabled = !!e?.target?.checked;
-      this.settings.contrast = contrastEnabled;
-      saveSettings(this.settings);
-      this.applyContrastSetting(contrastEnabled);
-    }, { passive: false });
     addEvent(document.getElementById('haptics'), 'change', e=>{ playSound("click"); this.settings.haptics = e.target.checked; saveSettings(this.settings); });
     if (hasTouch) {
       const controlToggle = overlay.querySelector('[data-control-toggle]');

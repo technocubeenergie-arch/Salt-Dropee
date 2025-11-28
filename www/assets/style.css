@@ -362,10 +362,6 @@ body.is-inter-level #hud {
   min-width: 120px;
 }
 
-/* AUDIT 2025-03: high-contrast theming relies on the class applied to <html>. */
-.contrast-high { --ui: #ffffff; --ui2: #00ffea; --bg: #000000; --danger:#ff0044; --ok:#00ff66; --ink:#000000; }
-
-
 /* Colonnes */
 .hud-left  { display:flex; flex-direction:column; justify-content:center; }
 .hud-center{ display:flex; flex-direction:column; align-items:center; }
