@@ -1537,6 +1537,14 @@ let legendBoostsCache = null;
 let legendBoostsPromise = null;
 let legendBoostsCacheProfileId = null;
 
+function getLegendBoostLevelFromMultiplier(multiplier) {
+  if (!Number.isFinite(multiplier) || multiplier <= 1) return 0;
+  if (multiplier >= 1.15) return 3;
+  if (multiplier >= 1.10) return 2;
+  if (multiplier > 1.0)  return 1;
+  return 0;
+}
+
 function canEndLevel(){
   return !levelEnded && gameState === "playing";
 }
@@ -1752,6 +1760,9 @@ async function loadLevel(index, options = {}) {
   const legendScoreMult = legendRunActive
     ? Math.max(0, Number(legendBoosts.scoreMultiplier) || 1)
     : 1;
+  const legendBoostLevel = legendRunActive
+    ? getLegendBoostLevelFromMultiplier(legendScoreMult)
+    : 0;
 
   levelState.targetScore = endless
     ? Number.POSITIVE_INFINITY
@@ -1781,6 +1792,7 @@ async function loadLevel(index, options = {}) {
       ? Number.POSITIVE_INFINITY
       : L.targetScore;
     instance.legendScoreMultiplier = legendScoreMult;
+    instance.legendBoostLevel = legendBoostLevel;
     if (instance.arm && typeof instance.arm.applyLevelSpeed === "function") {
       instance.arm.applyLevelSpeed(index + 1);
     }
@@ -1788,6 +1800,7 @@ async function loadLevel(index, options = {}) {
 
   if (!legendRunActive && instance) {
     instance.legendScoreMultiplier = 1;
+    instance.legendBoostLevel = 0;
   }
 
   if (legendRunActive) {
@@ -4190,6 +4203,27 @@ function drawCompactHUD(ctx, g) {
   const timeSeconds = Math.max(0, Math.floor(g.timeLeft ?? 0));
   setHUDTime(timeSeconds);
 
+  const legendBoostLevel = Math.max(0, Math.floor(Number(g?.legendBoostLevel) || 0));
+  const shouldShowLegendBoost = isLegendLevel() && legendBoostLevel > 0 && ctx && typeof ctx.save === 'function';
+
+  if (shouldShowLegendBoost) {
+    const boostFontSize = Math.max(HUD_CONFIG.fontMin - 1, Math.round(hudFontSize(W) * 0.7));
+    const boostX = x + w - HUD_CONFIG.padX;
+    const boostY = y + 2;
+    const lineGap = Math.max(2, Math.round(boostFontSize * 0.2));
+    const label = 'BOOST';
+    const value = `Lvl ${legendBoostLevel}`;
+
+    ctx.save();
+    ctx.fillStyle = '#fff';
+    ctx.font = `${boostFontSize}px "Roboto Mono", "Inter", monospace`;
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'top';
+    ctx.fillText(label, boostX, boostY);
+    ctx.fillText(value, boostX, boostY + boostFontSize + lineGap);
+    ctx.restore();
+  }
+
   return { x, y, w, h };
 }
 
@@ -4314,7 +4348,7 @@ class Game{
       leaveTitleScreen({ stopMusic: true });
       setLevelMusic(null);
     }
-    this.timeLeft=CONFIG.runSeconds; this.timeElapsed=0; this.lives=CONFIG.lives; this.score=0; this.comboStreak=0; this.comboMult=comboTiers[0].mult; this.maxCombo=0; this.levelReached=1;
+    this.timeLeft=CONFIG.runSeconds; this.timeElapsed=0; this.lives=CONFIG.lives; this.score=0; this.comboStreak=0; this.comboMult=comboTiers[0].mult; this.maxCombo=0; this.levelReached=1; this.legendScoreMultiplier=1; this.legendBoostLevel=0;
     if (gsap?.killTweensOf) {
       gsap.killTweensOf(comboVis);
     }
