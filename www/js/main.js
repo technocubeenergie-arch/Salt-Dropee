@@ -4698,9 +4698,6 @@ class Game{
       const safeUsername = escapeHtml(state.user.username || '');
       const safeProfileUsername = escapeHtml(state.profile?.username || '');
       const identifier = safeProfileUsername || safeUsername || safeEmail || 'Utilisateur connecté';
-      const pseudoLine = safeProfileUsername || safeUsername
-        ? `<p class="account-field-note account-field-readonly">Pseudo actuel : <strong>${safeProfileUsername || safeUsername}</strong></p>`
-        : '<p class="account-field-note account-field-readonly">Pseudo actuel non renseigné.</p>';
       const secondaryLine = safeEmail && identifier !== safeEmail
         ? `<br><small>${safeEmail}</small>`
         : '';
@@ -4731,7 +4728,6 @@ class Game{
       if (body) {
         body.innerHTML = `
           <p class="account-status-line">Connecté en tant que <strong>${identifier}</strong>.${secondaryLine}</p>
-          ${pseudoLine}
           ${referralSection}
           <div class="btnrow">
             <button type="button" id="btnAccountSignOut">Se déconnecter</button>
