@@ -4551,7 +4551,7 @@ class Game{
     enterTitleScreen();
     overlay.innerHTML = `
       <div class="title-screen" role="presentation">
-        <div class="title-account-bar">
+        <div class="title-account-bar account-status-wrapper">
           <div class="title-account-card">
             <span id="titleAccountStatus" class="title-account-status">Connexion en cours…</span>
             <button id="btnAccount" type="button" class="title-account-button">Compte</button>
