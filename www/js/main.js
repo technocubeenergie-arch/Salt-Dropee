@@ -4701,22 +4701,32 @@ class Game{
       const referralLink = `${window.location.origin}${window.location.pathname}${referralCodeRaw ? `?${REFERRAL_URL_PARAM}=${encodeURIComponent(referralCodeRaw)}` : ''}`;
       const safeReferralLink = escapeHtml(referralLink);
       const referralCopyButton = referralCodeRaw
-        ? `<div class="btnrow account-referral-actions account-referral-copy">\n                <button type="button" class="btn btn-secondary" data-referral-copy>Copier le lien</button>\n              </div>`
+        ? `<div class="btnrow panel-actions account-referral-actions account-referral-copy">\n                <button type="button" class="btn btn-secondary" data-referral-copy>Copier le lien</button>\n              </div>`
         : '';
       const referralSection = `
           <div class="account-referral-section">
-            <p class="account-field-note account-field-readonly">Ton lien de parrainage : <strong>${safeReferralLink}</strong></p>
-            ${referralCopyButton}
-            ${referralStatsLine}
-            ${state.profile?.referredBy
-              ? '<p class="account-field-note account-field-readonly">Ton code de parrainage a bien été pris en compte.</p>'
-              : `<label>Code de parrainage (optionnel)
-                <input type="text" name="referralCode" data-referral-input autocomplete="off" spellcheck="false" maxlength="24" value="${escapeHtml(pendingReferralCode || '')}" />
-              </label>
-              <div class="btnrow account-referral-actions">
-                <button type="button" data-referral-submit>Valider</button>
-              </div>
-              <p class="account-field-note account-field-error" data-referral-feedback role="status" aria-live="polite"></p>`}
+            <div class="panel-section account-referral-link-block">
+              <h2 class="panel-title">🔗 Mon lien de parrainage</h2>
+              <p class="account-field-note account-field-readonly account-referral-link">${safeReferralLink}</p>
+              ${referralCopyButton}
+            </div>
+            <div class="panel-section account-referral-stats">
+              <h2 class="panel-title">👥 Mes filleuls</h2>
+              <p class="panel-subline">Mes filleuls : <strong>${creditedCount}</strong></p>
+              ${referralStatsLine}
+            </div>
+            <div class="panel-section account-referral-redeem">
+              <h2 class="panel-title">🎁 Utiliser un code de parrainage</h2>
+              ${state.profile?.referredBy
+                ? '<p class="account-field-note account-field-readonly">Ton code de parrainage a bien été pris en compte.</p>'
+                : `<label class="panel-field">Code de parrainage (optionnel)
+                    <input type="text" name="referralCode" data-referral-input autocomplete="off" spellcheck="false" maxlength="24" value="${escapeHtml(pendingReferralCode || '')}" />
+                  </label>
+                  <div class="btnrow panel-actions account-referral-actions">
+                    <button type="button" data-referral-submit>Valider</button>
+                  </div>
+                  <p class="account-field-note account-field-error" data-referral-feedback role="status" aria-live="polite"></p>`}
+            </div>
           </div>`;
       if (body) {
         body.innerHTML = `
