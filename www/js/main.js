@@ -1151,6 +1151,8 @@ const SCREEN_NAME_ALIASES = {
   running: 'running',
   title: 'title',
   home: 'title',
+  leaderboard: 'leaderboard',
+  lb: 'leaderboard',
   paused: 'paused',
   pause: 'paused',
   inter: 'interLevel',
@@ -1163,7 +1165,7 @@ const SCREEN_NAME_ALIASES = {
 
 let activeScreen = 'boot';
 let lastNonSettingsScreen = 'boot';
-const NAV_SCREEN_LOG_TARGETS = new Set(['title', 'running', 'paused', 'interLevel', 'settings', 'gameover']);
+const NAV_SCREEN_LOG_TARGETS = new Set(['title', 'running', 'paused', 'interLevel', 'settings', 'gameover', 'leaderboard']);
 
 function isFormFieldElement(el) {
   if (!el) return false;
@@ -5244,7 +5246,14 @@ class Game{
     }, { passive: false });
   }
   renderLeaderboard(){
-    if (overlay) overlay.classList.remove('overlay-title');
+    const originScreen = normalizeScreenName(activeScreen);
+    this.leaderboardReturnView = originScreen === 'unknown' ? 'title' : originScreen;
+
+    if (!overlay) return;
+
+    overlay.classList.remove('overlay-title', 'overlay-rules');
+    setActiveScreen('leaderboard', { via: 'renderLeaderboard', from: originScreen });
+    setTitleAccountAnchorVisible(false);
     overlay.innerHTML = `
     <div class="panel leaderboard-panel">
       <h1>Leaderboard Legend</h1>
@@ -5259,7 +5268,37 @@ class Game{
       <div class="btnrow"><button id="back">Retour</button></div>
     </div>`;
     showExclusiveOverlay(overlay);
-    addEvent(document.getElementById('back'), INPUT.tap, ()=>{ playSound("click"); this.renderTitle(); });
+    const goBack = () => {
+      playSound("click");
+      const target = normalizeScreenName(this.leaderboardReturnView || 'title');
+      if (target === 'title') {
+        this.renderTitle();
+        return;
+      }
+      if (target === 'paused' || target === 'pause') {
+        this.renderPause();
+        return;
+      }
+      if (target === 'interLevel') {
+        hideOverlay(overlay);
+        showInterLevelScreen(lastInterLevelResult || "win", { replaySound: false });
+        return;
+      }
+      if (target === 'gameover') {
+        this.renderGameOver();
+        return;
+      }
+      this.renderTitle();
+    };
+    addEvent(document.getElementById('back'), INPUT.tap, (evt)=>{
+      if (evt && typeof evt.preventDefault === 'function') {
+        evt.preventDefault();
+      }
+      if (evt && typeof evt.stopPropagation === 'function') {
+        evt.stopPropagation();
+      }
+      goBack();
+    }, { passive: false });
 
     const scoreService = getScoreService();
     const listEl = overlay.querySelector('#leaderboardList');
