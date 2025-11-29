@@ -1248,6 +1248,7 @@ function setActiveScreen(next, context = {}) {
   if (NAV_SCREEN_LOG_TARGETS.has(normalized)) {
     logNavigation(normalized, info);
   }
+  setTitleAccountAnchorVisible(normalized === 'title');
   return normalized;
 }
 
@@ -1265,6 +1266,7 @@ let canvas;
 let ctx;
 let overlay;
 let game;
+let titleAccountAnchor;
 
 function isActiveGameplayInProgress(){
   return Boolean(game && game.state === 'playing' && activeScreen === 'running');
@@ -1401,6 +1403,30 @@ function handleAuthStateUpdate(nextState){
   syncProgressFromAuthState(authState);
 }
 
+function getOrCreateTitleAccountAnchor(){
+  if (typeof document === 'undefined') return null;
+  if (titleAccountAnchor && titleAccountAnchor.isConnected) return titleAccountAnchor;
+  const wrapper = document.getElementById('gameWrapper');
+  if (!wrapper) return null;
+  const anchor = document.createElement('div');
+  anchor.id = 'titleAccountAnchor';
+  anchor.className = 'title-account-anchor title-account-bar account-status-wrapper';
+  anchor.innerHTML = `
+    <div class="title-account-card">
+      <span id="titleAccountStatus" class="title-account-status">Connexion en cours…</span>
+      <button id="btnAccount" type="button" class="title-account-button">Compte</button>
+    </div>`;
+  wrapper.appendChild(anchor);
+  titleAccountAnchor = anchor;
+  return anchor;
+}
+
+function setTitleAccountAnchorVisible(isVisible = false) {
+  const anchor = titleAccountAnchor || (isVisible ? getOrCreateTitleAccountAnchor() : null);
+  if (!anchor) return;
+  anchor.classList.toggle('is-visible', Boolean(isVisible));
+}
+
 function updateTitleAccountStatus(){
   if (typeof document === 'undefined') return;
   const statusEl = document.getElementById('titleAccountStatus');
@@ -1531,6 +1557,7 @@ function leaveTitleScreen({ stopMusic = true } = {}) {
   if (typeof overlay !== 'undefined' && overlay) {
     overlay.classList.remove('overlay-title');
   }
+  setTitleAccountAnchorVisible(false);
   if (stopMusic) {
     stopMenuMusic();
   }
@@ -4548,15 +4575,10 @@ class Game{
     } else {
       setBackgroundImageSrc(MENU_BACKGROUND_SRC);
     }
+    setTitleAccountAnchorVisible(true);
     enterTitleScreen();
     overlay.innerHTML = `
       <div class="title-screen" role="presentation">
-        <div class="title-account-bar account-status-wrapper">
-          <div class="title-account-card">
-            <span id="titleAccountStatus" class="title-account-status">Connexion en cours…</span>
-            <button id="btnAccount" type="button" class="title-account-button">Compte</button>
-          </div>
-        </div>
         <div class="title-screen-spacer" aria-hidden="true"></div>
         <div class="title-buttons" role="navigation">
           <button id="btnPlay" type="button">Jouer</button>
@@ -4566,14 +4588,21 @@ class Game{
         </div>
       </div>`;
     showExclusiveOverlay(overlay);
+    const accountAnchor = getOrCreateTitleAccountAnchor();
     const accountBtn = document.getElementById('btnAccount');
     if (accountBtn) {
-      addEvent(accountBtn, INPUT.tap, (evt)=>{
-        evt.preventDefault();
-        evt.stopPropagation();
-        playSound("click");
-        this.renderAccountPanel({ keepMode: true });
-      }, { passive:false });
+      if (!accountBtn.dataset.titleAccountBound) {
+        addEvent(accountBtn, INPUT.tap, (evt)=>{
+          evt.preventDefault();
+          evt.stopPropagation();
+          playSound("click");
+          this.renderAccountPanel({ keepMode: true });
+        }, { passive:false });
+        accountBtn.dataset.titleAccountBound = 'true';
+      }
+      if (accountAnchor) {
+        accountAnchor.classList.add('is-ready');
+      }
     }
     updateTitleAccountStatus();
     addEvent(document.getElementById('btnLB'), INPUT.tap, ()=>{ playSound("click"); this.renderLeaderboard(); });
@@ -5362,6 +5391,7 @@ class Game{
   renderRules(returnView){
     if (overlay) overlay.classList.remove('overlay-title');
     this.rulesReturnView = returnView || this.state || "title";
+    setTitleAccountAnchorVisible(false);
     overlay.innerHTML = `
       <div class="rules-screen" role="dialog" aria-modal="true" aria-label="Règles du jeu">
         <img src="assets/rules.webp" alt="Règles du jeu" />

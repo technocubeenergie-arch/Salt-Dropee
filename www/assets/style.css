@@ -278,6 +278,10 @@ body.is-inter-level #hud {
   pointer-events: none;
 }
 
+.title-account-anchor {
+  display: none;
+}
+
 .title-screen-spacer {
   flex: 1 1 clamp(160px, 42vh, 420px);
   width: 100%;
@@ -286,17 +290,21 @@ body.is-inter-level #hud {
 
 .title-account-bar {
   position: absolute;
-  top: calc(env(safe-area-inset-top, 0px) + 15px);
-  right: calc(env(safe-area-inset-right, 0px) + 15px);
+  top: calc(env(safe-area-inset-top, 0px) + 8px);
+  right: calc(env(safe-area-inset-right, 0px) + 12px);
   display: flex;
   justify-content: flex-end;
   align-items: flex-start;
   width: auto;
-  max-width: calc(100% - 30px);
+  max-width: calc(100% - 24px);
   padding: 0;
   margin: 0;
-  pointer-events: none;
-  z-index: 10;
+  pointer-events: auto;
+  z-index: 1100;
+}
+
+.title-account-anchor.is-visible {
+  display: flex;
 }
 
 .account-status-wrapper {
@@ -333,9 +341,9 @@ body.is-inter-level #hud {
 @media (max-width: 540px) and (orientation: portrait) {
   .title-account-bar {
 
-    top: calc(env(safe-area-inset-top, 0px) + 15px);
-    right: calc(env(safe-area-inset-right, 0px) + 15px);
-    max-width: calc(100% - 30px);
+    top: calc(env(safe-area-inset-top, 0px) + 8px);
+    right: calc(env(safe-area-inset-right, 0px) + 12px);
+    max-width: calc(100% - 24px);
 
   }
 
