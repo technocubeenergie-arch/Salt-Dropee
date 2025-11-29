@@ -332,9 +332,11 @@ body.is-inter-level #hud {
 
 @media (max-width: 540px) and (orientation: portrait) {
   .title-account-bar {
+
     top: calc(env(safe-area-inset-top, 0px) + 15px);
     right: calc(env(safe-area-inset-right, 0px) + 15px);
     max-width: calc(100% - 30px);
+
   }
 
   .title-account-card {
