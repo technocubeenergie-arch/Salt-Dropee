@@ -700,6 +700,46 @@ body.is-inter-level #hud {
   gap: 8px;
 }
 
+.leaderboard-list {
+  list-style: none;
+  padding: 0;
+  margin: 14px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.leaderboard-sticky {
+  margin-top: 16px;
+}
+
+.legend-leaderboard-row {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.3);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
+  gap: 12px;
+  line-height: 1.4;
+}
+
+.legend-leaderboard-rank {
+  font-weight: 700;
+  min-width: 40px;
+  text-align: center;
+}
+
+.legend-leaderboard-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.legend-leaderboard-score {
+  margin-left: auto;
+  font-weight: 700;
+  text-align: right;
+}
+
 .lb-badge {
   width: 28px;
   height: 28px;

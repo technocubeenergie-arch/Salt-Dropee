@@ -5346,8 +5346,13 @@ class Game{
     const renderEntry = (target, entry, rank) => {
       if (!target || !entry) return;
       target.innerHTML = '';
+      if (target.tagName === 'LI') {
+        target.classList.add('leaderboard-row');
+      }
+      target.classList.add('leaderboard-entry', 'legend-leaderboard-row');
+
       const rankEl = document.createElement('span');
-      rankEl.className = 'lb-rank';
+      rankEl.className = 'lb-rank legend-leaderboard-rank';
       rankEl.textContent = `#${rank} `;
 
       const badgeEl = document.createElement('img');
@@ -5357,11 +5362,11 @@ class Game{
       badgeEl.alt = 'Badge joueur';
 
       const nameEl = document.createElement('span');
-      nameEl.className = 'lb-name';
+      nameEl.className = 'lb-name legend-leaderboard-name';
       nameEl.textContent = `${entry.username || 'Anonyme'} : `;
 
       const scoreEl = document.createElement('span');
-      scoreEl.className = 'lb-score';
+      scoreEl.className = 'lb-score legend-leaderboard-score';
       scoreEl.textContent = formatValue(entry.best_score);
 
       target.appendChild(rankEl);
