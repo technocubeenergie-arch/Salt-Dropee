@@ -2001,9 +2001,9 @@ const hudBonusPopState = {};
 const HUD_BONUS_POP_DEFAULTS = {
 
   // Pop-in départ plus large pour que l'icône soit bien visible avant de revenir à 1
-  fromScale: 1.8,
+  fromScale: 4,
 
-  duration: 0.45,
+  duration: 0.8,
   ease: "back.out(2.2)",
 };
 
@@ -2384,7 +2384,7 @@ function startShieldEffect() {
 
   if (gsap?.to) {
     effect.tween = gsap.to(aura, {
-      scale: 1.2,
+      scale: 1,
       opacity: 0.2,
       yoyo: true,
       repeat: -1,
