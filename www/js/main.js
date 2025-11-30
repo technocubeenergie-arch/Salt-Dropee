@@ -1999,8 +1999,10 @@ let shield = {
 
 const hudBonusPopState = {};
 const HUD_BONUS_POP_DEFAULTS = {
+
   // Pop-in départ plus large pour que l'icône soit bien visible avant de revenir à 1
   fromScale: 1.8,
+
   duration: 0.45,
   ease: "back.out(2.2)",
 };
