@@ -1997,6 +1997,48 @@ let shield = {
   _effect: null
 };
 
+const hudBonusPopState = {};
+const HUD_BONUS_POP_DEFAULTS = {
+  // Pop-in départ plus large pour que l'icône soit bien visible avant de revenir à 1
+  fromScale: 1.8,
+  duration: 0.45,
+  ease: "back.out(2.2)",
+};
+
+function getHudBonusState(type) {
+  if (!hudBonusPopState[type]) {
+    hudBonusPopState[type] = { scale: 1, tween: null };
+  }
+  return hudBonusPopState[type];
+}
+
+function triggerHudBonusPop(type, options = {}) {
+  const state = getHudBonusState(type);
+  const { fromScale, duration, ease } = { ...HUD_BONUS_POP_DEFAULTS, ...options };
+
+  if (state.tween?.kill) {
+    state.tween.kill();
+  }
+
+  state.scale = fromScale;
+
+  if (gsap?.to) {
+    state.tween = gsap.to(state, {
+      scale: 1,
+      duration,
+      ease,
+      overwrite: "auto",
+    });
+  } else {
+    state.scale = 1;
+  }
+}
+
+function getHudBonusScale(type) {
+  const state = hudBonusPopState[type];
+  return state?.scale || 1;
+}
+
 let shieldConsumedThisFrame = false;
 
 function applyLegendShieldBoost(extraCount = 0) {
@@ -2203,6 +2245,8 @@ function activateBonus(type, duration) {
   const bonus = activeBonuses[type];
   if (!bonus) return;
 
+  const wasActive = bonus.active;
+
   const extra = Math.max(0, Number(duration) || 0);
   if (bonus.active) {
     bonus.timeLeft += extra;
@@ -2214,6 +2258,10 @@ function activateBonus(type, duration) {
     bonus.timeLeft = extra;
     playSound("bonusok");
     startBonusEffect(type);
+  }
+
+  if (!wasActive && bonus.active) {
+    triggerHudBonusPop(type);
   }
 }
 
@@ -2278,6 +2326,10 @@ function collectShield() {
         overwrite: "auto"
       }
     );
+  }
+
+  if (!wasActive) {
+    triggerHudBonusPop("shield");
   }
 
   showPowerupPickup("shield");
@@ -4292,8 +4344,15 @@ class HUD{
       const icon = BonusIcons[type];
       if (!icon) return;
       const timer = Math.max(0, timeLeft);
+      const scale = getHudBonusScale(type);
       if (icon.complete) {
-        g.drawImage(icon, bonusX, bonusY, iconSize, iconSize);
+        const cx = bonusX + iconSize / 2;
+        const cy = bonusY + iconSize / 2;
+        g.save();
+        g.translate(cx, cy);
+        g.scale(scale, scale);
+        g.drawImage(icon, -iconSize / 2, -iconSize / 2, iconSize, iconSize);
+        g.restore();
       }
       g.save();
       g.fillStyle = '#fff';
@@ -4326,8 +4385,16 @@ class HUD{
       const size = iconSize;
       const bx = bonusX;
       const by = bonusY;
+      const scale = getHudBonusScale("shield");
 
-      g.drawImage(shieldIconImage, bx, by, size, size);
+      const cx = bx + size / 2;
+      const cy = by + size / 2;
+
+      g.save();
+      g.translate(cx, cy);
+      g.scale(scale, scale);
+      g.drawImage(shieldIconImage, -size / 2, -size / 2, size, size);
+      g.restore();
       g.save();
       g.fillStyle = '#fff';
       g.font = `${timerFontSize}px "Roboto Mono", "Inter", monospace`;
