@@ -193,7 +193,7 @@ async function fetchLegendTop(limit = 5) {
 
     const { data, error } = await supabase
       .from('leaderboard_top')
-      .select('level, username, best_score')
+      .select('level, username, best_score, player_id')
       .eq('level', 6)
       .order('best_score', { ascending: false })
       .limit(finalLimit);
@@ -258,6 +258,7 @@ async function fetchMyLegendRank() {
       entry: {
         rank,
         username,
+        player_id: playerId,
         best_score: myBestScore,
       },
     };
@@ -267,10 +268,40 @@ async function fetchMyLegendRank() {
   }
 }
 
+async function fetchLegendReferralCounts(playerIds = []) {
+  try {
+    const supabase = await getSupabase();
+    if (!supabase) {
+      return { rows: [], error: 'NOT_READY' };
+    }
+
+    const uniqueIds = Array.from(new Set((playerIds || []).filter(Boolean)));
+    if (uniqueIds.length === 0) {
+      return { rows: [], error: null };
+    }
+
+    const { data, error } = await supabase
+      .from('referral_rewards')
+      .select('player_id, credited_count')
+      .in('player_id', uniqueIds);
+
+    if (error) {
+      console.warn('[score] fetchLegendReferralCounts failed', describeError(error));
+      return { rows: [], error };
+    }
+
+    return { rows: Array.isArray(data) ? data : [], error: null };
+  } catch (error) {
+    console.warn('[score] unexpected fetchLegendReferralCounts error', error);
+    return { rows: [], error };
+  }
+}
+
 const ScoreController = {
   submitLegendScore,
   fetchLegendTop,
   fetchMyLegendRank,
+  fetchLegendReferralCounts,
 };
 
 if (typeof window !== 'undefined') {
@@ -281,6 +312,7 @@ export {
   submitLegendScore,
   fetchLegendTop,
   fetchMyLegendRank,
+  fetchLegendReferralCounts,
 };
 
 export default ScoreController;

@@ -693,3 +693,18 @@ body.is-inter-level #hud {
   object-fit: cover;
 }
 
+.leaderboard-row,
+.leaderboard-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lb-badge {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  vertical-align: middle;
+  filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.3));
+}
+

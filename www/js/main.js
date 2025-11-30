@@ -5307,6 +5307,34 @@ class Game{
     const stickyWrapper = overlay.querySelector('#leaderboardStickyWrapper');
     const stickyEntry = overlay.querySelector('#leaderboardStickyEntry');
 
+    let referralCountsByPlayer = new Map();
+
+    const buildReferralCountMap = (rows = []) => {
+      const map = new Map();
+      rows.forEach((row) => {
+        if (!row?.player_id) return;
+        const numeric = Number(row.credited_count);
+        map.set(row.player_id, Number.isFinite(numeric) ? numeric : 0);
+      });
+      return map;
+    };
+
+    const getBadgeNameForReferrals = (count) => {
+      const n = Number(count) || 0;
+      if (n >= 20) return 'badge7.png';
+      if (n >= 12) return 'badge6.png';
+      if (n >= 8) return 'badge5.png';
+      if (n >= 5) return 'badge4.png';
+      if (n >= 3) return 'badge3.png';
+      if (n >= 1) return 'badge2.png';
+      return 'badge1.png';
+    };
+
+    const getReferralCountForEntry = (entry) => {
+      if (!entry?.player_id) return 0;
+      return referralCountsByPlayer.get(entry.player_id) ?? 0;
+    };
+
     const formatValue = (value) => {
       if (typeof formatScore === 'function') {
         return formatScore(value);
@@ -5322,6 +5350,12 @@ class Game{
       rankEl.className = 'lb-rank';
       rankEl.textContent = `#${rank} `;
 
+      const badgeEl = document.createElement('img');
+      badgeEl.className = 'lb-badge';
+      const badgeName = getBadgeNameForReferrals(getReferralCountForEntry(entry));
+      badgeEl.src = `assets/${badgeName}`;
+      badgeEl.alt = 'Badge joueur';
+
       const nameEl = document.createElement('span');
       nameEl.className = 'lb-name';
       nameEl.textContent = `${entry.username || 'Anonyme'} : `;
@@ -5331,6 +5365,7 @@ class Game{
       scoreEl.textContent = formatValue(entry.best_score);
 
       target.appendChild(rankEl);
+      target.appendChild(badgeEl);
       target.appendChild(nameEl);
       target.appendChild(scoreEl);
     };
@@ -5376,14 +5411,37 @@ class Game{
     (async () => {
       try {
         renderError('Chargement du classement…');
-        const { entries, error } = await scoreService.fetchLegendTop(5);
-        renderTop(entries);
-        renderError(error ? 'Classement indisponible pour le moment.' : '');
+        const topResult = await scoreService.fetchLegendTop(5);
+        const entries = Array.isArray(topResult?.entries) ? topResult.entries : [];
 
+        let sticky = null;
         if (typeof scoreService.fetchMyLegendRank === 'function') {
-          const sticky = await scoreService.fetchMyLegendRank();
-          renderSticky(sticky);
+          sticky = await scoreService.fetchMyLegendRank();
         }
+
+        const playerIds = new Set();
+        entries.forEach((entry) => {
+          if (entry?.player_id) {
+            playerIds.add(entry.player_id);
+          }
+        });
+        if (sticky?.entry?.player_id) {
+          playerIds.add(sticky.entry.player_id);
+        }
+
+        if (playerIds.size > 0 && typeof scoreService.fetchLegendReferralCounts === 'function') {
+          const referralResult = await scoreService.fetchLegendReferralCounts(Array.from(playerIds));
+          if (referralResult?.error) {
+            console.warn('[leaderboard] referral counts unavailable', referralResult.error);
+          }
+          if (Array.isArray(referralResult?.rows)) {
+            referralCountsByPlayer = buildReferralCountMap(referralResult.rows);
+          }
+        }
+
+        renderTop(entries);
+        renderError(topResult?.error ? 'Classement indisponible pour le moment.' : '');
+        renderSticky(sticky);
       } catch (error) {
         console.warn('[leaderboard] rendering failed', error);
         renderError('Impossible de charger le leaderboard.');
