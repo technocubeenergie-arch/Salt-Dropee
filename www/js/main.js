@@ -1970,6 +1970,13 @@ const BonusIcons = {
   anvil: AnvilImg,
 };
 
+const POWERUP_PICKUP_ASSETS = {
+  magnet: { image: MagnetImg, ready: () => magnetReady },
+  x2: { image: x2Image, ready: () => x2Image.complete },
+  shield: { image: shieldIconImage, ready: () => shieldIconImage.complete },
+  timeShard: { image: TimeImg, ready: () => timeReady }
+};
+
 // Types négatifs du projet
 const NEGATIVE_TYPES = new Set([
   "bomb",
@@ -2088,15 +2095,25 @@ function startBonusEffect(type) {
       } else {
         playSound("magnetat");
       }
+      showPowerupPickup("magnet");
       break;
     case "x2":
       showX2Animation();
       break;
+    case "shield":
+      showPowerupPickup("shield");
+      break;
+    case "timeShard":
+      showPowerupPickup("timeShard");
+      break;
   }
 }
 
-function showX2Animation() {
-  if (!x2Image.complete) return;
+function showPowerupPickup(type) {
+  const asset = POWERUP_PICKUP_ASSETS[type];
+  if (!asset?.image) return;
+  if (typeof asset.ready === "function" && !asset.ready()) return;
+  if (!asset.image.complete) return;
 
   const walletRef = game?.wallet;
   const fxManager = game?.fx;
@@ -2109,7 +2126,7 @@ function showX2Animation() {
   const anim = { scale: 0.5, opacity: 1 };
 
   const effect = {
-    type: "x2",
+    type: type,
     dead: false,
     tween: null,
     fadeTween: null,
@@ -2120,7 +2137,7 @@ function showX2Animation() {
       ctx.globalAlpha = anim.opacity;
       const size = baseSize * anim.scale;
       ctx.drawImage(
-        x2Image,
+        asset.image,
         x - size / 2,
         y - size / 2,
         size,
@@ -2157,6 +2174,10 @@ function showX2Animation() {
       });
     }
   });
+}
+
+function showX2Animation() {
+  showPowerupPickup("x2");
 }
 
 function stopBonusEffect(type) {
@@ -2259,6 +2280,7 @@ function collectShield() {
     );
   }
 
+  showPowerupPickup("shield");
   updateShieldHUD();
 }
 
@@ -2548,6 +2570,7 @@ function resolvePositiveCollision(item, gameInstance, firstCatch) {
       playSound("bonusok");
     }
 
+    showPowerupPickup(item.subtype);
     gameInstance.fx?.add(new FxPositiveImpact(itemX, itemY));
   }
 
