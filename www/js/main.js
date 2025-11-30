@@ -2159,14 +2159,14 @@ function showPowerupPickup(type) {
   fxManager.add(effect);
 
   effect.tween = gsap.to(anim, {
-    scale: 1.3,
-    duration: 0.4,
+    scale: 1.1,
+    duration: 0.3,
     ease: "back.out(2)",
     onComplete: () => {
       effect.fadeTween = gsap.to(anim, {
         scale: 1,
         opacity: 0,
-        duration: 0.3,
+        duration: 0.25,
         ease: "power1.inOut",
         onComplete: () => {
           effect.finish();
