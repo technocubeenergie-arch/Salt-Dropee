@@ -2196,7 +2196,7 @@ function showPowerupPickup(type) {
   if (!walletRef || !fxManager || !gsap?.to) return;
 
   const x = walletRef.x + walletRef.w / 2;
-  const y = walletRef.y - 60;
+  const y = walletRef.y - 30;
   const baseSize = 80;
 
   const anim = { scale: BONUS_PICKUP_ANIM.initialScale, opacity: 1 };
