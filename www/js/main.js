@@ -2153,6 +2153,38 @@ function startBonusEffect(type) {
   }
 }
 
+const BONUS_PICKUP_ANIM = {
+  initialScale: 0.5,
+  peakScale: 0.6,
+  settleScale: 0.55,
+  popDuration: 0.18,
+  fadeDuration: 0.2,
+  overlap: 0.08
+};
+
+function createBonusPickupTimeline(target, onFinish) {
+  const timeline = gsap.timeline({ onComplete: onFinish, defaults: { overwrite: "auto" } });
+
+  timeline
+    .to(target, {
+      scale: BONUS_PICKUP_ANIM.peakScale,
+      duration: BONUS_PICKUP_ANIM.popDuration,
+      ease: "back.out(2)"
+    })
+    .to(
+      target,
+      {
+        scale: BONUS_PICKUP_ANIM.settleScale,
+        opacity: 0,
+        duration: BONUS_PICKUP_ANIM.fadeDuration,
+        ease: "power1.inOut"
+      },
+      `-=${BONUS_PICKUP_ANIM.overlap}`
+    );
+
+  return timeline;
+}
+
 function showPowerupPickup(type) {
   const asset = POWERUP_PICKUP_ASSETS[type];
   if (!asset?.image) return;
@@ -2167,13 +2199,12 @@ function showPowerupPickup(type) {
   const y = walletRef.y - 60;
   const baseSize = 80;
 
-  const anim = { scale: 0.5, opacity: 1 };
+  const anim = { scale: BONUS_PICKUP_ANIM.initialScale, opacity: 1 };
 
   const effect = {
     type: type,
     dead: false,
-    tween: null,
-    fadeTween: null,
+    timeline: null,
     update() {},
     draw(ctx) {
       if (effect.dead) return;
@@ -2192,8 +2223,7 @@ function showPowerupPickup(type) {
     finish() {
       if (effect.dead) return;
       effect.dead = true;
-      effect.tween?.kill?.();
-      effect.fadeTween?.kill?.();
+      effect.timeline?.kill?.();
     },
     kill() {
       effect.finish();
@@ -2202,22 +2232,7 @@ function showPowerupPickup(type) {
 
   fxManager.add(effect);
 
-  effect.tween = gsap.to(anim, {
-    scale: 1.1,
-    duration: 0.3,
-    ease: "back.out(2)",
-    onComplete: () => {
-      effect.fadeTween = gsap.to(anim, {
-        scale: 1,
-        opacity: 0,
-        duration: 0.25,
-        ease: "power1.inOut",
-        onComplete: () => {
-          effect.finish();
-        }
-      });
-    }
-  });
+  effect.timeline = createBonusPickupTimeline(anim, () => effect.finish());
 }
 
 function showX2Animation() {
