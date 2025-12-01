@@ -2157,7 +2157,7 @@ const BONUS_PICKUP_ANIM = {
   initialScale: 0.5,
   peakScale: 0.6,
   settleScale: 0.55,
-  popDuration: 0.18,
+  popDuration: 0.15,
   fadeDuration: 0.2,
   overlap: 0.08
 };
