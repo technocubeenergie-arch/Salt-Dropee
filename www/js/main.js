@@ -4835,7 +4835,6 @@ class Game{
             </div>
             <div class="panel-section account-referral-stats">
               <h2 class="panel-title">👥 Mes filleuls</h2>
-              <p class="panel-subline">Mes filleuls : <strong>${creditedCount}</strong></p>
               ${referralStatsLine}
             </div>
             <div class="panel-section account-referral-redeem">
