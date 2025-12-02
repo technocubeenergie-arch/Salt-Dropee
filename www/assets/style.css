@@ -872,12 +872,17 @@ body.is-inter-level #hud {
   max-height: var(--legend-leaderboard-scroll-height);
   overflow-y: auto;
   padding-right: 0;
+  padding-bottom: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
   scrollbar-gutter: stable both-edges;
   scrollbar-width: none;
   -ms-overflow-style: none;
+}
+
+.legend-leaderboard-scroll.has-sticky-overlay {
+  padding-bottom: calc(var(--legend-leaderboard-row-height) + var(--legend-leaderboard-row-gap));
 }
 
 .legend-leaderboard-scroll::-webkit-scrollbar {
@@ -925,17 +930,23 @@ body.is-inter-level #hud {
 }
 
 .leaderboard-sticky {
-  position: sticky;
+  position: absolute;
+  left: 0;
+  right: 0;
   bottom: 0;
-  margin-top: 6px;
-  padding-top: 10px;
+  padding: 12px 0 0;
   background: linear-gradient(180deg, rgba(8, 10, 22, 0) 0%, rgba(8, 10, 22, 0.75) 48%, rgba(8, 10, 22, 0.95) 100%);
   border-top: 1px solid rgba(255, 255, 255, 0.05);
   box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.32);
   z-index: 2;
+  pointer-events: none;
 }
 .leaderboard-sticky.floating .legend-leaderboard-row {
   box-shadow: 0 14px 28px rgba(0, 0, 0, 0.36);
+}
+
+.leaderboard-sticky .legend-leaderboard-row {
+  pointer-events: auto;
 }
 
 .legend-leaderboard-row {
@@ -957,6 +968,10 @@ body.is-inter-level #hud {
 
 .legend-leaderboard-row.is-player-row-active {
   outline: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.legend-leaderboard-row.is-player-row-hidden {
+  visibility: hidden;
 }
 
 .legend-leaderboard-row.is-sticky-row {
