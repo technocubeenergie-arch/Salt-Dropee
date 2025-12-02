@@ -5415,29 +5415,23 @@ class Game{
     <div class="panel legend-leaderboard-panel" role="dialog" aria-modal="true" aria-labelledby="legendLeaderboardTitle">
         <div class="legend-leaderboard-header">
           <h1 id="legendLeaderboardTitle">Leaderboard Legend</h1>
-          <p class="legend-leaderboard-subtitle">Top 20 des meilleurs scores du mode Légende.</p>
         </div>
 
       <div class="legend-leaderboard-grid">
         <section class="panel-section legend-leaderboard-card">
           <div class="legend-leaderboard-card-header">
             <h2 class="panel-title">Top 20</h2>
-            <p class="panel-subline">Classement général</p>
+            <p class="panel-subline">Classement Legend</p>
           </div>
-          <div class="legend-leaderboard-scroll" aria-live="polite">
-            <div id="leaderboardStatus" class="leaderboard-status">Chargement du classement…</div>
-            <ol id="leaderboardList" class="leaderboard-list"></ol>
-            <div id="leaderboardEmpty" class="leaderboard-empty" style="display:none;">Aucun score Legend pour le moment.</div>
-          </div>
-        </section>
-
-        <section class="panel-section legend-leaderboard-card">
-          <div class="legend-leaderboard-card-header">
-            <h2 class="panel-title">Votre rang</h2>
-            <p class="panel-subline">Suivi personnalisé</p>
-          </div>
-          <div id="leaderboardStickyWrapper" class="leaderboard-sticky" style="display:none;">
-            <div id="leaderboardStickyEntry" class="leaderboard-entry"></div>
+          <div class="legend-leaderboard-body">
+            <div class="legend-leaderboard-scroll" aria-live="polite">
+              <div id="leaderboardStatus" class="leaderboard-status">Chargement du classement…</div>
+              <ol id="leaderboardList" class="leaderboard-list"></ol>
+              <div id="leaderboardEmpty" class="leaderboard-empty" style="display:none;">Aucun score Legend pour le moment.</div>
+            </div>
+            <div id="leaderboardStickyWrapper" class="leaderboard-sticky" style="display:none;">
+              <div id="leaderboardStickyEntry" class="leaderboard-entry"></div>
+            </div>
           </div>
         </section>
       </div>
@@ -5449,6 +5443,7 @@ class Game{
     showExclusiveOverlay(overlay);
     const goBack = () => {
       playSound("click");
+      teardownStickyListeners();
       const target = normalizeScreenName(this.leaderboardReturnView || 'title');
       if (target === 'title') {
         this.renderTitle();
@@ -5485,6 +5480,12 @@ class Game{
     const emptyEl = overlay.querySelector('#leaderboardEmpty');
     const stickyWrapper = overlay.querySelector('#leaderboardStickyWrapper');
     const stickyEntry = overlay.querySelector('#leaderboardStickyEntry');
+    const scrollContainer = overlay.querySelector('.legend-leaderboard-scroll');
+
+    let currentPlayerId = null;
+    let playerRowEl = null;
+    let stickyData = null;
+    let teardownStickyListeners = () => {};
 
     let referralCountsByPlayer = new Map();
 
@@ -5522,7 +5523,7 @@ class Game{
       return Number.isFinite(parsed) ? parsed.toString() : '0';
     };
 
-    const renderEntry = (target, entry, rank) => {
+    const renderEntry = (target, entry, rank, { isSticky = false } = {}) => {
       if (!target || !entry) return;
       target.innerHTML = '';
       if (target.tagName === 'LI') {
@@ -5530,9 +5531,21 @@ class Game{
       }
       target.classList.add('leaderboard-entry', 'legend-leaderboard-row');
 
+      const isPlayerRow = Boolean(currentPlayerId && entry.player_id === currentPlayerId);
+      const displayRank = Number.isFinite(rank) ? rank : (Number(entry.rank) || '?');
+
+      if (isPlayerRow) {
+        target.classList.add('is-player-row');
+        target.dataset.playerId = entry.player_id;
+      }
+      if (isSticky) {
+        target.classList.add('is-sticky-row');
+      }
+      target.dataset.rank = displayRank;
+
       const rankEl = document.createElement('span');
       rankEl.className = 'lb-rank legend-leaderboard-rank';
-      rankEl.textContent = `#${rank} `;
+      rankEl.textContent = `#${displayRank} `;
 
       const badgeEl = document.createElement('img');
       badgeEl.className = 'lb-badge';
@@ -5554,8 +5567,29 @@ class Game{
       target.appendChild(scoreEl);
     };
 
+    // Vérifie si la vraie ligne du joueur est visible dans la zone scrollable pour basculer le mode sticky.
+    const isPlayerRowVisible = () => {
+      if (!playerRowEl || !scrollContainer) return false;
+      const containerRect = scrollContainer.getBoundingClientRect();
+      const rowRect = playerRowEl.getBoundingClientRect();
+      const overlap = Math.min(containerRect.bottom, rowRect.bottom) - Math.max(containerRect.top, rowRect.top);
+      return overlap > 0 && overlap >= Math.min(rowRect.height * 0.65, rowRect.height);
+    };
+
+    const syncStickyFloatingState = () => {
+      if (!stickyData?.entry) return;
+      const shouldFloat = !isPlayerRowVisible();
+      stickyWrapper.style.display = shouldFloat ? '' : 'none';
+      stickyWrapper.classList.toggle('floating', shouldFloat);
+      if (playerRowEl) {
+        playerRowEl.classList.toggle('is-player-row-active', !shouldFloat);
+      }
+    };
+
     const renderTop = (entries = []) => {
       listEl.innerHTML = '';
+      playerRowEl = null;
+
       const hasEntries = Array.isArray(entries) && entries.length > 0;
       emptyEl.style.display = hasEntries ? 'none' : '';
 
@@ -5566,19 +5600,46 @@ class Game{
       entries.forEach((entry, index) => {
         const li = document.createElement('li');
         li.className = 'leaderboard-row';
-        renderEntry(li, entry, index + 1);
+        const rank = index + 1;
+        renderEntry(li, entry, rank);
+        if (currentPlayerId && entry.player_id === currentPlayerId) {
+          playerRowEl = li;
+        }
         listEl.appendChild(li);
       });
     };
 
     const renderSticky = (sticky) => {
-      if (!sticky?.available || !sticky.entry) {
+      stickyData = sticky;
+      if (!sticky?.entry) {
         stickyWrapper.style.display = 'none';
         return;
       }
       stickyWrapper.style.display = '';
-      // On laisse la ligne sticky affichée même si le joueur est dans le top 20.
-      renderEntry(stickyEntry, sticky.entry, sticky.entry.rank);
+      const fallbackRank = Number.isFinite(sticky.entry.rank)
+        ? sticky.entry.rank
+        : Number(playerRowEl?.dataset?.rank) || sticky.entry.rank;
+      renderEntry(stickyEntry, sticky.entry, fallbackRank, { isSticky: true });
+      syncStickyFloatingState();
+    };
+
+    const handleScrollChange = () => {
+      // Détection manuelle pour éviter un observer quand le container change de taille ou de scroll.
+      syncStickyFloatingState();
+    };
+
+    if (scrollContainer) {
+      addEvent(scrollContainer, 'scroll', handleScrollChange, { passive: true });
+      addEvent(scrollContainer, 'touchmove', handleScrollChange, { passive: true });
+    }
+    addEvent(window, 'resize', handleScrollChange, { passive: true });
+
+    teardownStickyListeners = () => {
+      if (scrollContainer) {
+        removeEvent(scrollContainer, 'scroll', handleScrollChange, { passive: true });
+        removeEvent(scrollContainer, 'touchmove', handleScrollChange, { passive: true });
+      }
+      removeEvent(window, 'resize', handleScrollChange, { passive: true });
     };
 
     const renderError = (message) => {
@@ -5603,6 +5664,8 @@ class Game{
         if (typeof scoreService.fetchMyLegendRank === 'function') {
           sticky = await scoreService.fetchMyLegendRank();
         }
+
+        currentPlayerId = sticky?.entry?.player_id || null;
 
         const playerIds = new Set();
         entries.forEach((entry) => {
