@@ -1440,7 +1440,7 @@ function updateTitleAccountStatus(){
   if (!state.enabled && !state.loading) {
     statusText = 'Compte indisponible';
   } else if (state.user) {
-    statusText = username ? `Connecté : ${username}` : 'Connecté';
+    statusText = username || 'Connecté';
   } else if (state.ready) {
     statusText = 'Non connecté';
   } else if (state.lastError) {
