@@ -846,6 +846,13 @@ body.is-inter-level #hud {
   gap: 10px;
   padding: 12px 14px 14px;
   min-height: 0;
+  --legend-leaderboard-row-height: clamp(52px, 8vw, 64px);
+  --legend-leaderboard-visible-rows: 5;
+  --legend-leaderboard-row-gap: 10px;
+  --legend-leaderboard-scroll-height: calc(
+    var(--legend-leaderboard-row-height) * var(--legend-leaderboard-visible-rows) +
+    (var(--legend-leaderboard-visible-rows) - 1) * var(--legend-leaderboard-row-gap)
+  );
 }
 
 .legend-leaderboard-body {
@@ -855,12 +862,14 @@ body.is-inter-level #hud {
   min-height: 0;
   flex-direction: column;
   gap: 8px;
+  min-height: calc(var(--legend-leaderboard-scroll-height) + 96px);
 }
 
 .legend-leaderboard-scroll {
-  flex: 1;
-  min-height: 220px;
-  max-height: clamp(260px, 54vh, 420px);
+  flex: 0 0 var(--legend-leaderboard-scroll-height);
+  height: var(--legend-leaderboard-scroll-height);
+  min-height: var(--legend-leaderboard-scroll-height);
+  max-height: var(--legend-leaderboard-scroll-height);
   overflow-y: auto;
   padding-right: 0;
   display: flex;
