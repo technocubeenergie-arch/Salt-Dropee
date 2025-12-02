@@ -412,6 +412,8 @@ body.is-inter-level #hud {
   font-size: 0.8rem;
   letter-spacing: 0.04em;
   opacity: 0.85;
+  text-align: center;
+  align-self: stretch;
 }
 
 .title-account-button {
