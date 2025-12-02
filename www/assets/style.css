@@ -164,6 +164,39 @@ body.is-inter-level #hud {
   box-shadow: 0 18px 36px rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(8px);
 }
+.panel-shell,
+.legend-leaderboard-panel {
+  width: min(640px, 94vw);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.panel-header,
+.legend-leaderboard-header {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+.panel-header h1,
+.legend-leaderboard-header h1 {
+  margin: 0;
+  letter-spacing: 0.04em;
+  text-align: left;
+}
+.panel-subtitle,
+.legend-leaderboard-subtitle {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--ui2);
+  opacity: 0.9;
+}
+.panel-grid,
+.legend-leaderboard-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
 .panel h1 {
   margin: 0 0 12px;
   font-size: clamp(1.15rem, 3vw, 1.35rem);
@@ -179,6 +212,11 @@ body.is-inter-level #hud {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+.panel-card {
+  padding: 14px 16px;
+  gap: 10px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
 }
 .panel-section + .panel-section {
   margin-top: 10px;
@@ -202,6 +240,30 @@ body.is-inter-level #hud {
 .panel-actions {
   margin-top: 6px;
   justify-content: flex-start;
+}
+.panel-stat-list {
+  list-style: none;
+  padding: 0;
+  margin: 6px 0 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+.panel-stat-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 0.98rem;
+}
+.panel-stat-list span {
+  color: var(--ui2);
+}
+.panel-stat-list strong {
+  font-size: 1.05rem;
 }
 .panel-field {
   display: flex;
@@ -410,13 +472,47 @@ body.is-inter-level #hud {
 }
 
 .account-panel {
-  width: min(320px, 90vw);
+  width: min(640px, 94vw);
 }
 
 .account-panel-body {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+.account-auth-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-grid {
+  gap: 14px;
+}
+
+.settings-toggle-group {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.settings-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.95rem;
+}
+
+.settings-sensitivity-card input[type='range'] {
+  width: 100%;
+}
+
+.pause-panel .panel-actions,
+.gameover-panel .panel-actions,
+.account-panel .panel-actions {
+  justify-content: center;
+  flex-wrap: wrap;
 }
 
 .account-referral-section {
