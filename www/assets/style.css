@@ -166,10 +166,11 @@ body.is-inter-level #hud {
 }
 .panel-shell,
 .legend-leaderboard-panel {
-  width: min(640px, 94vw);
+  width: min(680px, 95vw);
+  max-height: min(90vh, 760px);
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
 }
 .panel-header,
 .legend-leaderboard-header {
@@ -195,6 +196,8 @@ body.is-inter-level #hud {
 .legend-leaderboard-grid {
   display: flex;
   flex-direction: column;
+  flex: 1;
+  min-height: 0;
   gap: 12px;
 }
 .panel h1 {
@@ -809,10 +812,11 @@ body.is-inter-level #hud {
 }
 
 .legend-leaderboard-panel {
-  width: min(640px, 94vw);
+  width: min(680px, 95vw);
+  max-height: min(90vh, 760px);
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
 }
 
 .legend-leaderboard-header {
@@ -827,33 +831,49 @@ body.is-inter-level #hud {
   letter-spacing: 0.04em;
 }
 
-.legend-leaderboard-subtitle {
-  margin: 0;
-  font-size: 0.95rem;
-  color: var(--ui2);
-  opacity: 0.9;
-}
-
 .legend-leaderboard-grid {
   display: flex;
   flex-direction: column;
+  flex: 1;
+  min-height: 0;
   gap: 12px;
 }
 
 .legend-leaderboard-card {
-  gap: 10px;
-  padding: 14px 16px;
-}
-
-.legend-leaderboard-scroll {
-  max-height: 360px; /* ~6 lignes visibles dans le cadre actuel */
-  min-height: 300px;
-  overflow-y: auto;
-  padding-right: 6px;
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  padding: 12px 14px 14px;
+  min-height: 0;
+}
+
+.legend-leaderboard-body {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.legend-leaderboard-scroll {
+  flex: 1;
+  min-height: 220px;
+  max-height: clamp(260px, 54vh, 420px);
+  overflow-y: auto;
+  padding-right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   scrollbar-gutter: stable both-edges;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.legend-leaderboard-scroll::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 .legend-leaderboard-card-header {
@@ -896,7 +916,17 @@ body.is-inter-level #hud {
 }
 
 .leaderboard-sticky {
-  margin-top: 4px;
+  position: sticky;
+  bottom: 0;
+  margin-top: 6px;
+  padding-top: 10px;
+  background: linear-gradient(180deg, rgba(8, 10, 22, 0) 0%, rgba(8, 10, 22, 0.75) 48%, rgba(8, 10, 22, 0.95) 100%);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.32);
+  z-index: 2;
+}
+.leaderboard-sticky.floating .legend-leaderboard-row {
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.36);
 }
 
 .legend-leaderboard-row {
@@ -908,6 +938,20 @@ body.is-inter-level #hud {
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
   gap: 12px;
   line-height: 1.4;
+}
+
+.legend-leaderboard-row.is-player-row {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.09) 0%, rgba(255, 255, 255, 0.05) 100%);
+  border-color: rgba(255, 255, 255, 0.16);
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.38);
+}
+
+.legend-leaderboard-row.is-player-row-active {
+  outline: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.legend-leaderboard-row.is-sticky-row {
+  position: relative;
 }
 
 .legend-leaderboard-rank {
