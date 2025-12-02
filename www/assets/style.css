@@ -845,6 +845,17 @@ body.is-inter-level #hud {
   padding: 14px 16px;
 }
 
+.legend-leaderboard-scroll {
+  max-height: 360px; /* ~6 lignes visibles dans le cadre actuel */
+  min-height: 300px;
+  overflow-y: auto;
+  padding-right: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  scrollbar-gutter: stable both-edges;
+}
+
 .legend-leaderboard-card-header {
   display: flex;
   flex-direction: column;

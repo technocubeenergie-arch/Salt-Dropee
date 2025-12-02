@@ -182,14 +182,15 @@ async function submitLegendScore({ playerId, score, durationSeconds, level } = {
   }
 }
 
-async function fetchLegendTop(limit = 5) {
+// Top Legend étendu à 20 lignes pour l'affichage scrollable du leaderboard.
+async function fetchLegendTop(limit = 20) {
   try {
     const supabase = await getSupabase();
     if (!supabase) {
       return { entries: [], error: 'NOT_READY' };
     }
 
-    const finalLimit = Math.max(1, Math.min(Number(limit) || 5, 25));
+    const finalLimit = Math.max(1, Math.min(Number(limit) || 20, 25));
 
     const { data, error } = await supabase
       .from('leaderboard_top')
