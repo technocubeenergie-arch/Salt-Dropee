@@ -67,31 +67,44 @@
 
       <!-- Inter-level overlay (caché par défaut) -->
       <div id="interLevelScreen" class="overlay inter-level-screen" aria-hidden="true">
-        <div
-          class="inter-content inter-level-content"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="interTitle"
-        >
-          <h2 id="interTitle">Niveau terminé !</h2>
-          <p id="interScore">Score : 0000</p>
-          <div class="inter-buttons inter-level-buttons">
-            <button id="btnNextLevel" type="button">Niveau suivant</button>
-            <button id="btnSaveQuit" type="button">Sauvegarder &amp; Quitter</button>
-            <button type="button" class="btn-settings" data-action="open-settings">
-              Paramètres
-            </button>
+        <div class="panel panel-shell inter-level-panel" role="dialog" aria-modal="true" aria-labelledby="interTitle">
+          <div class="panel-header">
+            <h1 id="interTitle">Niveau terminé 🎉</h1>
+          </div>
+
+          <div class="panel-grid">
+            <section class="panel-section panel-card inter-level-summary">
+              <p id="interScore" class="panel-subline">Score : 0000</p>
+            </section>
+          </div>
+
+          <div class="panel-footer">
+            <div class="btnrow panel-actions inter-level-buttons">
+              <button id="btnNextLevel" type="button">Niveau suivant</button>
+              <button id="btnSaveQuit" type="button">Sauvegarder &amp; Quitter</button>
+              <button type="button" class="btn-settings" data-action="open-settings">Paramètres</button>
+            </div>
           </div>
         </div>
       </div>
 
-      <div id="legendResultScreen" class="overlay" aria-hidden="true">
-        <div class="inter-content" role="dialog" aria-modal="true" aria-labelledby="legendTitle">
-          <h2 id="legendTitle">Mode Légende</h2>
-          <p id="legendMessage">Félicitations, votre score est de 0.</p>
-          <div class="inter-buttons legend-buttons">
-            <button id="legendHomeButton" type="button">Retour à l’accueil</button>
-            <button id="legendRetryButton" type="button">Recommencer</button>
+      <div id="legendResultScreen" class="overlay legend-result-screen" aria-hidden="true">
+        <div class="panel panel-shell legend-result-panel" role="dialog" aria-modal="true" aria-labelledby="legendTitle">
+          <div class="panel-header">
+            <h1 id="legendTitle">Mode Légende</h1>
+          </div>
+
+          <div class="panel-grid">
+            <section class="panel-section panel-card legend-result-message">
+              <p id="legendMessage" class="panel-subline">Félicitations, votre score est de 0.</p>
+            </section>
+          </div>
+
+          <div class="panel-footer">
+            <div class="btnrow panel-actions legend-buttons">
+              <button id="legendHomeButton" type="button">Retour à l’accueil</button>
+              <button id="legendRetryButton" type="button">Recommencer</button>
+            </div>
           </div>
         </div>
       </div>
