@@ -4743,7 +4743,7 @@ class Game{
     overlay.classList.remove('overlay-title', 'overlay-rules');
     overlay.innerHTML = `
       <div class="panel account-panel" role="dialog" aria-modal="true" aria-labelledby="accountTitle" data-account-panel="true">
-        <h1 id="accountTitle">Compte joueur</h1>
+        <h1 id="accountTitle"></h1>
         <div class="account-panel-body" data-account-body></div>
         <p class="account-message" data-account-message role="status" aria-live="polite"></p>
       </div>`;
@@ -4752,6 +4752,14 @@ class Game{
     const state = getAuthStateSnapshot();
     const body = overlay.querySelector('[data-account-body]');
     const messageEl = overlay.querySelector('[data-account-message]');
+    const titleEl = overlay.querySelector('#accountTitle');
+
+    const setAccountTitle = (text = '') => {
+      if (!titleEl) return;
+      titleEl.textContent = text || '';
+    };
+
+    setAccountTitle(state?.profile?.username || 'Compte');
 
     const setMessage = (text = '', variant = 'info') => {
       if (!messageEl) return;
@@ -4825,13 +4833,12 @@ class Game{
           : '<p class="account-field-note account-field-readonly account-referral-empty">Tu n’as pas encore parrainé de joueur.</p>')
         : '';
 
-      const safeEmail = escapeHtml(state.user.email || '');
+      const profileUsername = state.profile?.username || '';
+      const safeProfileUsername = escapeHtml(profileUsername);
       const safeUsername = escapeHtml(state.user.username || '');
-      const safeProfileUsername = escapeHtml(state.profile?.username || '');
-      const identifier = safeProfileUsername || safeUsername || safeEmail || 'Utilisateur connecté';
-      const secondaryLine = safeEmail && identifier !== safeEmail
-        ? `<br><small>${safeEmail}</small>`
-        : '';
+      const safeEmail = escapeHtml(state.user.email || '');
+      const accountTitle = profileUsername || state.user.username || state.user.email || 'Compte';
+      setAccountTitle(accountTitle);
       const pendingReferralCode = !state.profile?.referredBy && referralService?.getPendingReferralCode
         ? referralService.getPendingReferralCode()
         : null;
@@ -4867,7 +4874,6 @@ class Game{
           </div>`;
       if (body) {
         body.innerHTML = `
-          <p class="account-status-line">Connecté en tant que <strong>${identifier}</strong>.${secondaryLine}</p>
           ${referralSection}
           <div class="btnrow">
             <button type="button" id="btnAccountSignOut">Se déconnecter</button>
