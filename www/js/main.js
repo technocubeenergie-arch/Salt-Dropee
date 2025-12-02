@@ -5577,12 +5577,30 @@ class Game{
     };
 
     const syncStickyFloatingState = () => {
-      if (!stickyData?.entry) return;
+      const hasStickyEntry = Boolean(stickyData?.entry);
+      if (!hasStickyEntry) {
+        stickyWrapper.style.display = 'none';
+        stickyWrapper.classList.remove('floating');
+        if (playerRowEl) {
+          playerRowEl.classList.remove('is-player-row-active', 'is-player-row-hidden');
+        }
+        if (scrollContainer) {
+          scrollContainer.classList.remove('has-sticky-overlay');
+        }
+        return;
+      }
+
       const shouldFloat = !isPlayerRowVisible();
       stickyWrapper.style.display = shouldFloat ? '' : 'none';
       stickyWrapper.classList.toggle('floating', shouldFloat);
+
+      if (scrollContainer) {
+        scrollContainer.classList.toggle('has-sticky-overlay', shouldFloat);
+      }
+
       if (playerRowEl) {
         playerRowEl.classList.toggle('is-player-row-active', !shouldFloat);
+        playerRowEl.classList.toggle('is-player-row-hidden', shouldFloat);
       }
     };
 
@@ -5612,7 +5630,7 @@ class Game{
     const renderSticky = (sticky) => {
       stickyData = sticky;
       if (!sticky?.entry) {
-        stickyWrapper.style.display = 'none';
+        syncStickyFloatingState();
         return;
       }
       stickyWrapper.style.display = '';
