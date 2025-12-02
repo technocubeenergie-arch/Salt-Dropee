@@ -5413,20 +5413,22 @@ class Game{
     setTitleAccountAnchorVisible(false);
     overlay.innerHTML = `
     <div class="panel legend-leaderboard-panel" role="dialog" aria-modal="true" aria-labelledby="legendLeaderboardTitle">
-      <div class="legend-leaderboard-header">
-        <h1 id="legendLeaderboardTitle">Leaderboard Legend</h1>
-        <p class="legend-leaderboard-subtitle">Top 5 des meilleurs scores du mode Légende.</p>
-      </div>
+        <div class="legend-leaderboard-header">
+          <h1 id="legendLeaderboardTitle">Leaderboard Legend</h1>
+          <p class="legend-leaderboard-subtitle">Top 20 des meilleurs scores du mode Légende.</p>
+        </div>
 
       <div class="legend-leaderboard-grid">
         <section class="panel-section legend-leaderboard-card">
           <div class="legend-leaderboard-card-header">
-            <h2 class="panel-title">Top 5</h2>
+            <h2 class="panel-title">Top 20</h2>
             <p class="panel-subline">Classement général</p>
           </div>
-          <div id="leaderboardStatus" class="leaderboard-status">Chargement du classement…</div>
-          <ol id="leaderboardList" class="leaderboard-list"></ol>
-          <div id="leaderboardEmpty" class="leaderboard-empty" style="display:none;">Aucun score Legend pour le moment.</div>
+          <div class="legend-leaderboard-scroll" aria-live="polite">
+            <div id="leaderboardStatus" class="leaderboard-status">Chargement du classement…</div>
+            <ol id="leaderboardList" class="leaderboard-list"></ol>
+            <div id="leaderboardEmpty" class="leaderboard-empty" style="display:none;">Aucun score Legend pour le moment.</div>
+          </div>
         </section>
 
         <section class="panel-section legend-leaderboard-card">
@@ -5575,7 +5577,7 @@ class Game{
         return;
       }
       stickyWrapper.style.display = '';
-      // On laisse la ligne sticky affichée même si le joueur est dans le top 5.
+      // On laisse la ligne sticky affichée même si le joueur est dans le top 20.
       renderEntry(stickyEntry, sticky.entry, sticky.entry.rank);
     };
 
@@ -5593,7 +5595,8 @@ class Game{
     (async () => {
       try {
         renderError('Chargement du classement…');
-        const topResult = await scoreService.fetchLegendTop(5);
+        // On élargit l'affichage au top 20 pour la liste scrollable.
+        const topResult = await scoreService.fetchLegendTop(20);
         const entries = Array.isArray(topResult?.entries) ? topResult.entries : [];
 
         let sticky = null;
