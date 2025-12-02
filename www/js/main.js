@@ -4742,10 +4742,15 @@ class Game{
     }
     overlay.classList.remove('overlay-title', 'overlay-rules');
     overlay.innerHTML = `
-      <div class="panel account-panel" role="dialog" aria-modal="true" aria-labelledby="accountTitle" data-account-panel="true">
-        <h1 id="accountTitle"></h1>
-        <div class="account-panel-body" data-account-body></div>
-        <p class="account-message" data-account-message role="status" aria-live="polite"></p>
+      <div class="panel panel-shell account-panel" role="dialog" aria-modal="true" aria-labelledby="accountTitle" data-account-panel="true">
+        <div class="panel-header">
+          <h1 id="accountTitle"></h1>
+          <p class="panel-subtitle">Gestion du profil et des récompenses.</p>
+        </div>
+        <div class="panel-grid account-panel-body" data-account-body></div>
+        <div class="panel-footer">
+          <p class="account-message" data-account-message role="status" aria-live="polite"></p>
+        </div>
       </div>`;
     showExclusiveOverlay(overlay);
     setActiveScreen('account', { via: 'renderAccountPanel', mode: this.accountMode });
@@ -4789,8 +4794,13 @@ class Game{
     if (!state.enabled) {
       if (body) {
         body.innerHTML = `
-          <p>Le service de compte est désactivé sur cette version.</p>
-          <div class="btnrow"><button type="button" data-account-close>Retour</button></div>`;
+          <section class="panel-section panel-card">
+            <h2 class="panel-title">Service indisponible</h2>
+            <p>Le service de compte est désactivé sur cette version.</p>
+          </section>
+          <div class="panel-footer">
+            <div class="btnrow panel-actions"><button type="button" data-account-close>Retour</button></div>
+          </div>`;
       }
       setMessage('Authentification indisponible.', 'error');
       wireCloseButtons();
@@ -4800,8 +4810,13 @@ class Game{
     if (!state.ready) {
       if (body) {
         body.innerHTML = `
-          <p>Connexion au service d’authentification…</p>
-          <div class="btnrow"><button type="button" data-account-close>Retour</button></div>`;
+          <section class="panel-section panel-card">
+            <h2 class="panel-title">Connexion en cours</h2>
+            <p>Connexion au service d’authentification…</p>
+          </section>
+          <div class="panel-footer">
+            <div class="btnrow panel-actions"><button type="button" data-account-close>Retour</button></div>
+          </div>`;
       }
       if (state.lastError) {
         setMessage(state.lastError, 'error');
@@ -4849,17 +4864,17 @@ class Game{
         ? `<div class="btnrow panel-actions account-referral-actions account-referral-copy">\n                <button type="button" class="btn btn-secondary" data-referral-copy>Copier le lien</button>\n              </div>`
         : '';
       const referralSection = `
-          <div class="account-referral-section">
-            <div class="panel-section account-referral-link-block">
+          <div class="account-referral-section panel-grid">
+            <div class="panel-section panel-card account-referral-link-block">
               <h2 class="panel-title">🔗 Mon lien de parrainage</h2>
               <p class="account-field-note account-field-readonly account-referral-link">${safeReferralLink}</p>
               ${referralCopyButton}
             </div>
-            <div class="panel-section account-referral-stats">
+            <div class="panel-section panel-card account-referral-stats">
               <h2 class="panel-title">👥 Mes filleuls</h2>
               ${referralStatsLine}
             </div>
-            <div class="panel-section account-referral-redeem">
+            <div class="panel-section panel-card account-referral-redeem">
               <h2 class="panel-title">🎁 Utiliser un code de parrainage</h2>
               ${state.profile?.referredBy
                 ? '<p class="account-field-note account-field-readonly">Ton code de parrainage a bien été pris en compte.</p>'
@@ -4875,9 +4890,11 @@ class Game{
       if (body) {
         body.innerHTML = `
           ${referralSection}
-          <div class="btnrow">
-            <button type="button" id="btnAccountSignOut">Se déconnecter</button>
-            <button type="button" data-account-close>Fermer</button>
+          <div class="panel-footer">
+            <div class="btnrow panel-actions">
+              <button type="button" id="btnAccountSignOut">Se déconnecter</button>
+              <button type="button" data-account-close>Fermer</button>
+            </div>
           </div>`;
       }
       wireCloseButtons();
@@ -5123,30 +5140,36 @@ class Game{
     const mode = this.accountMode === 'signup' ? 'signup' : 'signin';
     if (body) {
       body.innerHTML = `
-        <form class="account-form" data-account-form novalidate>
-          <label>Adresse e-mail
-            <input type="email" name="email" required autocomplete="email" inputmode="email" />
-          </label>
-          ${mode === 'signup' ? `
-          <label>Pseudo
-            <input type="text" name="username" required minlength="3" maxlength="15" autocomplete="username" spellcheck="false" />
-            <p class="account-field-note account-field-error" data-account-username-error role="status" aria-live="polite" hidden></p>
-          </label>` : ''}
-          <label>Mot de passe
-            <input type="password" name="password" required minlength="6" autocomplete="${mode === 'signup' ? 'new-password' : 'current-password'}" />
-          </label>
-          ${mode === 'signup' ? `
-          <label>Confirmer le mot de passe
-            <input type="password" name="confirmPassword" required minlength="6" autocomplete="new-password" />
-          </label>` : ''}
-          <div class="btnrow account-button-row">
-            <button type="submit" data-account-submit>${mode === 'signup' ? 'Créer mon compte' : 'Se connecter'}</button>
-            <button type="button" data-account-close>Retour</button>
+        <section class="panel-section panel-card account-auth-card">
+          <div class="account-auth-header">
+            <h2 class="panel-title">${mode === 'signup' ? 'Créer un compte' : 'Connexion'}</h2>
+            <p class="panel-subline">${mode === 'signup' ? 'Crée ton profil pour sauvegarder tes progrès.' : 'Connecte-toi pour retrouver tes scores.'}</p>
           </div>
-          <button type="button" class="account-switch" data-account-switch>
-            ${mode === 'signup' ? 'Déjà un compte ? Se connecter' : 'Pas encore de compte ? S’inscrire'}
-          </button>
-        </form>`;
+          <form class="account-form" data-account-form novalidate>
+            <label>Adresse e-mail
+              <input type="email" name="email" required autocomplete="email" inputmode="email" />
+            </label>
+            ${mode === 'signup' ? `
+            <label>Pseudo
+              <input type="text" name="username" required minlength="3" maxlength="15" autocomplete="username" spellcheck="false" />
+              <p class="account-field-note account-field-error" data-account-username-error role="status" aria-live="polite" hidden></p>
+            </label>` : ''}
+            <label>Mot de passe
+              <input type="password" name="password" required minlength="6" autocomplete="${mode === 'signup' ? 'new-password' : 'current-password'}" />
+            </label>
+            ${mode === 'signup' ? `
+            <label>Confirmer le mot de passe
+              <input type="password" name="confirmPassword" required minlength="6" autocomplete="new-password" />
+            </label>` : ''}
+            <div class="btnrow account-button-row">
+              <button type="submit" data-account-submit>${mode === 'signup' ? 'Créer mon compte' : 'Se connecter'}</button>
+              <button type="button" data-account-close>Retour</button>
+            </div>
+            <button type="button" class="account-switch" data-account-switch>
+              ${mode === 'signup' ? 'Déjà un compte ? Se connecter' : 'Pas encore de compte ? S’inscrire'}
+            </button>
+          </form>
+        </section>`;
     }
     wireCloseButtons();
     const form = overlay.querySelector('[data-account-form]');
@@ -5261,20 +5284,42 @@ class Game{
     const controlMode = (s.controlMode === 'zones') ? 'zones' : 'swipe';
     s.controlMode = controlMode;
     overlay.innerHTML = `
-    <div class="panel">
-      <h1>Paramètres</h1>
-      <p><label><input type="checkbox" id="sound" ${s.sound?'checked':''}/> Son</label></p>
-      <p><label><input type="checkbox" id="haptics" ${s.haptics?'checked':''}/> Vibrations</label></p>
-      ${hasTouch ? `
-      <div class="control-mode-setting">
-        <span class="control-mode-label" id="controlModeLabel">Mode de contrôle (mobile)</span>
-        <div class="control-mode-toggle" role="group" aria-labelledby="controlModeLabel" data-control-toggle>
-          <button type="button" class="control-mode-option" data-mode="swipe">Swipe</button>
-          <button type="button" class="control-mode-option" data-mode="zones">Zones tactiles</button>
-        </div>
-      </div>` : ''}
-      <p>Sensibilité: <input type="range" id="sens" min="0.5" max="1.5" step="0.05" value="${s.sensitivity}"></p>
-      <div class="btnrow"><button id="back">Retour</button></div>
+    <div class="panel panel-shell settings-panel" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+      <div class="panel-header">
+        <h1 id="settingsTitle">Paramètres</h1>
+        <p class="panel-subtitle">Ajuste ton expérience de jeu.</p>
+      </div>
+
+      <div class="panel-grid settings-grid">
+        <section class="panel-section panel-card settings-audio-card">
+          <h2 class="panel-title">Audio & retours</h2>
+          <div class="panel-field settings-toggle-group">
+            <label class="settings-toggle"><input type="checkbox" id="sound" ${s.sound?'checked':''}/> Son</label>
+            <label class="settings-toggle"><input type="checkbox" id="haptics" ${s.haptics?'checked':''}/> Vibrations</label>
+          </div>
+        </section>
+
+        ${hasTouch ? `
+        <section class="panel-section panel-card">
+          <div class="control-mode-setting">
+            <span class="control-mode-label" id="controlModeLabel">Mode de contrôle (mobile)</span>
+            <div class="control-mode-toggle" role="group" aria-labelledby="controlModeLabel" data-control-toggle>
+              <button type="button" class="control-mode-option" data-mode="swipe">Swipe</button>
+              <button type="button" class="control-mode-option" data-mode="zones">Zones tactiles</button>
+            </div>
+          </div>
+        </section>` : ''}
+
+        <section class="panel-section panel-card settings-sensitivity-card">
+          <h2 class="panel-title">Sensibilité</h2>
+          <p class="panel-subline">Ajuste la vitesse de déplacement.</p>
+          <input type="range" id="sens" min="0.5" max="1.5" step="0.05" value="${s.sensitivity}">
+        </section>
+      </div>
+
+      <div class="panel-footer">
+        <div class="btnrow panel-actions"><button id="back">Retour</button></div>
+      </div>
     </div>`;
     showExclusiveOverlay(overlay);
     addEvent(document.getElementById('sound'), 'change', e=>{ playSound("click"); this.settings.sound = e.target.checked; saveSettings(this.settings); if (typeof setSoundEnabled === "function") { setSoundEnabled(this.settings.sound); } });
@@ -5590,13 +5635,21 @@ class Game{
     if (overlay) overlay.classList.remove('overlay-title');
     this.settingsReturnView = "pause";
     overlay.innerHTML = `
-      <div class="panel">
-        <h1>Pause</h1>
-        <div class="btnrow">
-          <button id="resume" type="button">Reprendre</button>
-          <button type="button" class="btn-settings" data-action="open-settings">Paramètres</button>
-          <button id="quit" type="button">Menu</button>
-          <button id="btnRulesPause" type="button">Règle du jeu</button>
+      <div class="panel panel-shell pause-panel" role="dialog" aria-modal="true" aria-labelledby="pauseTitle">
+        <div class="panel-header">
+          <h1 id="pauseTitle">Pause</h1>
+          <p class="panel-subtitle">Fais une pause, reprends quand tu veux.</p>
+        </div>
+        <div class="panel-grid">
+          <section class="panel-section panel-card">
+            <h2 class="panel-title">Actions</h2>
+            <div class="btnrow panel-actions">
+              <button id="resume" type="button">Reprendre</button>
+              <button type="button" class="btn-settings" data-action="open-settings">Paramètres</button>
+              <button id="quit" type="button">Menu</button>
+              <button id="btnRulesPause" type="button">Règle du jeu</button>
+            </div>
+          </section>
         </div>
       </div>`;
     showExclusiveOverlay(overlay);
@@ -5660,14 +5713,30 @@ class Game{
     this.settingsReturnView = "over";
     setActiveScreen('gameover', { via: 'renderGameOver' });
     overlay.innerHTML = `
-    <div class="panel">
-      <h1>Fin de partie</h1>
-      <p>Score: <b>${this.score}</b> | Record local: <b>${best}</b></p>
-      <p>Combo max: <b>${this.maxCombo}</b> | Niveau atteint: <b>N${this.levelReached}</b></p>
-      <div class="btnrow">
-        <button id="again">Rejouer</button>
-        <button id="menu">Menu</button>
-        ${TG? '<button id="share">Partager</button>': ''}
+    <div class="panel panel-shell gameover-panel" role="dialog" aria-modal="true" aria-labelledby="gameOverTitle">
+      <div class="panel-header">
+        <h1 id="gameOverTitle">Fin de partie</h1>
+        <p class="panel-subtitle">Récapitulatif de ta dernière session.</p>
+      </div>
+
+      <div class="panel-grid">
+        <section class="panel-section panel-card">
+          <h2 class="panel-title">Résumé</h2>
+          <ul class="panel-stat-list">
+            <li><span>Score</span><strong>${this.score}</strong></li>
+            <li><span>Record local</span><strong>${best}</strong></li>
+            <li><span>Combo max</span><strong>${this.maxCombo}</strong></li>
+            <li><span>Niveau atteint</span><strong>N${this.levelReached}</strong></li>
+          </ul>
+        </section>
+      </div>
+
+      <div class="panel-footer">
+        <div class="btnrow panel-actions">
+          <button id="again">Rejouer</button>
+          <button id="menu">Menu</button>
+          ${TG? '<button id="share">Partager</button>': ''}
+        </div>
       </div>
     </div>`;
     showExclusiveOverlay(overlay);
