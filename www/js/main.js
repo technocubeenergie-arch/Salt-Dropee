@@ -5367,17 +5367,37 @@ class Game{
     setActiveScreen('leaderboard', { via: 'renderLeaderboard', from: originScreen });
     setTitleAccountAnchorVisible(false);
     overlay.innerHTML = `
-    <div class="panel leaderboard-panel">
-      <h1>Leaderboard Legend</h1>
-      <p class="leaderboard-subtitle">Top 5 des meilleurs scores du mode Légende.</p>
-      <div id="leaderboardStatus" class="leaderboard-status">Chargement du classement…</div>
-      <ol id="leaderboardList" class="leaderboard-list"></ol>
-      <div id="leaderboardEmpty" class="leaderboard-empty" style="display:none;">Aucun score Legend pour le moment.</div>
-      <div id="leaderboardStickyWrapper" class="leaderboard-sticky" style="display:none;">
-        <h2>Votre rang</h2>
-        <div id="leaderboardStickyEntry" class="leaderboard-entry"></div>
+    <div class="panel legend-leaderboard-panel" role="dialog" aria-modal="true" aria-labelledby="legendLeaderboardTitle">
+      <div class="legend-leaderboard-header">
+        <h1 id="legendLeaderboardTitle">Leaderboard Legend</h1>
+        <p class="legend-leaderboard-subtitle">Top 5 des meilleurs scores du mode Légende.</p>
       </div>
-      <div class="btnrow"><button id="back">Retour</button></div>
+
+      <div class="legend-leaderboard-grid">
+        <section class="panel-section legend-leaderboard-card">
+          <div class="legend-leaderboard-card-header">
+            <h2 class="panel-title">Top 5</h2>
+            <p class="panel-subline">Classement général</p>
+          </div>
+          <div id="leaderboardStatus" class="leaderboard-status">Chargement du classement…</div>
+          <ol id="leaderboardList" class="leaderboard-list"></ol>
+          <div id="leaderboardEmpty" class="leaderboard-empty" style="display:none;">Aucun score Legend pour le moment.</div>
+        </section>
+
+        <section class="panel-section legend-leaderboard-card">
+          <div class="legend-leaderboard-card-header">
+            <h2 class="panel-title">Votre rang</h2>
+            <p class="panel-subline">Suivi personnalisé</p>
+          </div>
+          <div id="leaderboardStickyWrapper" class="leaderboard-sticky" style="display:none;">
+            <div id="leaderboardStickyEntry" class="leaderboard-entry"></div>
+          </div>
+        </section>
+      </div>
+
+      <div class="panel-footer">
+        <div class="btnrow legend-leaderboard-actions"><button id="back" type="button" class="btn btn-secondary">Retour</button></div>
+      </div>
     </div>`;
     showExclusiveOverlay(overlay);
     const goBack = () => {

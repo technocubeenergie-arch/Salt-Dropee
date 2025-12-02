@@ -195,6 +195,10 @@ body.is-inter-level #hud {
   margin: 2px 0 0;
   font-size: 0.95rem;
 }
+
+.panel-footer {
+  margin-top: 8px;
+}
 .panel-actions {
   margin-top: 6px;
   justify-content: flex-start;
@@ -263,6 +267,21 @@ body.is-inter-level #hud {
   button:hover { filter: brightness(1.15); transform: translateY(-1px); }
   button:active { transform: translateY(0); filter: brightness(1); }
   button:focus-visible { outline: 2px solid var(--ui2); outline-offset: 2px; }
+
+.btn {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.btn.btn-secondary {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.04) 100%);
+  border-color: rgba(255, 255, 255, 0.36);
+  color: var(--ui);
+}
+
+.btn.btn-secondary:hover {
+  filter: brightness(1.08);
+}
 
 .title-screen {
   flex: 1 1 100%;
@@ -693,45 +712,111 @@ body.is-inter-level #hud {
   object-fit: cover;
 }
 
+.legend-leaderboard-panel {
+  width: min(640px, 94vw);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.legend-leaderboard-header {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.legend-leaderboard-header h1 {
+  margin: 0;
+  letter-spacing: 0.04em;
+}
+
+.legend-leaderboard-subtitle {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--ui2);
+  opacity: 0.9;
+}
+
+.legend-leaderboard-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.legend-leaderboard-card {
+  gap: 10px;
+  padding: 14px 16px;
+}
+
+.legend-leaderboard-card-header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.legend-leaderboard-card .panel-title {
+  margin: 0;
+}
+
+.leaderboard-status {
+  font-size: 0.92rem;
+  color: var(--ui2);
+  opacity: 0.95;
+}
+
 .leaderboard-row,
 .leaderboard-entry {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
 .leaderboard-list {
   list-style: none;
   padding: 0;
-  margin: 14px 0;
+  margin: 2px 0 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+}
+
+.leaderboard-empty {
+  margin: 4px 0 0;
+  font-size: 0.95rem;
+  color: var(--ui2);
+  opacity: 0.9;
 }
 
 .leaderboard-sticky {
-  margin-top: 16px;
+  margin-top: 4px;
 }
 
 .legend-leaderboard-row {
   width: 100%;
   padding: 12px 14px;
-  border-radius: 10px;
-  background: rgba(0, 0, 0, 0.3);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
   gap: 12px;
   line-height: 1.4;
 }
 
 .legend-leaderboard-rank {
   font-weight: 700;
-  min-width: 40px;
+  min-width: 44px;
   text-align: center;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .legend-leaderboard-name {
   flex: 1;
   min-width: 0;
+  font-weight: 600;
 }
 
 .legend-leaderboard-score {
@@ -741,10 +826,15 @@ body.is-inter-level #hud {
 }
 
 .lb-badge {
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   object-fit: contain;
   vertical-align: middle;
-  filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.3));
+  filter: drop-shadow(0 0 6px rgba(0, 0, 0, 0.35));
+}
+
+.legend-leaderboard-actions {
+  margin-top: 6px;
+  justify-content: center;
 }
 
