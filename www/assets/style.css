@@ -862,7 +862,8 @@ body.is-inter-level #hud {
   min-height: 0;
   flex-direction: column;
   gap: 8px;
-  min-height: calc(var(--legend-leaderboard-scroll-height) + 96px);
+  min-height: var(--legend-leaderboard-scroll-height);
+  overflow: hidden;
 }
 
 .legend-leaderboard-scroll {
@@ -870,6 +871,7 @@ body.is-inter-level #hud {
   height: var(--legend-leaderboard-scroll-height);
   min-height: var(--legend-leaderboard-scroll-height);
   max-height: var(--legend-leaderboard-scroll-height);
+  position: relative;
   overflow-y: auto;
   padding-right: 0;
   padding-bottom: 0;
@@ -882,7 +884,7 @@ body.is-inter-level #hud {
 }
 
 .legend-leaderboard-scroll.has-sticky-overlay {
-  padding-bottom: calc(var(--legend-leaderboard-row-height) + var(--legend-leaderboard-row-gap));
+  padding-bottom: 0;
 }
 
 .legend-leaderboard-scroll::-webkit-scrollbar {
