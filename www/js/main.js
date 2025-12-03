@@ -4113,7 +4113,7 @@ class Arm{
     const natW=img.naturalWidth, natH=img.naturalHeight; const scale=targetH/natH; const drawW=natW*scale, drawH=natH*scale; const overflow=drawW*HAND_RIGHT_OVERFLOW_RATIO; const x = clamp(this.handX - drawW/2, 10, BASE_W - drawW - 10 + overflow);
     g.save(); g.imageSmoothingEnabled = true; const drawX=Math.round(x), drawY=Math.round(y); g.drawImage(img, drawX, drawY, drawW, drawH); g.restore(); this._drawW=drawW; this._drawH=drawH; this._x=drawX; this._y=drawY; }
   spawnX(){ return clamp((this._x||0) + (this._drawW||90) - 95, 16, BASE_W - 16); }
-  spawnY(){ return (this._y||0) + (this._drawH||48) - 100; }
+  spawnY(){ return (this._y||0) + (this._drawH||48) - 81; }
 }
 
 // === Assets registry pour simplifier le rendu ===
