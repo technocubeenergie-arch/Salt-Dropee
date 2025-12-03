@@ -1275,7 +1275,7 @@ let hasInitialBootLoadCompleted = false;
 let bootLoadingStartedAt = null;
 let loadingProgressValue = 0;
 
-const MIN_LOADING_MS = 1200;
+const MIN_LOADING_MS = 3000;
 const FADE_MS = 250;
 
 function isActiveGameplayInProgress(){
