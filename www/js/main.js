@@ -1233,19 +1233,6 @@ function logLogoutClickIgnored(reason, extra = {}) {
   console.info(`[auth] logout click ignored because ${reason}${details}`);
 }
 
-function goto(target, options = {}) {
-  const normalizedTarget = normalizeScreenName(target);
-  if (normalizedTarget === 'loading') {
-    const { nextScreen = 'title', blockingPromise = null, ...rest } = options || {};
-    return enterLoadingScreen(normalizeScreenName(nextScreen) || 'title', {
-      blockingPromise,
-      context: rest,
-    });
-  }
-
-  return setActiveScreen(normalizedTarget, options);
-}
-
 function setActiveScreen(next, context = {}) {
   const normalized = normalizeScreenName(next);
   const prev = activeScreen;
@@ -1282,18 +1269,6 @@ let ctx;
 let overlay;
 let game;
 let titleAccountAnchor;
-let loadingScreenEl;
-let loadingBarFillEl;
-let hasInitialBootLoadCompleted = false;
-let loadingProgressValue = 0;
-let loadingNextScreen = null;
-let loadingCompletionToken = 0;
-let loadingCompletionPromise = Promise.resolve();
-let bootLoadingInProgress = false;
-let bootLoadingCompletion = null;
-
-const LOADING_DURATION_MS = 4000;
-const FADE_MS = 250;
 
 function isActiveGameplayInProgress(){
   return Boolean(game && game.state === 'playing' && activeScreen === 'running');
@@ -3349,7 +3324,7 @@ function hideOverlay(el){
 
 function getOverlayElements() {
   if (typeof document === 'undefined') return [];
-  const ids = ['overlay', 'interLevelScreen', 'legendResultScreen', 'loadingScreen'];
+  const ids = ['overlay', 'interLevelScreen', 'legendResultScreen'];
   return ids
     .map((id) => document.getElementById(id))
     .filter((node) => !!node);
@@ -3380,171 +3355,6 @@ function clearMainOverlay(except){
   hideOverlay(mainOverlay);
   mainOverlay.classList.remove("overlay-title", "overlay-rules");
   return mainOverlay;
-}
-
-function wait(durationMs = 0) {
-  const safeDuration = Math.max(0, Number.isFinite(durationMs) ? durationMs : 0);
-  if (safeDuration === 0) return Promise.resolve();
-  return new Promise((resolve) => {
-    setTimeout(resolve, safeDuration);
-  });
-}
-
-function ensureLoadingScreenFadeDuration(duration = FADE_MS) {
-  if (!loadingScreenEl || !loadingScreenEl.style) return;
-  const safeDuration = Math.max(0, Number.isFinite(duration) ? duration : FADE_MS);
-  const nextValue = `${safeDuration}ms`;
-  if (loadingScreenEl.style.transitionDuration !== nextValue) {
-    loadingScreenEl.style.transitionDuration = nextValue;
-  }
-}
-
-function animateLoadingProgressToTarget(target = 1, durationMs = 0) {
-  const safeTarget = clamp(Number.isFinite(target) ? target : 1, 0, 1);
-  const initial = loadingProgressValue;
-  const clampedTarget = Math.max(initial, safeTarget);
-  const duration = Math.max(0, Number.isFinite(durationMs) ? durationMs : 0);
-
-  if (duration === 0 || clampedTarget <= initial) {
-    updateLoadingProgress(clampedTarget);
-    return wait(duration);
-  }
-
-  return new Promise((resolve) => {
-    const start = performance.now();
-
-    const tick = () => {
-      const elapsed = performance.now() - start;
-      const t = clamp(elapsed / duration, 0, 1);
-      const nextValue = initial + (clampedTarget - initial) * t;
-      updateLoadingProgress(nextValue);
-      if (t < 1) {
-        requestAnimationFrame(tick);
-      } else {
-        resolve();
-      }
-    };
-
-    requestAnimationFrame(tick);
-  });
-}
-
-function startLoadingBarAnimation(durationMs = LOADING_DURATION_MS) {
-  const safeDuration = Math.max(0, Number.isFinite(durationMs) ? durationMs : LOADING_DURATION_MS);
-  return animateLoadingProgressToTarget(1, safeDuration);
-}
-
-function updateLoadingProgress(value = 0) {
-  if (!loadingBarFillEl) return;
-  const clamped = clamp(Number.isFinite(value) ? value : 0, 0, 1);
-  loadingProgressValue = Math.max(loadingProgressValue, clamped);
-  const percent = Math.round(loadingProgressValue * 100);
-  loadingBarFillEl.style.width = `${percent}%`;
-  const progressbar = loadingBarFillEl.parentElement;
-  if (progressbar && progressbar.getAttribute && progressbar.getAttribute('role') === 'progressbar') {
-    progressbar.setAttribute('aria-valuenow', String(percent));
-  }
-}
-
-function showLoadingScreenOverlay() {
-  if (!loadingScreenEl) return;
-  ensureLoadingScreenFadeDuration(FADE_MS);
-  loadingScreenEl.classList.add('show');
-  loadingScreenEl.setAttribute('aria-hidden', 'false');
-  try {
-    loadingScreenEl.removeAttribute('inert');
-  } catch (err) {
-    void err;
-  }
-  loadingProgressValue = 0;
-  updateLoadingProgress(0);
-}
-
-function hideLoadingScreenOverlay() {
-  if (!loadingScreenEl) return;
-  loadingScreenEl.classList.remove('show');
-  loadingScreenEl.setAttribute('aria-hidden', 'true');
-  try {
-    loadingScreenEl.setAttribute('inert', '');
-  } catch (err) {
-    void err;
-  }
-}
-
-async function fadeOutLoadingScreenOverlay(duration = FADE_MS) {
-  if (!loadingScreenEl) return;
-
-  ensureLoadingScreenFadeDuration(duration);
-
-  await new Promise((resolve) => {
-    let fallbackTimer;
-    const handleEnd = () => {
-      loadingScreenEl?.removeEventListener('transitionend', handleEnd);
-      if (fallbackTimer) {
-        clearTimeout(fallbackTimer);
-        fallbackTimer = null;
-      }
-      resolve();
-    };
-
-    loadingScreenEl.addEventListener('transitionend', handleEnd, { once: true });
-    fallbackTimer = setTimeout(handleEnd, Math.max(0, duration) + 50);
-
-    loadingScreenEl.addEventListener('transitioncancel', handleEnd, { once: true });
-
-    requestAnimationFrame(() => {
-      loadingScreenEl.classList.remove('show');
-    });
-  });
-
-  hideLoadingScreenOverlay();
-}
-
-function enterLoadingScreen(targetScreen = 'title', { blockingPromise = null, context = {} } = {}) {
-  const normalizedTarget = normalizeScreenName(targetScreen) || 'title';
-  loadingNextScreen = normalizedTarget;
-  const entryToken = ++loadingCompletionToken;
-
-  setActiveScreen('loading', { via: 'goto-loading', nextScreen: normalizedTarget, ...context });
-  showLoadingScreenOverlay();
-
-  const blockers = [startLoadingBarAnimation(LOADING_DURATION_MS)];
-  if (blockingPromise) {
-    blockers.push(Promise.resolve(blockingPromise).catch((err) => {
-      console.warn('[loading] blocker failed', err);
-    }));
-  }
-
-  const completion = Promise.all(blockers)
-    .then(async () => {
-      if (entryToken !== loadingCompletionToken) return;
-      updateLoadingProgress(1);
-      await fadeOutLoadingScreenOverlay(FADE_MS);
-      if (entryToken !== loadingCompletionToken) return;
-
-      const next = loadingNextScreen || 'title';
-      loadingNextScreen = null;
-      loadingCompletionToken = 0;
-
-      if (next === 'title') {
-        enterTitleScreen();
-        if (game) {
-          if (typeof game.renderTitle === 'function' && game.state === 'title') {
-            game.renderTitle();
-          } else if (typeof game.render === 'function') {
-            game.render();
-          }
-        }
-      } else {
-        setActiveScreen(next, { via: 'loading-complete', from: 'loading' });
-      }
-    })
-    .catch((err) => {
-      console.warn('[loading] failed to complete transition', err);
-    });
-
-  loadingCompletionPromise = completion;
-  return completion;
 }
 
 function resize(){
@@ -4663,12 +4473,7 @@ class Game{
     const u=new URLSearchParams(location.search); const seed=u.get('seed'); this.random = seed? (function(seed){ let t=seed>>>0; return function(){ t += 0x6D2B79F5; let r = Math.imul(t ^ t >>> 15, 1 | t); r ^= r + Math.imul(r ^ r >>> 7, 61 | r); return ((r ^ r >>> 14) >>> 0) / 4294967296; };})(parseInt(seed)||1) : Math.random;
     this.state='title';
     this.settingsReturnView = "title";
-    const showLoadingForReset = showTitle && !bootLoadingInProgress;
-    if (showLoadingForReset) {
-      goto('loading', { via: 'Game.reset', nextScreen: 'title' });
-    } else if (!showTitle) {
-      setActiveScreen('running', { via: 'Game.reset', showTitle });
-    }
+    setActiveScreen(showTitle ? 'title' : 'running', { via: 'Game.reset', showTitle });
     if (typeof setSoundEnabled === "function") {
       setSoundEnabled(!!this.settings.sound);
     }
@@ -6082,118 +5887,15 @@ function getCanvasPoint(evt){
   return projectClientToCanvas(point.clientX, point.clientY);
 }
 
-function waitForAssetReady(asset) {
-  if (!asset) return Promise.resolve();
-
-  const isReady = () => {
-    if (typeof HTMLImageElement !== 'undefined' && asset instanceof HTMLImageElement) {
-      return asset.complete && asset.naturalWidth > 0;
-    }
-    if (typeof HTMLAudioElement !== 'undefined' && asset instanceof HTMLAudioElement) {
-      return asset.readyState >= 2;
-    }
-    return true;
-  };
-
-  if (isReady()) return Promise.resolve(asset);
-
-  return new Promise((resolve) => {
-    const finalize = () => {
-      if (typeof asset.removeEventListener === 'function') {
-        asset.removeEventListener('load', finalize);
-        asset.removeEventListener('error', finalize);
-        asset.removeEventListener('canplaythrough', finalize);
-      }
-      resolve(asset);
-    };
-
-    if (typeof asset.addEventListener === 'function') {
-      asset.addEventListener('load', finalize, { once: true });
-      asset.addEventListener('error', finalize, { once: true });
-      asset.addEventListener('canplaythrough', finalize, { once: true });
-    } else {
-      resolve(asset);
-    }
-  });
-}
-
-async function runInitialBootLoading() {
-  if (hasInitialBootLoadCompleted) {
-    return;
-  }
-
-  const staticAssets = [
-    BronzeImg, SilverImg, GoldImg, DiamondImg,
-    BombImg, ShitcoinImg, RugpullImg, FakeADImg, AnvilImg,
-    MagnetImg, X2Img, x2Image, ShieldImg, shieldIconImage, TimeImg,
-    Hand?.open, Hand?.pinch, footerImg,
-  ].filter(Boolean);
-
-  const menuBackgroundImage = new Image();
-  menuBackgroundImage.src = MENU_BACKGROUND_SRC;
-  const menuMusic = getMenuMusic();
-
-  const firstLevelAssetsPromise = ensureLevelAssets(0);
-
-  const tasks = [
-    ...staticAssets.map((asset) => () => waitForAssetReady(asset)),
-    () => waitForAssetReady(menuBackgroundImage),
-    () => waitForAssetReady(menuMusic),
-    () => firstLevelAssetsPromise.then(({ bg }) => waitForAssetReady(bg)),
-    () => firstLevelAssetsPromise.then(({ wallet }) => waitForAssetReady(wallet)),
-    () => firstLevelAssetsPromise.then(({ music }) => waitForAssetReady(music)),
-  ];
-
-  await Promise.all(tasks.map((factory) => Promise.resolve()
-    .then(factory)
-    .catch((err) => {
-      console.warn('[loading] asset task failed', err);
-    })
-    .finally(() => {
-    })));
-
-  hasInitialBootLoadCompleted = true;
-}
-
 async function startGame(){
   if (window.__saltDroppeeStarted) return;
 
   canvas = document.getElementById('gameCanvas');
   ctx = canvas?.getContext('2d');
   overlay = document.getElementById('overlay');
-  loadingScreenEl = document.getElementById('loadingScreen');
-  loadingBarFillEl = document.getElementById('loadingBarFill');
   if (!canvas || !ctx || !overlay) return;
 
   window.__saltDroppeeStarted = true;
-
-  const bootLoadingPromise = runInitialBootLoading();
-  const bootFlowPromise = (async () => {
-    await waitForInitialProgressHydration();
-    await applyPendingProgressIfPossible();
-
-    if (!hasAppliedProgressSnapshot) {
-      await startLevel1();
-    }
-
-    await bootLoadingPromise.catch((err) => {
-      console.warn('[loading] initial boot load failed', err);
-    });
-  })();
-
-  bootLoadingInProgress = true;
-  const loadingCompletion = goto('loading', {
-    via: 'boot',
-    nextScreen: 'title',
-    blockingPromise: bootFlowPromise,
-  });
-  bootLoadingCompletion = loadingCompletion
-    .catch((err) => {
-      console.warn('[loading] boot completion failed', err);
-    })
-    .finally(() => {
-      bootLoadingInProgress = false;
-    });
 
   if (typeof unlockAudioOnce === "function") {
     unlockAudioOnce();
@@ -6213,9 +5915,21 @@ async function startGame(){
   game = new Game();
   if (game && game.wallet) targetX = game.wallet.x + game.wallet.w / 2;
 
-  await bootFlowPromise;
+  // Synchronisation de la progression Supabase avant le tout premier chargement de niveau
+  // pour éviter de lancer startLevel(0) avant d'avoir récupéré un snapshot éventuel.
+  await waitForInitialProgressHydration();
+  await applyPendingProgressIfPossible();
 
-  await bootLoadingCompletion;
+  if (!hasAppliedProgressSnapshot) {
+    await startLevel1();
+  }
+
+  if (!game) return;
+  if (typeof game.renderTitle === 'function' && game.state === 'title') {
+    game.renderTitle();
+  } else if (typeof game.render === 'function') {
+    game.render();
+  }
 
   // Application tardive d'une progression Supabase si elle s'est résolue pendant le rendu initial.
   await applyPendingProgressIfPossible();
