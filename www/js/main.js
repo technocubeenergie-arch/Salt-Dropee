@@ -1272,10 +1272,9 @@ let titleAccountAnchor;
 let loadingScreenEl;
 let loadingBarFillEl;
 let hasInitialBootLoadCompleted = false;
-let bootLoadingStartedAt = null;
 let loadingProgressValue = 0;
 
-const MIN_LOADING_MS = 3000;
+const LOADING_DURATION_MS = 4000;
 const FADE_MS = 250;
 
 function isActiveGameplayInProgress(){
@@ -3410,6 +3409,11 @@ function animateLoadingProgressToTarget(target = 1, durationMs = 0) {
 
     requestAnimationFrame(tick);
   });
+}
+
+function startLoadingBarAnimation(durationMs = LOADING_DURATION_MS) {
+  const safeDuration = Math.max(0, Number.isFinite(durationMs) ? durationMs : LOADING_DURATION_MS);
+  return animateLoadingProgressToTarget(1, safeDuration);
 }
 
 function updateLoadingProgress(value = 0) {
@@ -6045,7 +6049,6 @@ function waitForAssetReady(asset) {
 
 async function runInitialBootLoading() {
   if (hasInitialBootLoadCompleted) {
-    updateLoadingProgress(1);
     return;
   }
 
@@ -6071,27 +6074,14 @@ async function runInitialBootLoading() {
     () => firstLevelAssetsPromise.then(({ music }) => waitForAssetReady(music)),
   ];
 
-  const total = tasks.length;
-  let completed = 0;
-
-  const tick = () => {
-    const progress = total > 0 ? completed / total : 1;
-    updateLoadingProgress(progress);
-  };
-
-  tick();
-
   await Promise.all(tasks.map((factory) => Promise.resolve()
     .then(factory)
     .catch((err) => {
       console.warn('[loading] asset task failed', err);
     })
     .finally(() => {
-      completed += 1;
-      tick();
-    }))); 
+    })));
 
-  updateLoadingProgress(1);
   hasInitialBootLoadCompleted = true;
 }
 
@@ -6107,10 +6097,11 @@ async function startGame(){
 
   window.__saltDroppeeStarted = true;
 
-  bootLoadingStartedAt = performance.now();
+  let loadingAnimationPromise = Promise.resolve();
   if (loadingScreenEl) {
     setActiveScreen('loading', { via: 'boot' });
     showLoadingScreenOverlay();
+    loadingAnimationPromise = startLoadingBarAnimation(LOADING_DURATION_MS);
   }
 
   const bootLoadingPromise = runInitialBootLoading();
@@ -6146,14 +6137,9 @@ async function startGame(){
     console.warn('[loading] initial boot load failed', err);
   });
 
-  const elapsedBootMs = bootLoadingStartedAt ? performance.now() - bootLoadingStartedAt : MIN_LOADING_MS;
-  const remainingBootMs = Math.max(0, MIN_LOADING_MS - elapsedBootMs);
+  await loadingAnimationPromise;
 
-  if (remainingBootMs > 0) {
-    await animateLoadingProgressToTarget(1, remainingBootMs);
-  } else {
-    updateLoadingProgress(1);
-  }
+  updateLoadingProgress(1);
 
   await fadeOutLoadingScreenOverlay(FADE_MS);
 
