@@ -1289,6 +1289,8 @@ let loadingProgressValue = 0;
 let loadingNextScreen = null;
 let loadingCompletionToken = 0;
 let loadingCompletionPromise = Promise.resolve();
+let bootLoadingInProgress = false;
+let bootLoadingCompletion = null;
 
 const LOADING_DURATION_MS = 4000;
 const FADE_MS = 250;
@@ -4661,9 +4663,10 @@ class Game{
     const u=new URLSearchParams(location.search); const seed=u.get('seed'); this.random = seed? (function(seed){ let t=seed>>>0; return function(){ t += 0x6D2B79F5; let r = Math.imul(t ^ t >>> 15, 1 | t); r ^= r + Math.imul(r ^ r >>> 7, 61 | r); return ((r ^ r >>> 14) >>> 0) / 4294967296; };})(parseInt(seed)||1) : Math.random;
     this.state='title';
     this.settingsReturnView = "title";
-    if (showTitle) {
+    const showLoadingForReset = showTitle && !bootLoadingInProgress;
+    if (showLoadingForReset) {
       goto('loading', { via: 'Game.reset', nextScreen: 'title' });
-    } else {
+    } else if (!showTitle) {
       setActiveScreen('running', { via: 'Game.reset', showTitle });
     }
     if (typeof setSoundEnabled === "function") {
@@ -6178,11 +6181,19 @@ async function startGame(){
     });
   })();
 
+  bootLoadingInProgress = true;
   const loadingCompletion = goto('loading', {
     via: 'boot',
     nextScreen: 'title',
     blockingPromise: bootFlowPromise,
   });
+  bootLoadingCompletion = loadingCompletion
+    .catch((err) => {
+      console.warn('[loading] boot completion failed', err);
+    })
+    .finally(() => {
+      bootLoadingInProgress = false;
+    });
 
   if (typeof unlockAudioOnce === "function") {
     unlockAudioOnce();
@@ -6204,7 +6215,7 @@ async function startGame(){
 
   await bootFlowPromise;
 
-  await loadingCompletion;
+  await bootLoadingCompletion;
 
   // Application tardive d'une progression Supabase si elle s'est résolue pendant le rendu initial.
   await applyPendingProgressIfPossible();
