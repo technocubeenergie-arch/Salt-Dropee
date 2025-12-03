@@ -32,6 +32,25 @@
         aria-label="Salt Droppee canvas"
       ></canvas>
 
+      <div
+        id="loadingScreen"
+        class="overlay loading-screen show"
+        aria-hidden="false"
+        aria-label="Écran de chargement"
+      >
+        <div class="loading-content">
+          <div
+            class="loading-bar"
+            role="progressbar"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow="0"
+          >
+            <div class="loading-bar-fill" id="loadingBarFill"></div>
+          </div>
+        </div>
+      </div>
+
       <!-- HUD overlay -->
       <div id="hud" aria-label="Game HUD">
         <!-- Gauche : SCORE sur 2 lignes -->
