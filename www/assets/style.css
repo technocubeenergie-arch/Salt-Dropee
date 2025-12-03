@@ -153,6 +153,41 @@ body.is-inter-level #hud {
   z-index: 1001;
 }
 
+.loading-screen {
+  background: #000 url('loadscreen.webp') center center / cover no-repeat;
+  transition: opacity 0.3s ease;
+}
+
+.loading-content {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: clamp(12px, 3vh, 28px);
+  display: flex;
+  justify-content: center;
+  padding: 0 18px;
+}
+
+.loading-bar {
+  position: relative;
+  width: min(320px, 82%);
+  height: 14px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+}
+
+.loading-bar-fill {
+  width: 0%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(255, 205, 117, 0.9), rgba(167, 240, 112, 0.95));
+  box-shadow: 0 0 12px rgba(255, 205, 117, 0.6);
+  transition: width 0.2s ease;
+}
+
 .panel {
   pointer-events: auto;
   background: linear-gradient(180deg, rgba(14, 16, 28, 0.9) 0%, rgba(8, 10, 22, 0.85) 100%);

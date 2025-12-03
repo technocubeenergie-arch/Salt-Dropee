@@ -1269,6 +1269,9 @@ let ctx;
 let overlay;
 let game;
 let titleAccountAnchor;
+let loadingScreenEl;
+let loadingBarFillEl;
+let hasInitialBootLoadCompleted = false;
 
 function isActiveGameplayInProgress(){
   return Boolean(game && game.state === 'playing' && activeScreen === 'running');
@@ -3324,7 +3327,7 @@ function hideOverlay(el){
 
 function getOverlayElements() {
   if (typeof document === 'undefined') return [];
-  const ids = ['overlay', 'interLevelScreen', 'legendResultScreen'];
+  const ids = ['overlay', 'interLevelScreen', 'legendResultScreen', 'loadingScreen'];
   return ids
     .map((id) => document.getElementById(id))
     .filter((node) => !!node);
@@ -3355,6 +3358,40 @@ function clearMainOverlay(except){
   hideOverlay(mainOverlay);
   mainOverlay.classList.remove("overlay-title", "overlay-rules");
   return mainOverlay;
+}
+
+function updateLoadingProgress(value = 0) {
+  if (!loadingBarFillEl) return;
+  const clamped = clamp(Number.isFinite(value) ? value : 0, 0, 1);
+  const percent = Math.round(clamped * 100);
+  loadingBarFillEl.style.width = `${percent}%`;
+  const progressbar = loadingBarFillEl.parentElement;
+  if (progressbar && progressbar.getAttribute && progressbar.getAttribute('role') === 'progressbar') {
+    progressbar.setAttribute('aria-valuenow', String(percent));
+  }
+}
+
+function showLoadingScreenOverlay() {
+  if (!loadingScreenEl) return;
+  loadingScreenEl.classList.add('show');
+  loadingScreenEl.setAttribute('aria-hidden', 'false');
+  try {
+    loadingScreenEl.removeAttribute('inert');
+  } catch (err) {
+    void err;
+  }
+  updateLoadingProgress(0);
+}
+
+function hideLoadingScreenOverlay() {
+  if (!loadingScreenEl) return;
+  loadingScreenEl.classList.remove('show');
+  loadingScreenEl.setAttribute('aria-hidden', 'true');
+  try {
+    loadingScreenEl.setAttribute('inert', '');
+  } catch (err) {
+    void err;
+  }
 }
 
 function resize(){
@@ -5887,15 +5924,111 @@ function getCanvasPoint(evt){
   return projectClientToCanvas(point.clientX, point.clientY);
 }
 
+function waitForAssetReady(asset) {
+  if (!asset) return Promise.resolve();
+
+  const isReady = () => {
+    if (typeof HTMLImageElement !== 'undefined' && asset instanceof HTMLImageElement) {
+      return asset.complete && asset.naturalWidth > 0;
+    }
+    if (typeof HTMLAudioElement !== 'undefined' && asset instanceof HTMLAudioElement) {
+      return asset.readyState >= 2;
+    }
+    return true;
+  };
+
+  if (isReady()) return Promise.resolve(asset);
+
+  return new Promise((resolve) => {
+    const finalize = () => {
+      if (typeof asset.removeEventListener === 'function') {
+        asset.removeEventListener('load', finalize);
+        asset.removeEventListener('error', finalize);
+        asset.removeEventListener('canplaythrough', finalize);
+      }
+      resolve(asset);
+    };
+
+    if (typeof asset.addEventListener === 'function') {
+      asset.addEventListener('load', finalize, { once: true });
+      asset.addEventListener('error', finalize, { once: true });
+      asset.addEventListener('canplaythrough', finalize, { once: true });
+    } else {
+      resolve(asset);
+    }
+  });
+}
+
+async function runInitialBootLoading() {
+  if (hasInitialBootLoadCompleted) {
+    updateLoadingProgress(1);
+    return;
+  }
+
+  const staticAssets = [
+    BronzeImg, SilverImg, GoldImg, DiamondImg,
+    BombImg, ShitcoinImg, RugpullImg, FakeADImg, AnvilImg,
+    MagnetImg, X2Img, x2Image, ShieldImg, shieldIconImage, TimeImg,
+    Hand?.open, Hand?.pinch, footerImg,
+  ].filter(Boolean);
+
+  const menuBackgroundImage = new Image();
+  menuBackgroundImage.src = MENU_BACKGROUND_SRC;
+  const menuMusic = getMenuMusic();
+
+  const firstLevelAssetsPromise = ensureLevelAssets(0);
+
+  const tasks = [
+    ...staticAssets.map((asset) => () => waitForAssetReady(asset)),
+    () => waitForAssetReady(menuBackgroundImage),
+    () => waitForAssetReady(menuMusic),
+    () => firstLevelAssetsPromise.then(({ bg }) => waitForAssetReady(bg)),
+    () => firstLevelAssetsPromise.then(({ wallet }) => waitForAssetReady(wallet)),
+    () => firstLevelAssetsPromise.then(({ music }) => waitForAssetReady(music)),
+  ];
+
+  const total = tasks.length;
+  let completed = 0;
+
+  const tick = () => {
+    const progress = total > 0 ? completed / total : 1;
+    updateLoadingProgress(progress);
+  };
+
+  tick();
+
+  await Promise.all(tasks.map((factory) => Promise.resolve()
+    .then(factory)
+    .catch((err) => {
+      console.warn('[loading] asset task failed', err);
+    })
+    .finally(() => {
+      completed += 1;
+      tick();
+    }))); 
+
+  updateLoadingProgress(1);
+  hasInitialBootLoadCompleted = true;
+}
+
 async function startGame(){
   if (window.__saltDroppeeStarted) return;
 
   canvas = document.getElementById('gameCanvas');
   ctx = canvas?.getContext('2d');
   overlay = document.getElementById('overlay');
+  loadingScreenEl = document.getElementById('loadingScreen');
+  loadingBarFillEl = document.getElementById('loadingBarFill');
   if (!canvas || !ctx || !overlay) return;
 
   window.__saltDroppeeStarted = true;
+
+  if (loadingScreenEl) {
+    setActiveScreen('loading', { via: 'boot' });
+    showLoadingScreenOverlay();
+  }
+
+  const bootLoadingPromise = runInitialBootLoading();
 
   if (typeof unlockAudioOnce === "function") {
     unlockAudioOnce();
@@ -5923,6 +6056,12 @@ async function startGame(){
   if (!hasAppliedProgressSnapshot) {
     await startLevel1();
   }
+
+  await bootLoadingPromise.catch((err) => {
+    console.warn('[loading] initial boot load failed', err);
+  });
+
+  hideLoadingScreenOverlay();
 
   if (!game) return;
   if (typeof game.renderTitle === 'function' && game.state === 'title') {
