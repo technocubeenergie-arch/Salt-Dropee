@@ -1233,6 +1233,19 @@ function logLogoutClickIgnored(reason, extra = {}) {
   console.info(`[auth] logout click ignored because ${reason}${details}`);
 }
 
+function goto(target, options = {}) {
+  const normalizedTarget = normalizeScreenName(target);
+  if (normalizedTarget === 'loading') {
+    const { nextScreen = 'title', blockingPromise = null, ...rest } = options || {};
+    return enterLoadingScreen(normalizeScreenName(nextScreen) || 'title', {
+      blockingPromise,
+      context: rest,
+    });
+  }
+
+  return setActiveScreen(normalizedTarget, options);
+}
+
 function setActiveScreen(next, context = {}) {
   const normalized = normalizeScreenName(next);
   const prev = activeScreen;
@@ -1273,6 +1286,9 @@ let loadingScreenEl;
 let loadingBarFillEl;
 let hasInitialBootLoadCompleted = false;
 let loadingProgressValue = 0;
+let loadingNextScreen = null;
+let loadingCompletionToken = 0;
+let loadingCompletionPromise = Promise.resolve();
 
 const LOADING_DURATION_MS = 4000;
 const FADE_MS = 250;
@@ -3482,6 +3498,53 @@ async function fadeOutLoadingScreenOverlay(duration = FADE_MS) {
   hideLoadingScreenOverlay();
 }
 
+function enterLoadingScreen(targetScreen = 'title', { blockingPromise = null, context = {} } = {}) {
+  const normalizedTarget = normalizeScreenName(targetScreen) || 'title';
+  loadingNextScreen = normalizedTarget;
+  const entryToken = ++loadingCompletionToken;
+
+  setActiveScreen('loading', { via: 'goto-loading', nextScreen: normalizedTarget, ...context });
+  showLoadingScreenOverlay();
+
+  const blockers = [startLoadingBarAnimation(LOADING_DURATION_MS)];
+  if (blockingPromise) {
+    blockers.push(Promise.resolve(blockingPromise).catch((err) => {
+      console.warn('[loading] blocker failed', err);
+    }));
+  }
+
+  const completion = Promise.all(blockers)
+    .then(async () => {
+      if (entryToken !== loadingCompletionToken) return;
+      updateLoadingProgress(1);
+      await fadeOutLoadingScreenOverlay(FADE_MS);
+      if (entryToken !== loadingCompletionToken) return;
+
+      const next = loadingNextScreen || 'title';
+      loadingNextScreen = null;
+      loadingCompletionToken = 0;
+
+      if (next === 'title') {
+        enterTitleScreen();
+        if (game) {
+          if (typeof game.renderTitle === 'function' && game.state === 'title') {
+            game.renderTitle();
+          } else if (typeof game.render === 'function') {
+            game.render();
+          }
+        }
+      } else {
+        setActiveScreen(next, { via: 'loading-complete', from: 'loading' });
+      }
+    })
+    .catch((err) => {
+      console.warn('[loading] failed to complete transition', err);
+    });
+
+  loadingCompletionPromise = completion;
+  return completion;
+}
+
 function resize(){
   if (!canvas) return;
   const vw = window.innerWidth, vh = window.innerHeight;
@@ -4598,7 +4661,11 @@ class Game{
     const u=new URLSearchParams(location.search); const seed=u.get('seed'); this.random = seed? (function(seed){ let t=seed>>>0; return function(){ t += 0x6D2B79F5; let r = Math.imul(t ^ t >>> 15, 1 | t); r ^= r + Math.imul(r ^ r >>> 7, 61 | r); return ((r ^ r >>> 14) >>> 0) / 4294967296; };})(parseInt(seed)||1) : Math.random;
     this.state='title';
     this.settingsReturnView = "title";
-    setActiveScreen(showTitle ? 'title' : 'running', { via: 'Game.reset', showTitle });
+    if (showTitle) {
+      goto('loading', { via: 'Game.reset', nextScreen: 'title' });
+    } else {
+      setActiveScreen('running', { via: 'Game.reset', showTitle });
+    }
     if (typeof setSoundEnabled === "function") {
       setSoundEnabled(!!this.settings.sound);
     }
@@ -6097,14 +6164,25 @@ async function startGame(){
 
   window.__saltDroppeeStarted = true;
 
-  let loadingAnimationPromise = Promise.resolve();
-  if (loadingScreenEl) {
-    setActiveScreen('loading', { via: 'boot' });
-    showLoadingScreenOverlay();
-    loadingAnimationPromise = startLoadingBarAnimation(LOADING_DURATION_MS);
-  }
-
   const bootLoadingPromise = runInitialBootLoading();
+  const bootFlowPromise = (async () => {
+    await waitForInitialProgressHydration();
+    await applyPendingProgressIfPossible();
+
+    if (!hasAppliedProgressSnapshot) {
+      await startLevel1();
+    }
+
+    await bootLoadingPromise.catch((err) => {
+      console.warn('[loading] initial boot load failed', err);
+    });
+  })();
+
+  const loadingCompletion = goto('loading', {
+    via: 'boot',
+    nextScreen: 'title',
+    blockingPromise: bootFlowPromise,
+  });
 
   if (typeof unlockAudioOnce === "function") {
     unlockAudioOnce();
@@ -6124,31 +6202,9 @@ async function startGame(){
   game = new Game();
   if (game && game.wallet) targetX = game.wallet.x + game.wallet.w / 2;
 
-  // Synchronisation de la progression Supabase avant le tout premier chargement de niveau
-  // pour éviter de lancer startLevel(0) avant d'avoir récupéré un snapshot éventuel.
-  await waitForInitialProgressHydration();
-  await applyPendingProgressIfPossible();
+  await bootFlowPromise;
 
-  if (!hasAppliedProgressSnapshot) {
-    await startLevel1();
-  }
-
-  await bootLoadingPromise.catch((err) => {
-    console.warn('[loading] initial boot load failed', err);
-  });
-
-  await loadingAnimationPromise;
-
-  updateLoadingProgress(1);
-
-  await fadeOutLoadingScreenOverlay(FADE_MS);
-
-  if (!game) return;
-  if (typeof game.renderTitle === 'function' && game.state === 'title') {
-    game.renderTitle();
-  } else if (typeof game.render === 'function') {
-    game.render();
-  }
+  await loadingCompletion;
 
   // Application tardive d'une progression Supabase si elle s'est résolue pendant le rendu initial.
   await applyPendingProgressIfPossible();
