@@ -4112,7 +4112,7 @@ class Arm{
   draw(g){ const maxH = Math.floor(BASE_H * CONFIG.maxTopActorH); const targetH = Math.min(this.h, maxH); const y=13; const img=(this.frame===0?Hand.open:Hand.pinch); if (!Hand.ready || !img || !(img.naturalWidth>0)){ this._drawW=90; this._drawH=targetH; const w=this._drawW; const overflow=w*HAND_RIGHT_OVERFLOW_RATIO; const x=clamp(this.handX - w/2, 10, BASE_W - w - 10 + overflow); this._x=x; this._y=y; return; }
     const natW=img.naturalWidth, natH=img.naturalHeight; const scale=targetH/natH; const drawW=natW*scale, drawH=natH*scale; const overflow=drawW*HAND_RIGHT_OVERFLOW_RATIO; const x = clamp(this.handX - drawW/2, 10, BASE_W - drawW - 10 + overflow);
     g.save(); g.imageSmoothingEnabled = true; const drawX=Math.round(x), drawY=Math.round(y); g.drawImage(img, drawX, drawY, drawW, drawH); g.restore(); this._drawW=drawW; this._drawH=drawH; this._x=drawX; this._y=drawY; }
-  spawnX(){ return clamp((this._x||0) + (this._drawW||90) - 160, 16, BASE_W - 16); }
+  spawnX(){ return clamp((this._x||0) + (this._drawW||90) - 95, 16, BASE_W - 16); }
   spawnY(){ return (this._y||0) + (this._drawH||48) - 100; }
 }
 
