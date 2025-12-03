@@ -1272,6 +1272,11 @@ let titleAccountAnchor;
 let loadingScreenEl;
 let loadingBarFillEl;
 let hasInitialBootLoadCompleted = false;
+let bootLoadingStartedAt = null;
+let loadingProgressValue = 0;
+
+const MIN_LOADING_MS = 1200;
+const FADE_MS = 250;
 
 function isActiveGameplayInProgress(){
   return Boolean(game && game.state === 'playing' && activeScreen === 'running');
@@ -3360,10 +3365,58 @@ function clearMainOverlay(except){
   return mainOverlay;
 }
 
+function wait(durationMs = 0) {
+  const safeDuration = Math.max(0, Number.isFinite(durationMs) ? durationMs : 0);
+  if (safeDuration === 0) return Promise.resolve();
+  return new Promise((resolve) => {
+    setTimeout(resolve, safeDuration);
+  });
+}
+
+function ensureLoadingScreenFadeDuration(duration = FADE_MS) {
+  if (!loadingScreenEl || !loadingScreenEl.style) return;
+  const safeDuration = Math.max(0, Number.isFinite(duration) ? duration : FADE_MS);
+  const nextValue = `${safeDuration}ms`;
+  if (loadingScreenEl.style.transitionDuration !== nextValue) {
+    loadingScreenEl.style.transitionDuration = nextValue;
+  }
+}
+
+function animateLoadingProgressToTarget(target = 1, durationMs = 0) {
+  const safeTarget = clamp(Number.isFinite(target) ? target : 1, 0, 1);
+  const initial = loadingProgressValue;
+  const clampedTarget = Math.max(initial, safeTarget);
+  const duration = Math.max(0, Number.isFinite(durationMs) ? durationMs : 0);
+
+  if (duration === 0 || clampedTarget <= initial) {
+    updateLoadingProgress(clampedTarget);
+    return wait(duration);
+  }
+
+  return new Promise((resolve) => {
+    const start = performance.now();
+
+    const tick = () => {
+      const elapsed = performance.now() - start;
+      const t = clamp(elapsed / duration, 0, 1);
+      const nextValue = initial + (clampedTarget - initial) * t;
+      updateLoadingProgress(nextValue);
+      if (t < 1) {
+        requestAnimationFrame(tick);
+      } else {
+        resolve();
+      }
+    };
+
+    requestAnimationFrame(tick);
+  });
+}
+
 function updateLoadingProgress(value = 0) {
   if (!loadingBarFillEl) return;
   const clamped = clamp(Number.isFinite(value) ? value : 0, 0, 1);
-  const percent = Math.round(clamped * 100);
+  loadingProgressValue = Math.max(loadingProgressValue, clamped);
+  const percent = Math.round(loadingProgressValue * 100);
   loadingBarFillEl.style.width = `${percent}%`;
   const progressbar = loadingBarFillEl.parentElement;
   if (progressbar && progressbar.getAttribute && progressbar.getAttribute('role') === 'progressbar') {
@@ -3373,6 +3426,7 @@ function updateLoadingProgress(value = 0) {
 
 function showLoadingScreenOverlay() {
   if (!loadingScreenEl) return;
+  ensureLoadingScreenFadeDuration(FADE_MS);
   loadingScreenEl.classList.add('show');
   loadingScreenEl.setAttribute('aria-hidden', 'false');
   try {
@@ -3380,6 +3434,7 @@ function showLoadingScreenOverlay() {
   } catch (err) {
     void err;
   }
+  loadingProgressValue = 0;
   updateLoadingProgress(0);
 }
 
@@ -3392,6 +3447,35 @@ function hideLoadingScreenOverlay() {
   } catch (err) {
     void err;
   }
+}
+
+async function fadeOutLoadingScreenOverlay(duration = FADE_MS) {
+  if (!loadingScreenEl) return;
+
+  ensureLoadingScreenFadeDuration(duration);
+
+  await new Promise((resolve) => {
+    let fallbackTimer;
+    const handleEnd = () => {
+      loadingScreenEl?.removeEventListener('transitionend', handleEnd);
+      if (fallbackTimer) {
+        clearTimeout(fallbackTimer);
+        fallbackTimer = null;
+      }
+      resolve();
+    };
+
+    loadingScreenEl.addEventListener('transitionend', handleEnd, { once: true });
+    fallbackTimer = setTimeout(handleEnd, Math.max(0, duration) + 50);
+
+    loadingScreenEl.addEventListener('transitioncancel', handleEnd, { once: true });
+
+    requestAnimationFrame(() => {
+      loadingScreenEl.classList.remove('show');
+    });
+  });
+
+  hideLoadingScreenOverlay();
 }
 
 function resize(){
@@ -6023,6 +6107,7 @@ async function startGame(){
 
   window.__saltDroppeeStarted = true;
 
+  bootLoadingStartedAt = performance.now();
   if (loadingScreenEl) {
     setActiveScreen('loading', { via: 'boot' });
     showLoadingScreenOverlay();
@@ -6061,7 +6146,16 @@ async function startGame(){
     console.warn('[loading] initial boot load failed', err);
   });
 
-  hideLoadingScreenOverlay();
+  const elapsedBootMs = bootLoadingStartedAt ? performance.now() - bootLoadingStartedAt : MIN_LOADING_MS;
+  const remainingBootMs = Math.max(0, MIN_LOADING_MS - elapsedBootMs);
+
+  if (remainingBootMs > 0) {
+    await animateLoadingProgressToTarget(1, remainingBootMs);
+  } else {
+    updateLoadingProgress(1);
+  }
+
+  await fadeOutLoadingScreenOverlay(FADE_MS);
 
   if (!game) return;
   if (typeof game.renderTitle === 'function' && game.state === 'title') {
