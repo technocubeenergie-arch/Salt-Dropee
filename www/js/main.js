@@ -4093,7 +4093,7 @@ const HAND_RIGHT_OVERFLOW_RATIO = 0.6;
 
 class Arm{
   constructor(game){ this.g=game; this.t=0; this.frame=0; this.handX=BASE_W/2; this.spriteHCapPx=0; this.targetX=BASE_W/2; this.baseMoveSpeed=120; this.moveSpeed=this.baseMoveSpeed; this.level=1; this.retarget=0; this.baseRetargetMin=0.6; this.baseRetargetMax=1.8; this.baseMaxStep=140; this.baseJitter=0.05; this.activityFactor=1; this.minRetarget=this.baseRetargetMin; this.maxRetarget=this.baseRetargetMax; this.maxStep=this.baseMaxStep; this.maxIdleAtTarget=Infinity; this.jitterAmt=this.baseJitter; this._drawW=90; this._drawH=90; this._x=0; this._y=0; }
-  applyCaps(){ const maxH = Math.floor(BASE_H * CONFIG.maxTopActorH); this.h = Math.min(Math.floor(BASE_H * 0.19), maxH); }
+  applyCaps(){ const maxH = Math.floor(BASE_H * CONFIG.maxTopActorH); this.h = Math.min(Math.floor(BASE_H * 0.21), maxH); }
   applyLevelSpeed(levelNumber){
     const numeric = Number(levelNumber);
     const lvl = Number.isFinite(numeric) ? Math.max(1, Math.floor(numeric)) : 1;
