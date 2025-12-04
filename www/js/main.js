@@ -294,9 +294,23 @@ async function ensureLevelAssets(index) {
 let hasBackgroundImage = false;
 let currentBackgroundSrc = '';
 
-function setBackgroundImageSrc(src) {
+function setBackgroundImageSrc(src, options = {}) {
   const el = document.getElementById('bgLayer');
   if (!el) return;
+
+  const { immediate = false } = options;
+
+  const enableNoTransition = () => {
+    if (immediate && el.classList) {
+      el.classList.add('no-transition');
+    }
+  };
+
+  const disableNoTransition = () => {
+    if (immediate && el.classList) {
+      requestAnimationFrame(() => el.classList.remove('no-transition'));
+    }
+  };
 
   if (typeof src !== 'string' || !src.trim()) {
     el.style.backgroundImage = 'none';
@@ -305,16 +319,23 @@ function setBackgroundImageSrc(src) {
     return;
   }
 
+  enableNoTransition();
   el.style.backgroundImage = `url("${src}")`;
-  requestAnimationFrame(() => {
+  if (immediate) {
     el.style.opacity = 1;
-  });
+    disableNoTransition();
+  } else {
+    requestAnimationFrame(() => {
+      el.style.opacity = 1;
+    });
+  }
   hasBackgroundImage = true;
   currentBackgroundSrc = src;
 }
 
-function fadeOutBgThen(next) {
+function fadeOutBgThen(next, options = {}) {
   const el = document.getElementById('bgLayer');
+  const { immediate = false } = options;
   const applyNext = () => {
     if (typeof next === 'function') {
       next();
@@ -323,7 +344,7 @@ function fadeOutBgThen(next) {
     }
   };
 
-  if (!el || !hasBackgroundImage) {
+  if (!el || !hasBackgroundImage || immediate) {
     applyNext();
     return;
   }
@@ -332,18 +353,20 @@ function fadeOutBgThen(next) {
   setTimeout(applyNext, 250);
 }
 
-function applyLevelBackground(src) {
+function applyLevelBackground(src, options = {}) {
   if (!src) return;
 
+  const { immediate = false } = options;
+
   if (currentBackgroundSrc === src) {
-    setBackgroundImageSrc(src);
+    setBackgroundImageSrc(src, { immediate });
     return;
   }
 
-  if (!hasBackgroundImage) {
-    setBackgroundImageSrc(src);
+  if (immediate || !hasBackgroundImage) {
+    setBackgroundImageSrc(src, { immediate: true });
   } else {
-    fadeOutBgThen(() => setBackgroundImageSrc(src));
+    fadeOutBgThen(() => setBackgroundImageSrc(src), { immediate: false });
   }
 }
 
@@ -1780,6 +1803,7 @@ async function loadLevel(index, options = {}) {
   const {
     applyBackground = true,
     playMusic = true,
+    immediateBackground = false,
   } = options;
 
   const L = LEVELS[index];
@@ -1850,10 +1874,17 @@ async function loadLevel(index, options = {}) {
     applyLegendShieldBoost(legendBoosts.extraShields);
   }
 
+  if (applyBackground && immediateBackground) {
+    const eagerBgSrc = L?.background;
+    if (eagerBgSrc) {
+      applyLevelBackground(eagerBgSrc, { immediate: true });
+    }
+  }
+
   if (applyBackground) {
     const bgSrc = bg?.src || L.background;
     if (bgSrc) {
-      applyLevelBackground(bgSrc);
+      applyLevelBackground(bgSrc, { immediate: immediateBackground });
     }
   }
   if (playMusic) {
@@ -1865,7 +1896,7 @@ async function loadLevel(index, options = {}) {
     ensureLevelAssets(index + 1);
   }
 
-  hideLegendResultScreen();
+  hideLegendResultScreen({ immediate: true });
 
   if (typeof setHUDScore === "function") setHUDScore(score);
   if (typeof setHUDLives === "function") setHUDLives(lives);
@@ -3299,8 +3330,13 @@ function showOverlay(el){
   }
 }
 
-function hideOverlay(el){
+function hideOverlay(el, options = {}){
   if (!el) return;
+  const { immediate = false } = options;
+  const shouldSkipTransition = Boolean(immediate && el.classList);
+  if (shouldSkipTransition) {
+    el.classList.add('no-transition');
+  }
   el.classList.remove("show");
   if (typeof el.setAttribute === "function") {
     el.setAttribute("aria-hidden", "true");
@@ -3320,6 +3356,15 @@ function hideOverlay(el){
     if (active && el.contains(active) && typeof active.blur === 'function') {
       active.blur();
     }
+  }
+  if (shouldSkipTransition && typeof requestAnimationFrame === 'function') {
+    requestAnimationFrame(() => {
+      if (el?.classList) {
+        el.classList.remove('no-transition');
+      }
+    });
+  } else if (shouldSkipTransition && el?.classList) {
+    el.classList.remove('no-transition');
   }
 }
 
@@ -3377,13 +3422,13 @@ async function goToNextLevel(){
   const lastIndex = Math.max(0, LEVELS.length - 1);
 
   hardResetRuntime();
-  await loadLevel(Math.min(next, lastIndex));
+  await loadLevel(Math.min(next, lastIndex), { immediateBackground: true });
   resumeGameplay();
 }
 
 function resumeGameplay(){
-  hideLegendResultScreen();
-  hideInterLevelScreen();
+  hideLegendResultScreen({ immediate: true });
+  hideInterLevelScreen({ immediate: true });
   setActiveScreen('running', { via: 'resumeGameplay' });
   levelEnded = false;
   gameState = "playing";
@@ -3536,12 +3581,12 @@ function showInterLevelScreen(result = "win", options = {}){
 
     btnNext.textContent = nextLabel;
     btnNext.onclick = async () => {
-      hideInterLevelScreen();
+      hideInterLevelScreen({ immediate: true });
       if (result === "win"){
         await goToNextLevel();
       } else {
         hardResetRuntime();
-        await loadLevel(currentLevelIndex);
+        await loadLevel(currentLevelIndex, { immediateBackground: true });
         resumeGameplay();
       }
     };
@@ -3553,7 +3598,7 @@ function showInterLevelScreen(result = "win", options = {}){
   screen.classList.toggle("inter-win", !!shouldUseInterVisuals);
 
   if (shouldUseInterVisuals) {
-    applyLevelBackground(backgroundSrc);
+    applyLevelBackground(backgroundSrc, { immediate: true });
     const shouldPlayAudio = opts.replaySound !== false && !screenAlreadyVisible;
     if (shouldPlayAudio) {
       playInterLevelAudioForLevel(levelIndex);
@@ -3606,18 +3651,18 @@ function showLegendResultScreen(reason = "time"){
   showExclusiveOverlay(screen);
 }
 
-function hideLegendResultScreen(){
+function hideLegendResultScreen(options = {}){
   const screen = document.getElementById("legendResultScreen");
   if (!screen) return;
-  hideOverlay(screen);
+  hideOverlay(screen, options);
 }
 
-function hideInterLevelScreen(){
+function hideInterLevelScreen(options = {}){
   const screen = document.getElementById("interLevelScreen");
   stopInterLevelAudio();
   setInterLevelUiState(false);
   if (!screen) return;
-  hideOverlay(screen);
+  hideOverlay(screen, options);
 }
 
 // --- Boutons ---
@@ -3629,7 +3674,7 @@ function bindInterLevelButtons(){
 
   if (bNext){
     bNext.onclick = () => {
-      hideInterLevelScreen();
+      hideInterLevelScreen({ immediate: true });
       goToNextLevel();
     };
   }
@@ -3700,10 +3745,10 @@ function bindLegendResultButtons(){
   if (btnRetry){
     btnRetry.onclick = async () => {
       if (typeof playSound === "function") playSound("click");
-      hideLegendResultScreen();
+      hideLegendResultScreen({ immediate: true });
       hardResetRuntime();
       const legendIndex = LEGEND_LEVEL_INDEX >= 0 ? LEGEND_LEVEL_INDEX : currentLevelIndex;
-      await loadLevel(legendIndex);
+      await loadLevel(legendIndex, { immediateBackground: true });
       resumeGameplay();
     };
   }
@@ -4493,7 +4538,7 @@ class Game{
     this.arm=new Arm(this); this.arm.applyCaps(); this.wallet=new Wallet(this); this.wallet.applyCaps(); applyWalletForLevel(1); this.hud=new HUD(this); this.spawner=new Spawner(this);
     this.items=[]; this.effects={invert:0}; this.fx = new FxManager(this);
     this.shake=0; this.bgIndex=0; this.didFirstCatch=false; this.updateBgByScore();
-    loadLevel(currentLevelIndex, { applyBackground: !showTitle, playMusic: !showTitle });
+    loadLevel(currentLevelIndex, { applyBackground: !showTitle, playMusic: !showTitle, immediateBackground: !showTitle });
     if (showTitle) this.renderTitle(); else this.render();
   }
   diffMult(){ return Math.pow(CONFIG.spawnRampFactor, Math.floor(this.timeElapsed/CONFIG.spawnRampEverySec)); }
@@ -4501,7 +4546,7 @@ class Game{
   start(){
     const levelCfg = LEVELS[currentLevelIndex];
     if (levelCfg?.background) {
-      applyLevelBackground(levelCfg.background);
+      applyLevelBackground(levelCfg.background, { immediate: true });
     }
 
     const cachedAssets = levelAssets[currentLevelIndex];
