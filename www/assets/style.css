@@ -73,6 +73,10 @@ body * {
   z-index: 0;
 }
 
+#bgLayer.no-transition {
+  transition: none;
+}
+
 body.is-title #gameCanvas,
 body.is-title #hud {
   visibility: hidden;
@@ -130,6 +134,10 @@ body.is-inter-level #hud {
   transition: opacity 0.2s;
   opacity: 0;
   pointer-events: none;
+}
+
+.overlay.no-transition {
+  transition: none;
 }
 
 .overlay.show {
