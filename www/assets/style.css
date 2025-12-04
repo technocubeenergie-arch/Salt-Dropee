@@ -132,6 +132,10 @@ body.is-inter-level #hud {
   pointer-events: none;
 }
 
+.overlay.no-transition {
+  transition: none;
+}
+
 .overlay.show {
   opacity: 1;
   pointer-events: auto;
