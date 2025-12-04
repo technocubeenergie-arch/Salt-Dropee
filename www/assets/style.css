@@ -73,6 +73,10 @@ body * {
   z-index: 0;
 }
 
+#bgLayer.no-transition {
+  transition: none;
+}
+
 body.is-title #gameCanvas,
 body.is-title #hud {
   visibility: hidden;
