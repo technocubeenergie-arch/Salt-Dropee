@@ -373,9 +373,19 @@ function applyLevelBackground(src, options = {}) {
 // --- Wallet ---
 let walletImage = null;
 
-function setWalletSprite(img) {
+const legendWalletSrc = LEGEND_LEVEL_INDEX >= 0 ? LEVELS[LEGEND_LEVEL_INDEX]?.walletSprite : null;
+const legendWalletImage = legendWalletSrc ? (() => {
+  const img = new Image();
+  img.src = legendWalletSrc;
+  img.decode?.().catch(() => {});
+  return img;
+})() : null;
+
+function setWalletSprite(img, options = {}) {
   if (!img) return;
   walletImage = img;
+
+  const { skipAnimation = false } = options;
 
   const runtimeWallet = (typeof window !== 'undefined' && window.wallet)
     ? window.wallet
@@ -385,13 +395,13 @@ function setWalletSprite(img) {
     runtimeWallet.applyCaps();
   }
 
-  if (window.gsap && runtimeWallet) {
-    if (Object.prototype.hasOwnProperty.call(runtimeWallet, 'visualScale')) {
-      runtimeWallet.visualScale = 1;
-      gsap.fromTo(runtimeWallet, { visualScale: 0.95 }, { visualScale: 1, duration: 0.25, ease: "back.out(2)" });
-    } else {
-      gsap.fromTo(runtimeWallet, { scale: 0.95 }, { scale: 1, duration: 0.25, ease: "back.out(2)" });
-    }
+  if (skipAnimation || !window.gsap || !runtimeWallet) return;
+
+  if (Object.prototype.hasOwnProperty.call(runtimeWallet, 'visualScale')) {
+    runtimeWallet.visualScale = 1;
+    gsap.fromTo(runtimeWallet, { visualScale: 0.95 }, { visualScale: 1, duration: 0.25, ease: "back.out(2)" });
+  } else {
+    gsap.fromTo(runtimeWallet, { scale: 0.95 }, { scale: 1, duration: 0.25, ease: "back.out(2)" });
   }
 }
 
@@ -1825,6 +1835,13 @@ async function loadLevel(index, options = {}) {
   legendRunActive = isLegendLevel(index);
   setActiveHandVariant(legendRunActive ? 'legend' : 'default');
 
+  if (legendRunActive) {
+    const eagerLegendWallet = levelAssets[index]?.wallet || legendWalletImage;
+    if (eagerLegendWallet) {
+      setWalletSprite(eagerLegendWallet, { skipAnimation: true });
+    }
+  }
+
   const legendBoosts = legendRunActive
     ? await loadLegendBoostsForSession()
     : { ...DEFAULT_LEGEND_BOOSTS };
@@ -2826,7 +2843,7 @@ setActiveHandVariant('default');
 [GoldImg, SilverImg, BronzeImg, DiamondImg, BombImg,
  ShitcoinImg, RugpullImg, FakeADImg, AnvilImg,
  MagnetImg, X2Img, ShieldImg, TimeImg,
- walletImage, Hand.open, Hand.pinch,
+ walletImage, legendWalletImage, Hand.open, Hand.pinch,
  HandVariants.legend.open, HandVariants.legend.pinch,
  footerImg]
   .forEach(img => img?.decode?.().catch(()=>{}));
