@@ -1882,6 +1882,13 @@ async function loadLevel(index, options = {}) {
     applyLegendShieldBoost(legendBoosts.extraShields);
   }
 
+  if (applyBackground && immediateBackground) {
+    const eagerBgSrc = L?.background;
+    if (eagerBgSrc) {
+      applyLevelBackground(eagerBgSrc, { immediate: true });
+    }
+  }
+
   if (applyBackground) {
     const bgSrc = bg?.src || L.background;
     if (bgSrc) {
