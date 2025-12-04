@@ -1823,7 +1823,7 @@ async function loadLevel(index, options = {}) {
 
   legendScoreSubmissionAttempted = false;
   legendRunActive = isLegendLevel(index);
-  setHandVariant(legendRunActive);
+  setActiveHandVariant(legendRunActive ? 'legend' : 'default');
 
   const legendBoosts = legendRunActive
     ? await loadLegendBoostsForSession()
@@ -2775,55 +2775,58 @@ footerImg.src = 'assets/footer.webp';
 function createHandVariant(openSrc, pinchSrc) {
   const open = new Image();
   const pinch = new Image();
+  let ready = false;
+
+  const readyPromise = Promise.all([
+    new Promise(r => open.onload = r),
+    new Promise(r => pinch.onload = r),
+  ]).then(() => {
+    ready = true;
+    return true;
+  });
+
   open.src = openSrc;
   pinch.src = pinchSrc;
 
-  const variant = { open, pinch, ready: false, promise: null };
-  variant.promise = Promise.all([
-    new Promise(resolve => variant.open.onload = resolve),
-    new Promise(resolve => variant.pinch.onload = resolve),
-  ]).then(() => {
-    variant.ready = true;
-    if (Hand.variantRef === variant) {
-      Hand.ready = true;
-    }
-  });
-
-  [open, pinch].forEach(img => img?.decode?.().catch(()=>{}));
-  return variant;
+  return {
+    open,
+    pinch,
+    get ready() { return ready; },
+    readyPromise,
+  };
 }
 
 const HandVariants = {
-  normal: createHandVariant('assets/main_open.png', 'assets/main_pince.png'),
+  default: createHandVariant('assets/main_open.png', 'assets/main_pince.png'),
   legend: createHandVariant('assets/open_angry.png', 'assets/pince_angry.png'),
 };
 
-const Hand = { open: HandVariants.normal.open, pinch: HandVariants.normal.pinch, ready: false, variant: 'normal', variantRef: HandVariants.normal };
+const Hand = { open: HandVariants.default.open, pinch: HandVariants.default.pinch, ready: false };
 
-function setHandVariant(isLegend) {
-  const variantKey = isLegend ? 'legend' : 'normal';
-  const variant = HandVariants[variantKey] ?? HandVariants.normal;
+function setActiveHandVariant(key = 'default') {
+  const variant = HandVariants[key] || HandVariants.default;
   Hand.open = variant.open;
   Hand.pinch = variant.pinch;
-  Hand.ready = variant.ready;
-  Hand.variant = variantKey;
-  Hand.variantRef = variant;
 
-  if (!variant.ready) {
-    variant.promise?.then(() => {
-      if (Hand.variantRef === variant) {
+  if (variant.ready) {
+    Hand.ready = true;
+  } else {
+    Hand.ready = false;
+    variant.readyPromise.then(() => {
+      if (Hand.open === variant.open && Hand.pinch === variant.pinch) {
         Hand.ready = true;
       }
-    });
+    }).catch(() => {});
   }
 }
 
+setActiveHandVariant('default');
+
 // Pré-decode (si supporté)
- [GoldImg, SilverImg, BronzeImg, DiamondImg, BombImg,
+[GoldImg, SilverImg, BronzeImg, DiamondImg, BombImg,
  ShitcoinImg, RugpullImg, FakeADImg, AnvilImg,
  MagnetImg, X2Img, ShieldImg, TimeImg,
- walletImage,
- HandVariants.normal.open, HandVariants.normal.pinch,
+ walletImage, Hand.open, Hand.pinch,
  HandVariants.legend.open, HandVariants.legend.pinch,
  footerImg]
   .forEach(img => img?.decode?.().catch(()=>{}));
