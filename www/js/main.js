@@ -1792,7 +1792,6 @@ async function loadLevel(index, options = {}) {
 
   legendScoreSubmissionAttempted = false;
   legendRunActive = isLegendLevel(index);
-  useHandSet(legendRunActive ? 'legend' : 'normal');
 
   const legendBoosts = legendRunActive
     ? await loadLegendBoostsForSession()
@@ -2734,50 +2733,19 @@ const footerImg = new Image();
 footerImg.src = 'assets/footer.webp';
 
 // --- Main (2 frames)
-const HAND_SPRITES = {
-  normal: { open: new Image(), pinch: new Image(), ready: false },
-  legend: { open: new Image(), pinch: new Image(), ready: false },
-};
-
-function initHandSet(key, openSrc, pinchSrc) {
-  const set = HAND_SPRITES[key];
-  if (!set) return;
-
-  Promise.all([
-    new Promise(r => set.open.onload = r),
-    new Promise(r => set.pinch.onload = r),
-  ]).then(() => {
-    set.ready = true;
-    if (Hand.activeSet === key) {
-      Hand.ready = true;
-    }
-  });
-
-  set.open.src = openSrc;
-  set.pinch.src = pinchSrc;
-}
-
-const Hand = { open: HAND_SPRITES.normal.open, pinch: HAND_SPRITES.normal.pinch, ready: false, activeSet: 'normal' };
-
-function useHandSet(key = 'normal') {
-  const targetKey = Object.prototype.hasOwnProperty.call(HAND_SPRITES, key) ? key : 'normal';
-  const set = HAND_SPRITES[targetKey];
-  Hand.activeSet = targetKey;
-  Hand.open = set.open;
-  Hand.pinch = set.pinch;
-  Hand.ready = !!set.ready;
-}
-
-initHandSet('normal', 'assets/main_open.png', 'assets/main_pince.png');
-initHandSet('legend', 'assets/open_angry.png', 'assets/pince_angry.png');
-useHandSet('normal');
+const Hand = { open:new Image(), pinch:new Image(), ready:false };
+Hand.open.src  = 'assets/main_open.png';
+Hand.pinch.src = 'assets/main_pince.png';
+Promise.all([
+  new Promise(r => Hand.open.onload = r),
+  new Promise(r => Hand.pinch.onload = r),
+]).then(()=> Hand.ready = true);
 
 // Pré-decode (si supporté)
-[GoldImg, SilverImg, BronzeImg, DiamondImg, BombImg,
+ [GoldImg, SilverImg, BronzeImg, DiamondImg, BombImg,
  ShitcoinImg, RugpullImg, FakeADImg, AnvilImg,
  MagnetImg, X2Img, ShieldImg, TimeImg,
- walletImage, HAND_SPRITES.normal.open, HAND_SPRITES.normal.pinch,
- HAND_SPRITES.legend.open, HAND_SPRITES.legend.pinch, footerImg]
+ walletImage, Hand.open, Hand.pinch, footerImg]
   .forEach(img => img?.decode?.().catch(()=>{}));
 
 const VERSION = '1.1.0';
