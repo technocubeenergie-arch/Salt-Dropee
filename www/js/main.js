@@ -1810,6 +1810,13 @@ async function loadLevel(index, options = {}) {
   currentLevelIndex = index;
   window.currentLevelIndex = currentLevelIndex;
 
+  if (applyBackground && immediateBackground) {
+    const eagerBgSrc = L?.background;
+    if (eagerBgSrc) {
+      applyLevelBackground(eagerBgSrc, { immediate: true });
+    }
+  }
+
   updateFallSpeedForLevel(index);
 
   const endless = !!L.endless;
