@@ -1865,7 +1865,7 @@ async function loadLevel(index, options = {}) {
     ensureLevelAssets(index + 1);
   }
 
-  hideLegendResultScreen();
+  hideLegendResultScreen({ immediate: true });
 
   if (typeof setHUDScore === "function") setHUDScore(score);
   if (typeof setHUDLives === "function") setHUDLives(lives);
@@ -3299,8 +3299,13 @@ function showOverlay(el){
   }
 }
 
-function hideOverlay(el){
+function hideOverlay(el, options = {}){
   if (!el) return;
+  const { immediate = false } = options;
+  const shouldSkipTransition = Boolean(immediate && el.classList);
+  if (shouldSkipTransition) {
+    el.classList.add('no-transition');
+  }
   el.classList.remove("show");
   if (typeof el.setAttribute === "function") {
     el.setAttribute("aria-hidden", "true");
@@ -3320,6 +3325,15 @@ function hideOverlay(el){
     if (active && el.contains(active) && typeof active.blur === 'function') {
       active.blur();
     }
+  }
+  if (shouldSkipTransition && typeof requestAnimationFrame === 'function') {
+    requestAnimationFrame(() => {
+      if (el?.classList) {
+        el.classList.remove('no-transition');
+      }
+    });
+  } else if (shouldSkipTransition && el?.classList) {
+    el.classList.remove('no-transition');
   }
 }
 
@@ -3382,8 +3396,8 @@ async function goToNextLevel(){
 }
 
 function resumeGameplay(){
-  hideLegendResultScreen();
-  hideInterLevelScreen();
+  hideLegendResultScreen({ immediate: true });
+  hideInterLevelScreen({ immediate: true });
   setActiveScreen('running', { via: 'resumeGameplay' });
   levelEnded = false;
   gameState = "playing";
@@ -3536,7 +3550,7 @@ function showInterLevelScreen(result = "win", options = {}){
 
     btnNext.textContent = nextLabel;
     btnNext.onclick = async () => {
-      hideInterLevelScreen();
+      hideInterLevelScreen({ immediate: true });
       if (result === "win"){
         await goToNextLevel();
       } else {
@@ -3606,18 +3620,18 @@ function showLegendResultScreen(reason = "time"){
   showExclusiveOverlay(screen);
 }
 
-function hideLegendResultScreen(){
+function hideLegendResultScreen(options = {}){
   const screen = document.getElementById("legendResultScreen");
   if (!screen) return;
-  hideOverlay(screen);
+  hideOverlay(screen, options);
 }
 
-function hideInterLevelScreen(){
+function hideInterLevelScreen(options = {}){
   const screen = document.getElementById("interLevelScreen");
   stopInterLevelAudio();
   setInterLevelUiState(false);
   if (!screen) return;
-  hideOverlay(screen);
+  hideOverlay(screen, options);
 }
 
 // --- Boutons ---
@@ -3629,7 +3643,7 @@ function bindInterLevelButtons(){
 
   if (bNext){
     bNext.onclick = () => {
-      hideInterLevelScreen();
+      hideInterLevelScreen({ immediate: true });
       goToNextLevel();
     };
   }
@@ -3700,7 +3714,7 @@ function bindLegendResultButtons(){
   if (btnRetry){
     btnRetry.onclick = async () => {
       if (typeof playSound === "function") playSound("click");
-      hideLegendResultScreen();
+      hideLegendResultScreen({ immediate: true });
       hardResetRuntime();
       const legendIndex = LEGEND_LEVEL_INDEX >= 0 ? LEGEND_LEVEL_INDEX : currentLevelIndex;
       await loadLevel(legendIndex);
