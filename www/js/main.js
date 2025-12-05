@@ -290,6 +290,26 @@ async function ensureLevelAssets(index) {
   return levelAssets[index];
 }
 
+function waitForImageReady(img) {
+  if (!img) return Promise.resolve();
+
+  if (img.complete && img.naturalWidth > 0) {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve) => {
+    const done = () => resolve();
+
+    if (img.complete) {
+      resolve();
+      return;
+    }
+
+    img.addEventListener('load', done, { once: true });
+    img.addEventListener('error', done, { once: true });
+  });
+}
+
 // --- Fond (HTML) ---
 let hasBackgroundImage = false;
 let currentBackgroundSrc = '';
@@ -1777,6 +1797,28 @@ function resumeAllAnimations(){
   }
 }
 
+async function ensureLegendVisualsReady(options = {}) {
+  const variant = HandVariants?.legend;
+  const wallet = options.walletImage || legendWalletImage;
+  const tasks = [];
+
+  if (variant) {
+    if (variant.ready) {
+      tasks.push(Promise.resolve());
+    } else if (variant.readyPromise) {
+      tasks.push(variant.readyPromise.catch(() => {}));
+    }
+  }
+
+  if (wallet) {
+    tasks.push(waitForImageReady(wallet));
+  }
+
+  if (tasks.length === 0) return true;
+  await Promise.all(tasks);
+  return true;
+}
+
 function enablePlayerInput(reason = 'unspecified'){
   inputEnabled = true;
   console.info(`[input] enable player input${debugFormatContext({ reason, screen: activeScreen })}`);
@@ -1866,6 +1908,10 @@ async function loadLevel(index, options = {}) {
   const instance = game || Game.instance || null;
   const { bg, wallet, music } = await ensureLevelAssets(index);
 
+  if (legendRunActive) {
+    await ensureLegendVisualsReady({ walletImage: wallet });
+  }
+
   score    = 0;
   streak   = 0;
   combo    = 1.0;
@@ -1898,6 +1944,8 @@ async function loadLevel(index, options = {}) {
   if (legendRunActive) {
     applyLegendShieldBoost(legendBoosts.extraShields);
   }
+
+  setHUDLegendBoost(legendBoostLevel, legendRunActive);
 
   if (applyBackground && immediateBackground) {
     const eagerBgSrc = L?.background;
@@ -3608,6 +3656,17 @@ function setInterLevelUiState(active) {
   }
 }
 
+function prepareLegendLevelWarmup(index) {
+  const targetIndex = Number.isFinite(index) ? index : LEGEND_LEVEL_INDEX;
+  if (!Number.isFinite(targetIndex) || targetIndex < 0) return;
+
+  ensureLevelAssets(targetIndex).then(({ wallet }) => {
+    ensureLegendVisualsReady({ walletImage: wallet }).catch(() => {});
+  }).catch(() => {});
+
+  loadLegendBoostsForSession().catch(() => {});
+}
+
 function showInterLevelScreen(result = "win", options = {}){
   lastInterLevelResult = result;
   const screen = document.getElementById("interLevelScreen");
@@ -3641,6 +3700,10 @@ function showInterLevelScreen(result = "win", options = {}){
   const nextIndex = Math.min(levelIndex + 1, LEVELS.length - 1);
   const isLegend = isLegendLevel(levelIndex);
   const nextIsLegend = isLegendLevel(nextIndex);
+
+  if (result === "win" && nextIsLegend) {
+    prepareLegendLevelWarmup(nextIndex);
+  }
 
   if (btnNext){
     let nextLabel = "Rejouer";
