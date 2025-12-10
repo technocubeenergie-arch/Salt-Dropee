@@ -2,7 +2,7 @@ import {
   SUPABASE_ANON_KEY,
   SUPABASE_ENABLED,
   SUPABASE_URL,
-} from './config.remote.js';
+} from './config.local.js';
 
 const SUPABASE_MODULE_SOURCES = [
   { url: 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm', label: 'jsdelivr-+esm' },
