@@ -28,7 +28,7 @@
         <preference name="android-minSdkVersion" value="24" />
         <preference name="android-targetSdkVersion" value="34" />
         <preference name="android-compileSdkVersion" value="34" />
-        <preference name="AndroidWindowSoftInputMode" value="adjustPan" />
+        <preference name="AndroidWindowSoftInputMode" value="adjustNothing" />
 
         <!-- Icons - using single source icon, Cordova will resize -->
         <icon density="ldpi" src="www/assets/icon.png" />
