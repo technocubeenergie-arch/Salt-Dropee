@@ -1,0 +1,48 @@
+{
+  "name": "raining-bud",
+  "displayName": "Raining Bud",
+  "version": "1.0.0",
+  "description": "A fun and addictive mobile game",
+  "main": "index.js",
+  "author": "Freedam",
+  "license": "MIT",
+  "scripts": {
+    "start": "npm run serve",
+    "serve": "python3 -m http.server 8000 --directory www",
+    "cordova:prepare": "cordova prepare",
+    "cordova:build": "cordova build",
+    "cordova:build:android": "cordova build android",
+    "cordova:build:ios": "cordova build ios",
+    "cordova:run:android": "cordova run android",
+    "cordova:run:ios": "cordova run ios",
+    "android:release": "cordova build android --release",
+    "ios:release": "cordova build ios --release",
+    "clean": "cordova clean",
+    "add:platform:android": "cordova platform add android",
+    "add:platform:ios": "cordova platform add ios",
+    "remove:platform:android": "cordova platform remove android",
+    "remove:platform:ios": "cordova platform remove ios"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "cordova": "^12.0.0",
+    "cordova-android": "^12.0.0",
+    "cordova-ios": "^7.0.0"
+  },
+  "cordova": {
+    "platforms": [],
+    "plugins": {
+      "cordova-plugin-device": {},
+      "cordova-plugin-statusbar": {},
+      "cordova-plugin-splashscreen": {},
+      "cordova-plugin-network-information": {}
+    }
+  },
+  "keywords": [
+    "game",
+    "mobile",
+    "cordova",
+    "android",
+    "ios"
+  ]
+}
