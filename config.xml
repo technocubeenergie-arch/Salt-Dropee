@@ -29,12 +29,6 @@
         <preference name="android-targetSdkVersion" value="34" />
         <preference name="android-compileSdkVersion" value="34" />
 
-        <!-- Permissions -->
-        <config-file target="AndroidManifest.xml" parent="/*">
-            <uses-permission android:name="android.permission.INTERNET" />
-            <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-        </config-file>
-
         <!-- Icons - using single source icon, Cordova will resize -->
         <icon density="ldpi" src="www/assets/icon.png" />
         <icon density="mdpi" src="www/assets/icon.png" />
