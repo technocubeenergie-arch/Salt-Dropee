@@ -8,17 +8,22 @@
   />
   <meta name="format-detection" content="telephone=no" />
   <meta name="color-scheme" content="dark light" />
-  <title>Salt Droppee</title>
+
+  <!-- Content Security Policy for Cordova -->
+  <meta http-equiv="Content-Security-Policy" content="
+    default-src 'self' data: https: gap:;
+    script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com https://esm.sh;
+    style-src 'self' 'unsafe-inline';
+    img-src 'self' data: blob: https:;
+    media-src 'self' data: blob:;
+    font-src 'self' data:;
+    connect-src 'self' https://czfrylnwekgvnpzklohj.supabase.co https://cdn.jsdelivr.net https://unpkg.com https://esm.sh wss://czfrylnwekgvnpzklohj.supabase.co;
+  " />
+
+  <title>Raining Bud</title>
 
   <!-- CSS en chemin relatif -->
   <link rel="stylesheet" href="assets/style.css" />
-
-  <!-- Cordova: chargement conditionnel, jamais en dur -->
-  <script>
-    if (window.cordova) {
-      document.write('<script src="cordova.js"><\\/script>');
-    }
-  </script>
 
 </head>
 <body>
@@ -113,6 +118,9 @@
       <div id="overlay" class="overlay" aria-live="polite" aria-hidden="true"></div>
     </div>
   </div>
+
+  <!-- Cordova.js - auto-injected by Cordova CLI during build -->
+  <script src="cordova.js"></script>
 
   <!-- JS du jeu en chemin relatif -->
   <script src="lib/gsap/gsap.min.js"></script>

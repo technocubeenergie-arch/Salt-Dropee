@@ -1,0 +1,112 @@
+<?xml version='1.0' encoding='utf-8'?>
+<widget id="com.technocube.rainingbud" version="1.0.0" xmlns="http://www.w3.org/ns/widgets" xmlns:cdv="http://cordova.apache.org/ns/1.0">
+    <name>Raining Bud</name>
+    <description>
+        A fun and addictive mobile game where you catch falling objects to score points and unlock levels.
+    </description>
+    <author email="contact@technocube.com" href="https://technocube.com">
+        Freedam
+    </author>
+
+    <!-- Content source -->
+    <content src="index.html" />
+
+    <!-- Network access -->
+    <access origin="*" />
+    <allow-intent href="http://*/*" />
+    <allow-intent href="https://*/*" />
+    <allow-intent href="tel:*" />
+    <allow-intent href="sms:*" />
+    <allow-intent href="mailto:*" />
+    <allow-intent href="geo:*" />
+
+    <!-- Platform-specific intents -->
+    <platform name="android">
+        <allow-intent href="market:*" />
+
+        <!-- Android-specific preferences -->
+        <preference name="android-minSdkVersion" value="24" />
+        <preference name="android-targetSdkVersion" value="34" />
+        <preference name="android-compileSdkVersion" value="34" />
+
+        <!-- Permissions -->
+        <config-file target="AndroidManifest.xml" parent="/*">
+            <uses-permission android:name="android.permission.INTERNET" />
+            <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+        </config-file>
+
+        <!-- Icons - using single source icon, Cordova will resize -->
+        <icon density="ldpi" src="www/assets/icon.png" />
+        <icon density="mdpi" src="www/assets/icon.png" />
+        <icon density="hdpi" src="www/assets/icon.png" />
+        <icon density="xhdpi" src="www/assets/icon.png" />
+        <icon density="xxhdpi" src="www/assets/icon.png" />
+        <icon density="xxxhdpi" src="www/assets/icon.png" />
+
+        <!-- Splash screens - portrait -->
+        <splash density="port-ldpi" src="www/assets/splash.webp" />
+        <splash density="port-mdpi" src="www/assets/splash.webp" />
+        <splash density="port-hdpi" src="www/assets/splash.webp" />
+        <splash density="port-xhdpi" src="www/assets/splash.webp" />
+        <splash density="port-xxhdpi" src="www/assets/splash.webp" />
+        <splash density="port-xxxhdpi" src="www/assets/splash.webp" />
+    </platform>
+
+    <platform name="ios">
+        <allow-intent href="itms:*" />
+        <allow-intent href="itms-apps:*" />
+
+        <!-- iOS deployment target -->
+        <preference name="deployment-target" value="12.0" />
+
+        <!-- Icons for iOS (using single source, will be resized) -->
+        <icon height="20" platform="ios" src="www/assets/icon.png" width="20" />
+        <icon height="40" platform="ios" src="www/assets/icon.png" width="40" />
+        <icon height="60" platform="ios" src="www/assets/icon.png" width="60" />
+        <icon height="29" platform="ios" src="www/assets/icon.png" width="29" />
+        <icon height="58" platform="ios" src="www/assets/icon.png" width="58" />
+        <icon height="87" platform="ios" src="www/assets/icon.png" width="87" />
+        <icon height="80" platform="ios" src="www/assets/icon.png" width="80" />
+        <icon height="120" platform="ios" src="www/assets/icon.png" width="120" />
+        <icon height="180" platform="ios" src="www/assets/icon.png" width="180" />
+        <icon height="76" platform="ios" src="www/assets/icon.png" width="76" />
+        <icon height="152" platform="ios" src="www/assets/icon.png" width="152" />
+        <icon height="167" platform="ios" src="www/assets/icon.png" width="167" />
+        <icon height="1024" platform="ios" src="www/assets/icon.png" width="1024" />
+
+        <!-- Splash screens for iOS -->
+        <splash src="www/assets/splash.webp" />
+    </platform>
+
+    <!-- Global preferences -->
+    <preference name="DisallowOverscroll" value="true" />
+    <preference name="Orientation" value="portrait" />
+    <preference name="Fullscreen" value="false" />
+    <preference name="StatusBarOverlaysWebView" value="false" />
+    <preference name="StatusBarBackgroundColor" value="#000000" />
+    <preference name="StatusBarStyle" value="lightcontent" />
+
+    <!-- Splash screen preferences -->
+    <preference name="SplashScreenDelay" value="3000" />
+    <preference name="AutoHideSplashScreen" value="true" />
+    <preference name="FadeSplashScreen" value="true" />
+    <preference name="FadeSplashScreenDuration" value="300" />
+    <preference name="SplashShowOnlyFirstTime" value="false" />
+
+    <!-- WebView preferences -->
+    <preference name="Scheme" value="https" />
+    <preference name="hostname" value="localhost" />
+    <preference name="AllowBackForwardNavigationGestures" value="false" />
+
+    <!-- Core plugins -->
+    <plugin name="cordova-plugin-device" spec="^2.1.0" />
+    <plugin name="cordova-plugin-statusbar" spec="^2.4.3" />
+    <plugin name="cordova-plugin-splashscreen" spec="^6.0.2" />
+    <plugin name="cordova-plugin-network-information" spec="^3.0.0" />
+
+    <!-- Security: Allow navigation to Supabase -->
+    <allow-navigation href="https://czfrylnwekgvnpzklohj.supabase.co/*" />
+    <allow-navigation href="https://cdn.jsdelivr.net/*" />
+    <allow-navigation href="https://unpkg.com/*" />
+    <allow-navigation href="https://esm.sh/*" />
+</widget>
