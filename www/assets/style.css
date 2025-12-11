@@ -162,7 +162,8 @@ body.is-inter-level #hud {
   background: transparent;
   align-items: stretch;
   justify-content: center;
-  padding: clamp(24px, 10vh, 160px) clamp(16px, 6vw, 72px) clamp(28px, 6vh, 120px);
+  /* Remplacé vh par px fixes pour éviter le recalcul quand le clavier s'ouvre */
+  padding: 40px clamp(16px, 6vw, 72px) 40px;
 }
 
 #overlay {
