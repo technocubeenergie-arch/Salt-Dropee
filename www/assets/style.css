@@ -189,7 +189,8 @@ body.is-inter-level #hud {
 .panel-shell,
 .legend-leaderboard-panel {
   width: min(680px, 95vw);
-  max-height: min(90vh, 760px);
+  /* Remplacé 90vh par 600px fixe pour éviter le resize quand le clavier s'ouvre */
+  max-height: 600px;
   display: flex;
   flex-direction: column;
   gap: 14px;
