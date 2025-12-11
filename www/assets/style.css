@@ -22,6 +22,10 @@ body {
   -ms-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
+  /* Empêcher le scroll quand le clavier s'ouvre */
+  overflow: hidden;
+  position: fixed;
+  width: 100%;
 }
 
 body * {
@@ -158,7 +162,8 @@ body.is-inter-level #hud {
   background: transparent;
   align-items: stretch;
   justify-content: center;
-  padding: clamp(24px, 10vh, 160px) clamp(16px, 6vw, 72px) clamp(28px, 6vh, 120px);
+  /* Remplacé vh par px fixes pour éviter le recalcul quand le clavier s'ouvre */
+  padding: 40px clamp(16px, 6vw, 72px) 40px;
 }
 
 #overlay {
@@ -184,10 +189,17 @@ body.is-inter-level #hud {
 .panel-shell,
 .legend-leaderboard-panel {
   width: min(680px, 95vw);
-  max-height: min(90vh, 760px);
+  /* Hauteur fixe pour éviter le resize quand le clavier s'ouvre */
+  height: 600px;
+  max-height: 600px;
+  /* Empêcher le flex de rétrécir le panel */
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   gap: 14px;
+  /* Permettre le scroll interne si le contenu est trop grand */
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 .panel-header,
 .legend-leaderboard-header {
@@ -495,6 +507,13 @@ body.is-inter-level #hud {
 
 .account-panel {
   width: min(640px, 94vw);
+  /* Position absolue pour éviter le recentrage flex quand le clavier s'ouvre */
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  /* Garantir que le panel reste à cette position fixe */
+  margin: 0;
 }
 
 .account-panel-body {
