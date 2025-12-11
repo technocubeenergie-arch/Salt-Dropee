@@ -22,6 +22,10 @@ body {
   -ms-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
+  /* Empêcher le scroll quand le clavier s'ouvre */
+  overflow: hidden;
+  position: fixed;
+  width: 100%;
 }
 
 body * {
@@ -188,6 +192,9 @@ body.is-inter-level #hud {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  /* Permettre le scroll interne si le contenu est trop grand */
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 .panel-header,
 .legend-leaderboard-header {
