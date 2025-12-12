@@ -138,6 +138,10 @@ body.is-inter-level #hud {
   transition: opacity 0.2s;
   opacity: 0;
   pointer-events: none;
+  /* Contraindre au canvas 360x640 */
+  max-width: 360px;
+  max-height: 640px;
+  overflow: hidden;
 }
 
 .overlay.no-transition {
@@ -162,8 +166,8 @@ body.is-inter-level #hud {
   background: transparent;
   align-items: stretch;
   justify-content: center;
-  /* Remplacé vh par px fixes pour éviter le recalcul quand le clavier s'ouvre */
-  padding: 40px clamp(16px, 6vw, 72px) 40px;
+  /* Padding fixe condensé pour rester dans le canvas */
+  padding: 20px 10px;
 }
 
 #overlay {
@@ -176,10 +180,16 @@ body.is-inter-level #hud {
   border: 1.5px solid rgba(255, 255, 255, 0.2);
   padding: 18px 20px;
   min-width: 260px;
+  /* Contraindre au canvas 360x640 avec marges */
+  max-width: 340px;
+  max-height: 600px;
   text-align: left;
   border-radius: 16px;
   box-shadow: 0 18px 36px rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(8px);
+  /* Permettre scroll interne si contenu trop grand */
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .inter-level-panel, element.style {
@@ -188,10 +198,11 @@ body.is-inter-level #hud {
 
 .panel-shell,
 .legend-leaderboard-panel {
-  width: min(680px, 95vw);
+  /* Largeur fixe condensée pour rester dans le canvas (360px - marges) */
+  width: 340px;
   /* Hauteur fixe pour éviter le resize quand le clavier s'ouvre */
-  height: 600px;
-  max-height: 600px;
+  height: auto;
+  max-height: 580px;
   /* Empêcher le flex de rétrécir le panel */
   flex-shrink: 0;
   display: flex;
@@ -481,7 +492,9 @@ body.is-inter-level #hud {
 
 .title-buttons {
   pointer-events: auto;
-  width: min(320px, 85vw);
+  /* Largeur fixe pour rester dans le canvas */
+  width: 300px;
+  max-width: 340px;
   display: flex;
   flex-direction: column;
   flex: 0 0 auto;
@@ -506,7 +519,10 @@ body.is-inter-level #hud {
 }
 
 .account-panel {
-  width: min(640px, 94vw);
+  /* Largeur fixe condensée pour rester dans le canvas */
+  width: 320px;
+  max-width: 340px;
+  max-height: 580px;
   /* Position absolue pour éviter le recentrage flex quand le clavier s'ouvre */
   position: absolute;
   top: 50%;
@@ -514,6 +530,9 @@ body.is-inter-level #hud {
   transform: translate(-50%, -50%);
   /* Garantir que le panel reste à cette position fixe */
   margin: 0;
+  /* Scroll interne si nécessaire (ex: clavier mobile) */
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .account-panel-body {
@@ -728,12 +747,16 @@ body.is-inter-level #hud {
 .legend-result-screen {
   align-items: center;
   justify-content: center;
-  padding: clamp(28px, 12vh, 160px) clamp(16px, 6vw, 48px);
+  /* Padding fixe condensé pour rester dans le canvas */
+  padding: 30px 10px;
 }
 
 .inter-level-panel,
 .legend-result-panel {
-  width: min(520px, 94vw);
+  /* Largeur fixe condensée pour rester dans le canvas */
+  width: 320px;
+  max-width: 340px;
+  max-height: 580px;
   gap: 12px;
 }
 
@@ -774,8 +797,10 @@ body.is-inter-level #hud {
 }
 
 .legend-leaderboard-panel {
-  width: min(680px, 95vw);
-  max-height: min(90vh, 760px);
+  /* Dimensions déjà définies dans .panel-shell, .legend-leaderboard-panel ci-dessus */
+  /* Réappliquer ici pour spécificité */
+  width: 340px;
+  max-height: 580px;
   display: flex;
   flex-direction: column;
   gap: 14px;
