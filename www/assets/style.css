@@ -180,9 +180,10 @@ body.is-inter-level #hud {
   border: 1.5px solid rgba(255, 255, 255, 0.2);
   padding: 18px 20px;
   min-width: 260px;
-  /* Contraindre au canvas 394x702 avec marges */
+  /* S'adapter à la taille du canvas tout en restant dans les limites */
+  width: 90%;
   max-width: 374px;
-  max-height: 662px;
+  max-height: 94%;
   text-align: left;
   border-radius: 16px;
   box-shadow: 0 18px 36px rgba(0, 0, 0, 0.45);
@@ -198,11 +199,12 @@ body.is-inter-level #hud {
 
 .panel-shell,
 .legend-leaderboard-panel {
-  /* Largeur fixe condensée pour rester dans le canvas (394px - marges) */
-  width: 374px;
-  /* Hauteur fixe pour éviter le resize quand le clavier s'ouvre */
+  /* S'adapter à la taille du canvas (90% de largeur) */
+  width: 90%;
+  max-width: 374px;
+  /* Hauteur adaptative pour éviter le resize quand le clavier s'ouvre */
   height: auto;
-  max-height: 640px;
+  max-height: 90%;
   /* Empêcher le flex de rétrécir le panel */
   flex-shrink: 0;
   display: flex;
@@ -492,8 +494,8 @@ body.is-inter-level #hud {
 
 .title-buttons {
   pointer-events: auto;
-  /* Largeur fixe pour rester dans le canvas */
-  width: 330px;
+  /* S'adapter à la taille du canvas */
+  width: 85%;
   max-width: 374px;
   display: flex;
   flex-direction: column;
@@ -519,10 +521,10 @@ body.is-inter-level #hud {
 }
 
 .account-panel {
-  /* Largeur fixe condensée pour rester dans le canvas */
-  width: 350px;
+  /* S'adapter à la taille du canvas */
+  width: 88%;
   max-width: 374px;
-  max-height: 640px;
+  max-height: 90%;
   /* Position absolue pour éviter le recentrage flex quand le clavier s'ouvre */
   position: absolute;
   top: 50%;
@@ -753,10 +755,10 @@ body.is-inter-level #hud {
 
 .inter-level-panel,
 .legend-result-panel {
-  /* Largeur fixe condensée pour rester dans le canvas */
-  width: 350px;
+  /* S'adapter à la taille du canvas */
+  width: 88%;
   max-width: 374px;
-  max-height: 640px;
+  max-height: 90%;
   gap: 12px;
 }
 
@@ -799,8 +801,9 @@ body.is-inter-level #hud {
 .legend-leaderboard-panel {
   /* Dimensions déjà définies dans .panel-shell, .legend-leaderboard-panel ci-dessus */
   /* Réappliquer ici pour spécificité */
-  width: 374px;
-  max-height: 640px;
+  width: 90%;
+  max-width: 374px;
+  max-height: 90%;
   display: flex;
   flex-direction: column;
   gap: 14px;
