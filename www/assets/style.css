@@ -138,9 +138,9 @@ body.is-inter-level #hud {
   transition: opacity 0.2s;
   opacity: 0;
   pointer-events: none;
-  /* Contraindre au canvas 360x640 */
-  max-width: 360px;
-  max-height: 640px;
+  /* Contraindre au canvas 394x702 (taille réelle des backgrounds) */
+  max-width: 394px;
+  max-height: 702px;
   overflow: hidden;
 }
 
@@ -180,9 +180,9 @@ body.is-inter-level #hud {
   border: 1.5px solid rgba(255, 255, 255, 0.2);
   padding: 18px 20px;
   min-width: 260px;
-  /* Contraindre au canvas 360x640 avec marges */
-  max-width: 340px;
-  max-height: 600px;
+  /* Contraindre au canvas 394x702 avec marges */
+  max-width: 374px;
+  max-height: 662px;
   text-align: left;
   border-radius: 16px;
   box-shadow: 0 18px 36px rgba(0, 0, 0, 0.45);
@@ -198,11 +198,11 @@ body.is-inter-level #hud {
 
 .panel-shell,
 .legend-leaderboard-panel {
-  /* Largeur fixe condensée pour rester dans le canvas (360px - marges) */
-  width: 340px;
+  /* Largeur fixe condensée pour rester dans le canvas (394px - marges) */
+  width: 374px;
   /* Hauteur fixe pour éviter le resize quand le clavier s'ouvre */
   height: auto;
-  max-height: 580px;
+  max-height: 640px;
   /* Empêcher le flex de rétrécir le panel */
   flex-shrink: 0;
   display: flex;
@@ -493,8 +493,8 @@ body.is-inter-level #hud {
 .title-buttons {
   pointer-events: auto;
   /* Largeur fixe pour rester dans le canvas */
-  width: 300px;
-  max-width: 340px;
+  width: 330px;
+  max-width: 374px;
   display: flex;
   flex-direction: column;
   flex: 0 0 auto;
@@ -520,9 +520,9 @@ body.is-inter-level #hud {
 
 .account-panel {
   /* Largeur fixe condensée pour rester dans le canvas */
-  width: 320px;
-  max-width: 340px;
-  max-height: 580px;
+  width: 350px;
+  max-width: 374px;
+  max-height: 640px;
   /* Position absolue pour éviter le recentrage flex quand le clavier s'ouvre */
   position: absolute;
   top: 50%;
@@ -754,9 +754,9 @@ body.is-inter-level #hud {
 .inter-level-panel,
 .legend-result-panel {
   /* Largeur fixe condensée pour rester dans le canvas */
-  width: 320px;
-  max-width: 340px;
-  max-height: 580px;
+  width: 350px;
+  max-width: 374px;
+  max-height: 640px;
   gap: 12px;
 }
 
@@ -799,8 +799,8 @@ body.is-inter-level #hud {
 .legend-leaderboard-panel {
   /* Dimensions déjà définies dans .panel-shell, .legend-leaderboard-panel ci-dessus */
   /* Réappliquer ici pour spécificité */
-  width: 340px;
-  max-height: 580px;
+  width: 374px;
+  max-height: 640px;
   display: flex;
   flex-direction: column;
   gap: 14px;
