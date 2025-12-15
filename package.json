@@ -23,14 +23,19 @@
     "remove:platform:android": "cordova platform remove android",
     "remove:platform:ios": "cordova platform remove ios"
   },
-  "dependencies": {},
   "devDependencies": {
     "cordova": "^12.0.0",
     "cordova-android": "^12.0.0",
-    "cordova-ios": "^7.0.0"
+    "cordova-ios": "^7.0.0",
+    "cordova-plugin-device": "^2.1.0",
+    "cordova-plugin-network-information": "^3.0.0",
+    "cordova-plugin-splashscreen": "^6.0.1",
+    "cordova-plugin-statusbar": "^2.4.3"
   },
   "cordova": {
-    "platforms": [],
+    "platforms": [
+      "android"
+    ],
     "plugins": {
       "cordova-plugin-device": {},
       "cordova-plugin-statusbar": {},
