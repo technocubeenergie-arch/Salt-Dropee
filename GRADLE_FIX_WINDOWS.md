@@ -15,6 +15,55 @@ Cordova Android 12.0.1 utilise son propre Gradle Wrapper (`platforms\android\gra
 
 ## 🔧 Solution complète (Windows 11 PowerShell)
 
+### ⚡ Solution rapide si Android Studio est installé
+
+**Si vous avez déjà Android Studio**, cette méthode est la plus rapide et propre :
+
+1. **Nettoyer l'environnement (PowerShell Administrateur)**
+```powershell
+# Supprimer GRADLE_HOME
+[Environment]::SetEnvironmentVariable("GRADLE_HOME", $null, "User")
+[Environment]::SetEnvironmentVariable("GRADLE_HOME", $null, "Machine")
+Remove-Item Env:\GRADLE_HOME -ErrorAction SilentlyContinue
+
+# Supprimer shims Chocolatey
+$gradleCmd = Get-Command gradle -ErrorAction SilentlyContinue
+if ($gradleCmd -and $gradleCmd.Source -like "*chocolatey*") {
+    Remove-Item $gradleCmd.Source -Force -ErrorAction Continue
+}
+```
+
+2. **Localiser Gradle dans Android Studio**
+```powershell
+# Chercher Gradle dans le cache Android Studio
+Get-ChildItem "$env:USERPROFILE\.gradle\wrapper\dists" -Directory | ForEach-Object {
+    $gradleBin = Get-ChildItem $_.FullName -Recurse -Filter "gradle.bat" -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($gradleBin) {
+        Write-Host "Gradle trouvé : $($gradleBin.DirectoryName)"
+    }
+}
+```
+
+3. **Build avec Gradle temporaire**
+```powershell
+# Exemple avec Gradle 7.6 (ajustez le chemin selon votre version)
+cd C:\Users\VOTRE_USER\Documents\Salt-Dropee
+$gradlePath = "C:\Users\VOTRE_USER\.gradle\wrapper\dists\gradle-7.6-all\HASH\gradle-7.6\bin"
+$env:Path = "$gradlePath;$env:Path"
+
+# Build Cordova (génère le Gradle Wrapper)
+cordova build android
+
+# Nettoyer le PATH
+$env:Path = $env:Path -replace [regex]::Escape("$gradlePath;"), ""
+```
+
+**Résultat** : Le Gradle Wrapper Cordova est généré dans `platforms\android\gradlew.bat` et les builds futurs l'utiliseront automatiquement !
+
+---
+
+### 🔧 Solution complète si Android Studio n'est pas installé
+
 ### Prérequis
 Ouvrir PowerShell **en tant qu'Administrateur**
 
