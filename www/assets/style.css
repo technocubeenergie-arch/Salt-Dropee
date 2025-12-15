@@ -518,9 +518,11 @@ body.is-inter-level #hud {
 }
 
 .account-panel {
-  /* S'adapter à la taille du canvas */
+  /* DIMENSIONS FIXES pour éviter le shrinking quand le clavier s'ouvre */
   width: 88%;
-  max-height: 90%;
+  max-width: 350px;         /* Largeur fixe max pour mobile */
+  height: 600px;            /* Hauteur FIXE (ne change pas avec clavier) */
+  max-height: 600px;        /* Hauteur FIXE max */
   /* Position absolue pour éviter le recentrage flex quand le clavier s'ouvre */
   position: absolute;
   top: 50%;
@@ -528,6 +530,8 @@ body.is-inter-level #hud {
   transform: translate(-50%, -50%);
   /* Garantir que le panel reste à cette position fixe */
   margin: 0;
+  /* Empêcher le flex de rétrécir le panel */
+  flex-shrink: 0;
   /* Scroll interne si nécessaire (ex: clavier mobile) */
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
