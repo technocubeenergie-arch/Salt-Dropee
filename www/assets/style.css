@@ -541,6 +541,7 @@ body.is-inter-level #hud {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  padding-bottom: 20px; /* Espace en bas pour que le scroll montre tout le contenu */
 }
 .account-auth-header {
   display: flex;
@@ -588,8 +589,9 @@ body.is-inter-level #hud {
   font-size: 0.9rem;
 }
 
-.account-referral-actions {
+.account-panel .account-referral-actions {
   justify-content: flex-start;
+  margin-top: 12px; /* Espacement après le champ de saisie */
 }
 
 .account-form {
