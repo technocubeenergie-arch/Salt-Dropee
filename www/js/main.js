@@ -33,6 +33,16 @@ const {
   SAVE_AND_QUIT_LABELS,
 } = window.SD_CONFIG || {};
 
+const {
+  clamp,
+  hudFontSize,
+  abbr,
+  formatScore,
+  rand,
+  choiceWeighted,
+  waitForPromiseWithTimeout,
+} = window.SD_UTILS || {};
+
 const DEBUG_INPUT_EVENT_TYPES = new Set([
   'pointerdown', 'pointermove', 'pointerup', 'pointercancel',
   'mousedown', 'mousemove', 'mouseup',
@@ -915,42 +925,6 @@ async function persistProgressSnapshot(reason = 'unspecified'){
     console.info(`[progress] save completed${debugFormatContext({ reason, level: levelNumber })}`);
   } catch (error) {
     console.warn('[progress] failed to save progression', error);
-  }
-}
-
-async function waitForPromiseWithTimeout(promise, options = {}) {
-  if (!promise) {
-    return { completed: true, timedOut: false };
-  }
-
-  const { timeoutMs = PROGRESS_PROMISE_TIMEOUT_MS, label = 'async operation' } = options;
-  const timeoutToken = Symbol('progress-timeout');
-  let timeoutId = null;
-
-  const timeoutPromise = new Promise((resolve) => {
-    timeoutId = setTimeout(() => resolve(timeoutToken), Math.max(0, timeoutMs));
-  });
-
-  const wrappedPromise = promise.then(
-    (value) => ({ status: 'fulfilled', value }),
-    (error) => ({ status: 'rejected', error })
-  );
-
-  try {
-    const result = await Promise.race([wrappedPromise, timeoutPromise]);
-    if (result === timeoutToken) {
-      console.warn(`[progress] ${label} timed out after ${timeoutMs}ms`);
-      return { completed: false, timedOut: true };
-    }
-    if (result.status === 'rejected') {
-      console.warn(`[progress] ${label} failed`, result.error);
-      return { completed: true, timedOut: false, error: result.error };
-    }
-    return { completed: true, timedOut: false, value: result.value };
-  } finally {
-    if (timeoutId) {
-      clearTimeout(timeoutId);
-    }
   }
 }
 
@@ -3074,12 +3048,6 @@ function fxMagnetActive(wallet, fxManager) {
   fxManager.active.magnet = effect;
   fxManager.add(effect);
 }
-
-// =====================
-// UTILS
-// =====================
-const rand = (a,b)=> Math.random()*(b-a)+a;
-function choiceWeighted(entries){ const total = entries.reduce((s,e)=>s+e.w,0); let r = Math.random()*total; for (const e of entries){ if ((r-=e.w) <= 0) return e.k; } return entries[entries.length-1].k; }
 
 function computeWalletCenterBounds(wallet){
   const overflow = 60;
