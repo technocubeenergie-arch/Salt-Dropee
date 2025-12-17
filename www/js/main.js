@@ -6,10 +6,6 @@
 // - Removed the legacy canvas background renderer path that was never executed in production.
 // - Factorized duplicated end-of-level transition handling into finalizeLevelTransition().
 
-// --- Détection d'input & utilitaire cross-platform
-const hasTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
-const supportsPointerEvents = typeof window !== 'undefined' && 'PointerEvent' in window;
-const usePointerEventsForMouse = supportsPointerEvents && !hasTouch;
 const gsap = window.gsap;
 
 const {
@@ -43,126 +39,40 @@ const {
   waitForPromiseWithTimeout,
 } = window.SD_UTILS || {};
 
-const DEBUG_INPUT_EVENT_TYPES = new Set([
-  'pointerdown', 'pointermove', 'pointerup', 'pointercancel',
-  'mousedown', 'mousemove', 'mouseup',
-  'touchstart', 'touchmove', 'touchend', 'touchcancel',
-  'click', 'keydown', 'keyup',
-]);
-
-const debugListenerRegistry = new WeakMap();
-
-function debugDescribeElement(target) {
-  if (!target) return 'null';
-  if (target === window) return 'window';
-  if (target === document) return 'document';
-  if (target === document.body) return 'body';
-  if (typeof HTMLElement !== 'undefined' && target instanceof HTMLElement) {
-    if (target.id) return `#${target.id}`;
-    const tag = target.tagName ? target.tagName.toLowerCase() : 'element';
-    if (target.classList && target.classList.length > 0) {
-      const cls = Array.from(target.classList).join('.');
-      return `${tag}.${cls}`;
-    }
-    return tag;
-  }
-  if (target && typeof target.nodeName === 'string') {
-    return target.nodeName.toLowerCase();
-  }
-  return typeof target === 'string' ? target : 'unknown';
-}
-
-function debugFormatContext(context) {
-  if (!context || typeof context !== 'object') return '';
-  const filteredEntries = Object.entries(context).filter(([_, value]) => {
-    const t = typeof value;
-    return value == null || t === 'string' || t === 'number' || t === 'boolean';
-  });
-  if (filteredEntries.length === 0) return '';
-  try {
-    return ' ' + JSON.stringify(Object.fromEntries(filteredEntries));
-  } catch (err) {
-    void err;
-    return '';
-  }
-}
-
-function registerDebugListener(target, type, handler) {
-  if (!target || typeof handler !== 'function') return { count: 0 };
-  let typeMap = debugListenerRegistry.get(target);
-  if (!typeMap) {
-    typeMap = new Map();
-    debugListenerRegistry.set(target, typeMap);
-  }
-  const list = typeMap.get(type) || [];
-  list.push(handler);
-  typeMap.set(type, list);
-  return { count: list.length };
-}
-
-function unregisterDebugListener(target, type, handler) {
-  if (!target || typeof handler !== 'function') return { count: 0 };
-  const typeMap = debugListenerRegistry.get(target);
-  if (!typeMap) return { count: 0 };
-  const list = typeMap.get(type);
-  if (!Array.isArray(list)) return { count: 0 };
-  const idx = list.indexOf(handler);
-  if (idx >= 0) {
-    list.splice(idx, 1);
-    if (list.length === 0) {
-      typeMap.delete(type);
-    } else {
-      typeMap.set(type, list);
-    }
-  }
-  if (typeMap.size === 0) {
-    debugListenerRegistry.delete(target);
-  }
-  return { count: Array.isArray(list) ? list.length : 0 };
-}
-
-function logInputListener(action, target, type, opts, extra) {
-  if (!DEBUG_INPUT_EVENT_TYPES.has(type)) return;
-  const base = extra && typeof extra === 'object' ? { ...extra } : {};
-  if (opts && typeof opts === 'object') {
-    if (typeof opts.passive === 'boolean') base.passive = opts.passive;
-    if (typeof opts.capture === 'boolean') base.capture = opts.capture;
-  }
-  const context = debugFormatContext(base);
-  console.info(`[input] ${action} ${type} -> ${debugDescribeElement(target)}${context}`);
-}
-
-function addEvent(el, type, handler, opts) {
-  if (!el || !type || typeof handler !== 'function') return;
-  const finalOpts = (opts === undefined || opts === null) ? { passive: true } : opts;
-  el.addEventListener(type, handler, finalOpts);
-  let count = 0;
-  if (typeof registerDebugListener === 'function') {
-    const info = registerDebugListener(el, type, handler);
-    if (info && typeof info.count === 'number') {
-      count = info.count;
-    }
-  }
-  if (typeof logInputListener === 'function') {
-    logInputListener('attach', el, type, finalOpts, { count });
-  }
-}
-
-function removeEvent(el, type, handler, opts) {
-  if (!el || !type || typeof handler !== 'function') return;
-  const finalOpts = (opts === undefined || opts === null) ? false : opts;
-  el.removeEventListener(type, handler, finalOpts);
-  let count = 0;
-  if (typeof unregisterDebugListener === 'function') {
-    const info = unregisterDebugListener(el, type, handler);
-    if (info && typeof info.count === 'number') {
-      count = info.count;
-    }
-  }
-  if (typeof logInputListener === 'function') {
-    logInputListener('detach', el, type, typeof finalOpts === 'object' ? finalOpts : {}, { count });
-  }
-}
+const {
+  hasTouch,
+  supportsPointerEvents,
+  usePointerEventsForMouse,
+  debugDescribeElement,
+  debugFormatContext,
+  addEvent,
+  removeEvent,
+  INPUT,
+  input,
+  directionalSourceState,
+  recomputeDirectionalState,
+  resetDirectionalInputs,
+  setActiveControlMode,
+  isTouchZoneModeActive,
+  resetPointerDragState,
+  getRawHorizontalAxis,
+  getEffectiveHorizontalAxis,
+  getWalletCenter,
+  isTouchLikeEvent,
+  isMatchingPointer,
+  handleTouchZoneEvent,
+  getPrimaryPoint,
+  projectClientToCanvas,
+  getCanvasPoint,
+  logPointerTrace,
+  onKeyDown,
+  onKeyUp,
+  onPointerDown,
+  onPointerMove,
+  onPointerUp,
+  disablePlayerInput,
+  enablePlayerInput,
+} = window.SD_INPUT || {};
 
 if (typeof window.openSettings !== "function") {
   window.openSettings = function openSettingsFallback() {
@@ -1042,22 +952,6 @@ const comboVis = {
   flash: 0
 };
 
-const INPUT = usePointerEventsForMouse
-  ? {
-    tap: 'pointerdown',
-    down: 'pointerdown',
-    move: 'pointermove',
-    up: 'pointerup',
-    cancel: 'pointercancel',
-  }
-  : {
-    tap: hasTouch ? 'touchstart' : 'click',
-    down: hasTouch ? 'touchstart' : 'mousedown',
-    move: hasTouch ? 'touchmove' : 'mousemove',
-    up:   hasTouch ? 'touchend'  : 'mouseup',
-    cancel: hasTouch ? 'touchcancel' : null,
-  };
-
 let activeScreen = 'boot';
 let lastNonSettingsScreen = 'boot';
 const NAV_SCREEN_LOG_TARGETS = new Set(['title', 'running', 'paused', 'interLevel', 'settings', 'gameover', 'leaderboard']);
@@ -1147,16 +1041,6 @@ function setActiveScreen(next, context = {}) {
   }
   setTitleAccountAnchorVisible(normalized === 'title');
   return normalized;
-}
-
-function getPrimaryPoint(evt) {
-  if (hasTouch) {
-    const touches = evt.changedTouches || evt.touches;
-    if (touches && touches.length > 0) {
-      return touches[0];
-    }
-  }
-  return evt;
 }
 
 let canvas;
@@ -1551,54 +1435,6 @@ async function loadLegendBoostsForSession() {
 
 // Spawning/inputs/animations toggles
 let spawningEnabled = true;
-let inputEnabled = true;
-
-const directionalSourceState = {
-  keyboardLeft: false,
-  keyboardRight: false,
-  touchLeft: false,
-  touchRight: false,
-};
-
-let leftPressed = false;
-let rightPressed = false;
-let activeControlMode = hasTouch ? 'swipe' : 'swipe';
-
-function recomputeDirectionalState() {
-  leftPressed = directionalSourceState.keyboardLeft || directionalSourceState.touchLeft;
-  rightPressed = directionalSourceState.keyboardRight || directionalSourceState.touchRight;
-}
-
-function resetDirectionalInputs() {
-  directionalSourceState.keyboardLeft = false;
-  directionalSourceState.keyboardRight = false;
-  directionalSourceState.touchLeft = false;
-  directionalSourceState.touchRight = false;
-  leftPressed = false;
-  rightPressed = false;
-}
-
-function setActiveControlMode(mode) {
-  const normalized = (mode === 'zones' && hasTouch) ? 'zones' : 'swipe';
-  activeControlMode = normalized;
-
-  if (normalized === 'zones') {
-    directionalSourceState.touchLeft = false;
-    directionalSourceState.touchRight = false;
-    recomputeDirectionalState();
-    if (typeof input !== 'undefined') {
-      resetPointerDragState({ releaseCapture: true });
-    }
-  } else if (directionalSourceState.touchLeft || directionalSourceState.touchRight) {
-    directionalSourceState.touchLeft = false;
-    directionalSourceState.touchRight = false;
-    recomputeDirectionalState();
-  }
-}
-
-function isTouchZoneModeActive() {
-  return hasTouch && activeControlMode === 'zones';
-}
 
 function stopSpawningItems(){
   spawningEnabled = false;
@@ -1611,16 +1447,6 @@ function pauseAllAnimations(){
   if (window.gsap?.globalTimeline) {
     gsap.globalTimeline.pause();
   }
-}
-
-function disablePlayerInput(reason = 'unspecified'){
-  inputEnabled = false;
-  console.info(`[input] disable player input${debugFormatContext({ reason, screen: activeScreen })}`);
-  if (typeof input !== "undefined") {
-    resetPointerDragState({ releaseCapture: true });
-    input.dash = false;
-  }
-  resetDirectionalInputs();
 }
 
 function resumeAllAnimations(){
@@ -1649,15 +1475,6 @@ async function ensureLegendVisualsReady(options = {}) {
   if (tasks.length === 0) return true;
   await Promise.all(tasks);
   return true;
-}
-
-function enablePlayerInput(reason = 'unspecified'){
-  inputEnabled = true;
-  console.info(`[input] enable player input${debugFormatContext({ reason, screen: activeScreen })}`);
-  if (typeof input !== "undefined") {
-    resetPointerDragState({ releaseCapture: true });
-    input.dash = false;
-  }
 }
 
 function hardResetRuntime(){
@@ -3084,62 +2901,6 @@ let SCALE = 1, VIEW_W = BASE_W, VIEW_H = BASE_H;
 let targetX = BASE_W / 2;
 const WR = { x: 0, y: 0, w: 0, h: 0 };
 
-function describeCanvasRegionFromPoint(point) {
-  if (!point || !Number.isFinite(point.y)) return '#canvas';
-  const baseH = BASE_H;
-  const y = point.y;
-  const wallet = game?.wallet;
-  const walletBottom = wallet ? (wallet.y + wallet.h) : (baseH - 96);
-  const footerThreshold = baseH - 4;
-  if (y >= footerThreshold) {
-    return '#footer';
-  }
-  if (y >= walletBottom) {
-    return '#controlZone';
-  }
-  return '#canvas';
-}
-
-function classifyPointerTarget(evt, point) {
-  if (!evt) return 'unknown';
-  const target = evt.target;
-  if (target === window) return 'window';
-  if (target === document || target === document?.body) return 'document';
-  const closest = typeof target?.closest === 'function' ? (sel) => target.closest(sel) : () => null;
-  if (closest('#interLevelScreen')) return '#interLevel';
-  if (closest('#legendResultScreen')) return '#interLevel';
-  if (closest('#overlay')) {
-    if (activeScreen === 'settings') return '#settings';
-    if (activeScreen === 'paused') return '#pauseOverlay';
-    if (activeScreen === 'title') return '#titleOverlay';
-    if (activeScreen === 'gameover') return '#gameoverOverlay';
-    if (activeScreen === 'legend') return '#legendOverlay';
-    return '#overlay';
-  }
-  if (canvas && (target === canvas || closest('#gameCanvas'))) {
-    return describeCanvasRegionFromPoint(point);
-  }
-  if (target && target.id) return `#${target.id}`;
-  return debugDescribeElement(target);
-}
-
-function logPointerTrace(eventName, evt, meta = {}) {
-  const { point, ...rest } = (meta && typeof meta === 'object') ? meta : {};
-  const logicalTarget = classifyPointerTarget(evt, point);
-  const info = { screen: activeScreen, ...rest };
-  if (typeof evt?.pointerId === 'number') info.pointerId = evt.pointerId;
-  if (typeof evt?.pointerType === 'string') info.pointerType = evt.pointerType;
-  if (!info.pointerType && typeof evt?.type === 'string') {
-    if (evt.type.startsWith('mouse')) info.pointerType = 'mouse';
-    if (evt.type.startsWith('touch')) info.pointerType = 'touch';
-  }
-  if (point && Number.isFinite(point.x) && Number.isFinite(point.y)) {
-    info.x = Math.round(point.x);
-    info.y = Math.round(point.y);
-  }
-  console.info(`[input] ${eventName} target=${logicalTarget}${debugFormatContext(info)}`);
-}
-
 function positionHUD(){
   const canvasEl = document.getElementById('gameCanvas');
   const hud = document.getElementById('hud');
@@ -3630,259 +3391,6 @@ window.hideInterLevelScreen = hideInterLevelScreen;
 // =====================
 // INPUT
 // =====================
-const input = {
-  dash: false,
-  dragging: false,
-  pointerLastX: null,
-  pointerVirtualX: null,
-  pointerInvertState: false,
-  pointerId: null,
-};
-
-function resetPointerDragState(options = {}) {
-  const { releaseCapture = false, pointerId = null } = options;
-  const activePointerId = Number.isInteger(pointerId) ? pointerId : input.pointerId;
-
-  if (
-    releaseCapture &&
-    Number.isInteger(activePointerId) &&
-    canvas &&
-    typeof canvas.releasePointerCapture === 'function'
-  ) {
-    try {
-      canvas.releasePointerCapture(activePointerId);
-    } catch (err) {
-      // ignore capture release errors
-    }
-  }
-
-  input.dragging = false;
-  input.pointerLastX = null;
-  input.pointerVirtualX = null;
-  input.pointerInvertState = controlsAreInverted();
-  input.pointerId = null;
-}
-
-function getRawHorizontalAxis() {
-  if (leftPressed && !rightPressed) return -1;
-  if (rightPressed && !leftPressed) return 1;
-  return 0;
-}
-
-function getEffectiveHorizontalAxis() {
-  const axis = getRawHorizontalAxis();
-  return controlsAreInverted() ? -axis : axis;
-}
-
-function getWalletCenter(walletRef) {
-  if (!walletRef) return BASE_W / 2;
-  return walletRef.x + walletRef.w / 2;
-}
-
-function isTouchLikeEvent(evt) {
-  if (!evt) return false;
-  if (typeof evt.pointerType === 'string') {
-    return evt.pointerType === 'touch';
-  }
-  const type = evt.type;
-  return typeof type === 'string' && type.startsWith('touch');
-}
-
-function isMatchingPointer(evt) {
-  if (!evt || typeof evt.pointerId !== 'number') return true;
-  if (!Number.isInteger(input.pointerId)) return true;
-  return evt.pointerId === input.pointerId;
-}
-
-function handleTouchZoneEvent(evt) {
-  if (!isTouchZoneModeActive()) {
-    if (directionalSourceState.touchLeft || directionalSourceState.touchRight) {
-      directionalSourceState.touchLeft = false;
-      directionalSourceState.touchRight = false;
-      recomputeDirectionalState();
-    }
-    return false;
-  }
-
-  if (!inputEnabled) {
-    if (directionalSourceState.touchLeft || directionalSourceState.touchRight) {
-      directionalSourceState.touchLeft = false;
-      directionalSourceState.touchRight = false;
-      recomputeDirectionalState();
-    }
-    return true;
-  }
-
-  const wallet = game?.wallet;
-  const touches = evt?.touches || evt?.changedTouches || (evt?.pointerType === 'touch' ? [evt] : null);
-  if (!wallet || !touches) {
-    if (directionalSourceState.touchLeft || directionalSourceState.touchRight) {
-      directionalSourceState.touchLeft = false;
-      directionalSourceState.touchRight = false;
-      recomputeDirectionalState();
-    }
-    return true;
-  }
-
-  const zoneTop = clamp(wallet.y + wallet.h, 0, BASE_H);
-  const zoneBottom = BASE_H;
-  const zoneHeight = zoneBottom - zoneTop;
-
-  let leftActive = false;
-  let rightActive = false;
-
-  if (zoneHeight > 0 && canvas) {
-    for (let i = 0; i < touches.length; i += 1) {
-      const touch = touches[i];
-      if (!touch) continue;
-      const point = projectClientToCanvas(touch.clientX, touch.clientY);
-      if (point.y < zoneTop || point.y > zoneBottom) continue;
-      if (point.x < BASE_W / 2) {
-        leftActive = true;
-      } else {
-        rightActive = true;
-      }
-      if (leftActive && rightActive) break;
-    }
-  }
-
-  directionalSourceState.touchLeft = leftActive;
-  directionalSourceState.touchRight = rightActive;
-  recomputeDirectionalState();
-
-  return true;
-}
-function onKeyDown(e){
-  if (shouldBlockGameplayShortcuts(e)) return;
-  const allowTitleStart = (e.code === 'Enter');
-  const canTriggerTitleStart = allowTitleStart && activeScreen === 'title';
-  if (!inputEnabled && !canTriggerTitleStart) return;
-
-  if (!inputEnabled && canTriggerTitleStart){
-    const g = Game.instance;
-    if (g && g.state==='title'){
-      playSound("click");
-      requestAnimationFrame(()=> g.uiStartFromTitle());
-    }
-    return;
-  }
-
-  let changed = false;
-  if (e.code === 'ArrowLeft' || e.code === 'KeyA'){
-    directionalSourceState.keyboardLeft = true;
-    changed = true;
-  }
-  if (e.code === 'ArrowRight' || e.code === 'KeyD'){
-    directionalSourceState.keyboardRight = true;
-    changed = true;
-  }
-  if (changed) recomputeDirectionalState();
-  if (e.code === 'Space') input.dash = true;
-  if (canTriggerTitleStart){
-    const g = Game.instance;
-    if (g && g.state==='title'){
-      playSound("click");
-      requestAnimationFrame(()=> g.uiStartFromTitle());
-    }
-  }
-}
-function onKeyUp(e){
-  if (shouldBlockGameplayShortcuts(e)) return;
-  let changed = false;
-  if (e.code === 'ArrowLeft' || e.code === 'KeyA') {
-    directionalSourceState.keyboardLeft = false;
-    changed = true;
-  }
-  if (e.code === 'ArrowRight' || e.code === 'KeyD') {
-    directionalSourceState.keyboardRight = false;
-    changed = true;
-  }
-  if (changed) recomputeDirectionalState();
-  if (e.code === 'Space') input.dash = false;
-}
-function onPointerDown(e){
-  const point = getCanvasPoint(e);
-  if (isTouchLikeEvent(e) && handleTouchZoneEvent(e)) {
-    logPointerTrace('pointerdown', e, { point, status: 'touch-zone-delegated' });
-    return;
-  }
-
-  if (!inputEnabled) {
-    logPointerTrace('pointerdown', e, { point, status: 'input-disabled' });
-    resetPointerDragState({ releaseCapture: true });
-    return;
-  }
-
-  logPointerTrace('pointerdown', e, { point, status: 'drag-start' });
-  resetPointerDragState({ releaseCapture: true });
-
-  if (typeof e.pointerId === 'number') {
-    input.pointerId = e.pointerId;
-    const target = e.target;
-    if (target && typeof target.setPointerCapture === 'function') {
-      try {
-        target.setPointerCapture(e.pointerId);
-      } catch (err) {
-        // ignore capture errors
-      }
-    }
-  } else {
-    input.pointerId = null;
-  }
-
-  input.dragging = true;
-  input.pointerLastX = point.x;
-  input.pointerInvertState = controlsAreInverted();
-  if (game && game.wallet) {
-    input.pointerVirtualX = point.x;
-    animateWalletToCenter(game.wallet, input.pointerVirtualX);
-  } else {
-    input.pointerVirtualX = point.x;
-  }
-}
-function onPointerMove(e){
-  if (isTouchLikeEvent(e) && handleTouchZoneEvent(e)) return;
-  if (!inputEnabled || !input.dragging || !isMatchingPointer(e)) return;
-  const point = getCanvasPoint(e);
-  if (!game || !game.wallet) return;
-
-  const inverted = controlsAreInverted();
-  if (!Number.isFinite(input.pointerVirtualX)) {
-    input.pointerVirtualX = Number.isFinite(targetX)
-      ? targetX
-      : getWalletCenter(game.wallet);
-  }
-
-  if (inverted !== input.pointerInvertState || !Number.isFinite(input.pointerLastX)) {
-    input.pointerInvertState = inverted;
-    input.pointerLastX = point.x;
-    input.pointerVirtualX = Number.isFinite(targetX)
-      ? targetX
-      : getWalletCenter(game.wallet);
-  }
-
-  const delta = point.x - input.pointerLastX;
-  input.pointerLastX = point.x;
-
-  const direction = inverted ? -1 : 1;
-  input.pointerVirtualX += direction * delta;
-  animateWalletToCenter(game.wallet, input.pointerVirtualX);
-}
-function onPointerUp(e){
-  const point = getCanvasPoint(e);
-  if (isTouchLikeEvent(e) && handleTouchZoneEvent(e)) {
-    logPointerTrace('pointerup', e, { point, status: 'touch-zone-delegated' });
-    return;
-  }
-  if (!isMatchingPointer(e) && Number.isInteger(input.pointerId)) {
-    logPointerTrace('pointerup', e, { point, status: 'non-matching-pointer' });
-    return;
-  }
-  logPointerTrace('pointerup', e, { point, status: 'release' });
-  const pointerId = typeof e.pointerId === 'number' ? e.pointerId : null;
-  resetPointerDragState({ releaseCapture: true, pointerId });
-}
-
 const TG = window.Telegram?.WebApp; if (TG){ try{ TG.ready(); TG.expand(); }catch(e){} }
 
 // =====================
@@ -5764,30 +5272,6 @@ class Game{
 }
 
 function checkAABB(a,b){ return a.x<b.x+b.w && a.x+a.w>b.x && a.y<b.y+b.h && a.y+a.h>b.y; }
-
-function projectClientToCanvas(clientX, clientY) {
-  if (!canvas) return { x: 0, y: 0 };
-  const rect = canvas.getBoundingClientRect();
-  const width = rect.width || 0;
-  const height = rect.height || 0;
-  if (width === 0 || height === 0) {
-    return { x: BASE_W / 2, y: BASE_H / 2 };
-  }
-  if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) {
-    return { x: BASE_W / 2, y: BASE_H / 2 };
-  }
-  return {
-    x: ((clientX - rect.left) / width) * BASE_W,
-    y: ((clientY - rect.top) / height) * BASE_H,
-  };
-}
-
-function getCanvasPoint(evt){
-  if (!canvas) return { x:0, y:0 };
-  const point = getPrimaryPoint(evt);
-  if (!point) return { x:0, y:0 };
-  return projectClientToCanvas(point.clientX, point.clientY);
-}
 
 async function startGame(){
   if (window.__saltDroppeeStarted) return;
