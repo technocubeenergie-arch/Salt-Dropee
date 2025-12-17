@@ -638,28 +638,6 @@ window.setSoundEnabled = function patchedSetSoundEnabled(enabled) {
 
 // ---- HUD CONFIG (barre compacte) ----
 // Utils nécessaires au HUD
-function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
-
-// Approche “clamp canvas” (pas CSS) pour la taille de police
-function hudFontSize(baseW) {
-  const vw = baseW * HUD_CONFIG.fontVwPct; // ex. 2.6% de largeur
-  return clamp(Math.round(vw), HUD_CONFIG.fontMin, HUD_CONFIG.fontMax);
-}
-
-// Abréviation score (12.3k / 1.2M)
-function abbr(n) {
-  if (n >= 1e9) return (n/1e9).toFixed(1).replace(/\.0$/,'') + "B";
-  if (n >= 1e6) return (n/1e6).toFixed(1).replace(/\.0$/,'') + "M";
-  if (n >= 1e5) return (n/1e3).toFixed(1).replace(/\.0$/,'') + "k";
-  return n.toLocaleString();
-}
-
-function formatScore(value){
-  const num = Math.round(Number.isFinite(value) ? value : Number(value) || 0);
-  if (num === 0) return '0';
-  if (num < 0) return '-' + abbr(Math.abs(num));
-  return abbr(num);
-}
 
 function setHUDScore(v){
   const el = document.getElementById('hudScore');
