@@ -729,6 +729,29 @@ const BonusIcons = {
   anvil: AnvilImg,
 };
 
+window.SD_RENDER = window.SD_RENDER || {};
+SD_RENDER.ITEM_ASSETS = {
+  good: {
+    bronze: { image: BronzeImg, ready: () => bronzeReady },
+    silver: { image: SilverImg, ready: () => silverReady },
+    gold: { image: GoldImg, ready: () => goldReady },
+    diamond: { image: DiamondImg, ready: () => diamondReady },
+  },
+  bad: {
+    bomb: { image: BombImg, ready: () => bombReady },
+    shitcoin: { image: ShitcoinImg, ready: () => shitcoinReady },
+    rugpull: { image: RugpullImg, ready: () => rugpullReady },
+    fakeAirdrop: { image: FakeADImg, ready: () => fakeADReady },
+    anvil: { image: AnvilImg, ready: () => anvilReady }
+  },
+  power: {
+    magnet: { image: MagnetImg, ready: () => magnetReady },
+    x2: { image: X2Img, ready: () => x2Ready },
+    shield: { image: ShieldImg, ready: () => shieldReady },
+    timeShard: { image: TimeImg, ready: () => timeReady }
+  }
+};
+
 const POWERUP_PICKUP_ASSETS = {
   magnet: { image: MagnetImg, ready: () => magnetReady },
   x2: { image: x2Image, ready: () => x2Image.complete },

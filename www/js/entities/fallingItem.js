@@ -6,25 +6,29 @@
   const getCurrentIntraLevelSpeedMultiplier = global.getCurrentIntraLevelSpeedMultiplier || (() => 1);
   const NEGATIVE_TYPES = global.NEGATIVE_TYPES || new Set();
 
+  function resolveItemAsset(kind, subtype) {
+    return global.SD_RENDER?.ITEM_ASSETS?.[kind]?.[subtype];
+  }
+
   const ITEM_ASSETS = {
     good: {
-      bronze: { getImg: () => global.BronzeImg, ready: () => global.bronzeReady, fallback: (g, x, y, w, h) => { g.fillStyle = '#c07a45'; g.beginPath(); g.arc(x + w / 2, y + h / 2, Math.min(w, h) / 2, 0, Math.PI * 2); g.fill(); } },
-      silver: { getImg: () => global.SilverImg, ready: () => global.silverReady, fallback: (g, x, y, w, h) => { g.fillStyle = '#cfd6e6'; g.beginPath(); g.arc(x + w / 2, y + h / 2, Math.min(w, h) / 2, 0, Math.PI * 2); g.fill(); } },
-      gold: { getImg: () => global.GoldImg, ready: () => global.goldReady, fallback: (g, x, y, w, h) => { g.fillStyle = '#f2c14e'; g.beginPath(); g.arc(x + w / 2, y + h / 2, Math.min(w, h) / 2, 0, Math.PI * 2); g.fill(); } },
-      diamond: { getImg: () => global.DiamondImg, ready: () => global.diamondReady, fallback: (g, x, y, w, h) => { g.fillStyle = '#a8e6ff'; g.beginPath(); g.arc(x + w / 2, y + h / 2, Math.min(w, h) / 2, 0, Math.PI * 2); g.fill(); } },
+      bronze: { getImg: () => resolveItemAsset('good', 'bronze')?.image, ready: () => resolveItemAsset('good', 'bronze')?.ready?.(), fallback: (g, x, y, w, h) => { g.fillStyle = '#c07a45'; g.beginPath(); g.arc(x + w / 2, y + h / 2, Math.min(w, h) / 2, 0, Math.PI * 2); g.fill(); } },
+      silver: { getImg: () => resolveItemAsset('good', 'silver')?.image, ready: () => resolveItemAsset('good', 'silver')?.ready?.(), fallback: (g, x, y, w, h) => { g.fillStyle = '#cfd6e6'; g.beginPath(); g.arc(x + w / 2, y + h / 2, Math.min(w, h) / 2, 0, Math.PI * 2); g.fill(); } },
+      gold: { getImg: () => resolveItemAsset('good', 'gold')?.image, ready: () => resolveItemAsset('good', 'gold')?.ready?.(), fallback: (g, x, y, w, h) => { g.fillStyle = '#f2c14e'; g.beginPath(); g.arc(x + w / 2, y + h / 2, Math.min(w, h) / 2, 0, Math.PI * 2); g.fill(); } },
+      diamond: { getImg: () => resolveItemAsset('good', 'diamond')?.image, ready: () => resolveItemAsset('good', 'diamond')?.ready?.(), fallback: (g, x, y, w, h) => { g.fillStyle = '#a8e6ff'; g.beginPath(); g.arc(x + w / 2, y + h / 2, Math.min(w, h) / 2, 0, Math.PI * 2); g.fill(); } },
     },
     bad: {
-      bomb: { getImg: () => global.BombImg, ready: () => global.bombReady, fallback: (g, x, y, w, h) => { g.fillStyle = '#333'; g.fillRect(x, y, w, h); } },
-      shitcoin: { getImg: () => global.ShitcoinImg, ready: () => global.shitcoinReady, fallback: (g, x, y, w, h) => { g.fillStyle = '#8a6b3a'; g.beginPath(); g.arc(x + w / 2, y + h / 2, Math.min(w, h) / 2, 0, Math.PI * 2); g.fill(); } },
-      rugpull: { getImg: () => global.RugpullImg, ready: () => global.rugpullReady, fallback: (g, x, y, w, h) => { g.fillStyle = '#4a3d7a'; g.beginPath(); g.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2); g.fill(); } },
-      fakeAirdrop: { getImg: () => global.FakeADImg, ready: () => global.fakeADReady, fallback: (g, x, y, w, h) => { g.fillStyle = '#6b7cff'; g.beginPath(); g.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2); g.fill(); g.fillStyle = '#fff'; g.fillRect(x + w / 2 - 3, y + h / 2 - 3, 6, 6); } },
-      anvil: { getImg: () => global.AnvilImg, ready: () => global.anvilReady, fallback: (g, x, y, w, h) => { g.fillStyle = '#60656f'; g.beginPath(); g.moveTo(x + 2, y + h * 0.7); g.lineTo(x + w - 2, y + h * 0.7); g.lineTo(x + w * 0.7, y + h * 0.4); g.lineTo(x + w * 0.3, y + h * 0.4); g.closePath(); g.fill(); } },
+      bomb: { getImg: () => resolveItemAsset('bad', 'bomb')?.image, ready: () => resolveItemAsset('bad', 'bomb')?.ready?.(), fallback: (g, x, y, w, h) => { g.fillStyle = '#333'; g.fillRect(x, y, w, h); } },
+      shitcoin: { getImg: () => resolveItemAsset('bad', 'shitcoin')?.image, ready: () => resolveItemAsset('bad', 'shitcoin')?.ready?.(), fallback: (g, x, y, w, h) => { g.fillStyle = '#8a6b3a'; g.beginPath(); g.arc(x + w / 2, y + h / 2, Math.min(w, h) / 2, 0, Math.PI * 2); g.fill(); } },
+      rugpull: { getImg: () => resolveItemAsset('bad', 'rugpull')?.image, ready: () => resolveItemAsset('bad', 'rugpull')?.ready?.(), fallback: (g, x, y, w, h) => { g.fillStyle = '#4a3d7a'; g.beginPath(); g.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2); g.fill(); } },
+      fakeAirdrop: { getImg: () => resolveItemAsset('bad', 'fakeAirdrop')?.image, ready: () => resolveItemAsset('bad', 'fakeAirdrop')?.ready?.(), fallback: (g, x, y, w, h) => { g.fillStyle = '#6b7cff'; g.beginPath(); g.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2); g.fill(); g.fillStyle = '#fff'; g.fillRect(x + w / 2 - 3, y + h / 2 - 3, 6, 6); } },
+      anvil: { getImg: () => resolveItemAsset('bad', 'anvil')?.image, ready: () => resolveItemAsset('bad', 'anvil')?.ready?.(), fallback: (g, x, y, w, h) => { g.fillStyle = '#60656f'; g.beginPath(); g.moveTo(x + 2, y + h * 0.7); g.lineTo(x + w - 2, y + h * 0.7); g.lineTo(x + w * 0.7, y + h * 0.4); g.lineTo(x + w * 0.3, y + h * 0.4); g.closePath(); g.fill(); } },
     },
     power: {
-      magnet: { getImg: () => global.MagnetImg, ready: () => global.magnetReady, fallback: (g, x, y, w, h) => { g.fillStyle = '#00d1ff'; g.fillRect(x, y, w, h); } },
-      x2: { getImg: () => global.X2Img, ready: () => global.x2Ready, fallback: (g, x, y, w, h) => { g.fillStyle = '#00d1ff'; g.fillRect(x, y, w, h); } },
-      shield: { getImg: () => global.ShieldImg, ready: () => global.shieldReady, fallback: (g, x, y, w, h) => { g.fillStyle = '#00d1ff'; g.fillRect(x, y, w, h); } },
-      timeShard: { getImg: () => global.TimeImg, ready: () => global.timeReady, fallback: (g, x, y, w, h) => { g.fillStyle = '#00d1ff'; g.fillRect(x, y, w, h); } },
+      magnet: { getImg: () => resolveItemAsset('power', 'magnet')?.image, ready: () => resolveItemAsset('power', 'magnet')?.ready?.(), fallback: (g, x, y, w, h) => { g.fillStyle = '#00d1ff'; g.fillRect(x, y, w, h); } },
+      x2: { getImg: () => resolveItemAsset('power', 'x2')?.image, ready: () => resolveItemAsset('power', 'x2')?.ready?.(), fallback: (g, x, y, w, h) => { g.fillStyle = '#00d1ff'; g.fillRect(x, y, w, h); } },
+      shield: { getImg: () => resolveItemAsset('power', 'shield')?.image, ready: () => resolveItemAsset('power', 'shield')?.ready?.(), fallback: (g, x, y, w, h) => { g.fillStyle = '#00d1ff'; g.fillRect(x, y, w, h); } },
+      timeShard: { getImg: () => resolveItemAsset('power', 'timeShard')?.image, ready: () => resolveItemAsset('power', 'timeShard')?.ready?.(), fallback: (g, x, y, w, h) => { g.fillStyle = '#00d1ff'; g.fillRect(x, y, w, h); } },
     },
   };
 
