@@ -448,9 +448,11 @@
           evt.preventDefault();
           evt.stopPropagation();
           playSound("click");
+          signOutBtn.disabled = true;
 
           if (logoutInFlight) {
             logLogoutClickIgnored('in-flight', { screen: currentScreen });
+            signOutBtn.disabled = false;
             return;
           }
 
@@ -458,6 +460,7 @@
           if (!liveService || typeof liveService.signOut !== 'function') {
             logLogoutClickIgnored('service-unavailable', { screen: currentScreen });
             setMessage('Service indisponible.', 'error');
+            signOutBtn.disabled = false;
             return;
           }
 
@@ -506,6 +509,8 @@
 
             if (!result?.success) {
               setMessage(result?.message || 'Déconnexion impossible.', 'error');
+            } else if (typeof onRerender === 'function') {
+              await onRerender({ mode: 'signin' });
             }
           } catch (error) {
             console.error('[auth] logout handler failed', error);
@@ -516,6 +521,7 @@
               clearTimeout(logoutWatchdogTimer);
               logoutWatchdogTimer = null;
             }
+            signOutBtn.disabled = false;
           }
         }, { passive: false });
       }
