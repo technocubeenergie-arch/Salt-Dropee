@@ -729,6 +729,29 @@ const BonusIcons = {
   anvil: AnvilImg,
 };
 
+window.SD_RENDER = window.SD_RENDER || {};
+SD_RENDER.ITEM_ASSETS = {
+  good: {
+    bronze: { image: BronzeImg, ready: () => bronzeReady },
+    silver: { image: SilverImg, ready: () => silverReady },
+    gold: { image: GoldImg, ready: () => goldReady },
+    diamond: { image: DiamondImg, ready: () => diamondReady },
+  },
+  bad: {
+    bomb: { image: BombImg, ready: () => bombReady },
+    shitcoin: { image: ShitcoinImg, ready: () => shitcoinReady },
+    rugpull: { image: RugpullImg, ready: () => rugpullReady },
+    fakeAirdrop: { image: FakeADImg, ready: () => fakeADReady },
+    anvil: { image: AnvilImg, ready: () => anvilReady }
+  },
+  power: {
+    magnet: { image: MagnetImg, ready: () => magnetReady },
+    x2: { image: X2Img, ready: () => x2Ready },
+    shield: { image: ShieldImg, ready: () => shieldReady },
+    timeShard: { image: TimeImg, ready: () => timeReady }
+  }
+};
+
 const POWERUP_PICKUP_ASSETS = {
   magnet: { image: MagnetImg, ready: () => magnetReady },
   x2: { image: x2Image, ready: () => x2Image.complete },
@@ -1985,157 +2008,11 @@ const DefaultSettings = { sound:true, haptics:true, sensitivity:1.0, controlMode
 function loadSettings(){ try{ const raw = JSON.parse(localStorage.getItem(LS.settings))||{}; const merged = { ...DefaultSettings, ...raw }; merged.controlMode = (merged.controlMode === 'zones' && hasTouch) ? 'zones' : 'swipe'; return merged; }catch(e){ return {...DefaultSettings}; } }
 function saveSettings(s){ try{ localStorage.setItem(LS.settings, JSON.stringify(s)); }catch(e){} }
 
-// === Assets registry pour simplifier le rendu ===
-const ITEM_ASSETS = {
-  good: {
-    bronze: { img: BronzeImg, ready: ()=>bronzeReady, fallback: (g,x,y,w,h)=>{ g.fillStyle='#c07a45'; g.beginPath(); g.arc(x+w/2, y+h/2, Math.min(w,h)/2, 0, Math.PI*2); g.fill(); } },
-    silver: { img: SilverImg, ready: ()=>silverReady, fallback: (g,x,y,w,h)=>{ g.fillStyle='#cfd6e6'; g.beginPath(); g.arc(x+w/2, y+h/2, Math.min(w,h)/2, 0, Math.PI*2); g.fill(); } },
-    gold:   { img: GoldImg,   ready: ()=>goldReady,   fallback: (g,x,y,w,h)=>{ g.fillStyle='#f2c14e'; g.beginPath(); g.arc(x+w/2, y+h/2, Math.min(w,h)/2, 0, Math.PI*2); g.fill(); } },
-    diamond:{ img: DiamondImg,ready: ()=>diamondReady,fallback: (g,x,y,w,h)=>{ g.fillStyle='#a8e6ff'; g.beginPath(); g.arc(x+w/2, y+h/2, Math.min(w,h)/2, 0, Math.PI*2); g.fill(); } }
-  },
-  bad: {
-    bomb: { img: BombImg, ready: ()=>bombReady, fallback: (g,x,y,w,h)=>{ g.fillStyle='#333'; g.fillRect(x, y, w, h); } },
-    shitcoin: { img: ShitcoinImg, ready: ()=>shitcoinReady, fallback: (g,x,y,w,h)=>{ g.fillStyle='#8a6b3a'; g.beginPath(); g.arc(x+w/2, y+h/2, Math.min(w,h)/2, 0, Math.PI*2); g.fill(); } },
-    rugpull: { img: RugpullImg, ready: ()=>rugpullReady, fallback: (g,x,y,w,h)=>{ g.fillStyle='#4a3d7a'; g.beginPath(); g.ellipse(x+w/2, y+h/2, w/2, h/2, 0, 0, Math.PI*2); g.fill(); } },
-    fakeAirdrop: { img: FakeADImg, ready: ()=>fakeADReady, fallback: (g,x,y,w,h)=>{ g.fillStyle='#6b7cff'; g.beginPath(); g.ellipse(x+w/2, y+h/2, w/2, h/2, 0, 0, Math.PI*2); g.fill(); g.fillStyle='#fff'; g.fillRect(x+w/2-3, y+h/2-3, 6, 6); } },
-    anvil: { img: AnvilImg, ready: ()=>anvilReady, fallback: (g,x,y,w,h)=>{ g.fillStyle='#60656f'; g.beginPath(); g.moveTo(x+2, y+h*0.7); g.lineTo(x+w-2, y+h*0.7); g.lineTo(x+w*0.7, y+h*0.4); g.lineTo(x+w*0.3, y+h*0.4); g.closePath(); g.fill(); } },
-  },
-  power: {
-    magnet: { img: MagnetImg, ready: ()=>magnetReady, fallback: (g,x,y,w,h)=>{ g.fillStyle='#00d1ff'; g.fillRect(x,y,w,h); } },
-    x2:     { img: X2Img,     ready: ()=>x2Ready,     fallback: (g,x,y,w,h)=>{ g.fillStyle='#00d1ff'; g.fillRect(x,y,w,h); } },
-    shield: { img: ShieldImg, ready: ()=>shieldReady, fallback: (g,x,y,w,h)=>{ g.fillStyle='#00d1ff'; g.fillRect(x,y,w,h); } },
-    timeShard:{img: TimeImg,  ready: ()=>timeReady,   fallback: (g,x,y,w,h)=>{ g.fillStyle='#00d1ff'; g.fillRect(x,y,w,h); } },
-  }
-};
-
-function drawItemSprite(g, kind, subtype, x, y, w, h){
-  const entry = ITEM_ASSETS[kind]?.[subtype];
-  if (entry){ const im = entry.img; if (im && im.complete) { g.drawImage(im, x, y, w, h); } else { entry.fallback(g,x,y,w,h); } return; }
-  // Fallback ultime
-  g.fillStyle = '#00d1ff'; g.fillRect(x,y,w,h);
-}
-
-class FallingItem{
-  constructor(game, kind, subtype, x, y){
-    this.g = game;
-    this.kind = kind;
-    this.subtype = subtype;
-    this.type = subtype;
-    this.x = x;
-    this.y = y;
-    this.spawnScale = (CONFIG.items?.spawnScale != null) ? CONFIG.items.spawnScale : 0.30;
-    this.maxScale = 1;
-    this.scale = this.spawnScale;
-    this.alive = true;
-    this._dead = false;
-    this._tween = null;
-    this.vx = 0;
-    this.isNegative = NEGATIVE_TYPES.has(subtype);
-
-    this.startY = y;
-    this.endY = BASE_H - 80;
-    this.fallDuration = Math.max(0.35, CONFIG.fallDuration ?? 2.5);
-    this.elapsed = 0;
-    this.progress = 0;
-  }
-
-  update(dt){
-    if (!this.alive || this.dead) return;
-
-    const fallSpeedMultiplier = getCurrentIntraLevelSpeedMultiplier();
-    const fallDt = dt * fallSpeedMultiplier;
-
-    this.elapsed += fallDt;
-    const duration = this.fallDuration || 1;
-    const linearProgress = clamp(this.elapsed / duration, 0, 1);
-    this.progress = linearProgress;
-
-    const eased = linearProgress * linearProgress;
-    this.y = this.startY + (this.endY - this.startY) * eased;
-    this.updateScaleFromVerticalPosition(linearProgress);
-
-    if (linearProgress >= 1){
-      this.dead = true;
-      return;
-    }
-
-    const damping = Math.exp(-8 * dt);
-    this.vx *= damping;
-    if (Math.abs(this.vx) < 0.01) this.vx = 0;
-
-    if (this.kind === 'good' && activeBonuses.magnet?.active){
-      const wallet = this.g?.wallet;
-      if (wallet){
-        const walletCenter = wallet.x + wallet.w / 2;
-        const dx = walletCenter - this.x;
-        const strength = CONFIG?.magnet?.horizontalStrength ?? 4;
-        this.vx += dx * strength * dt;
-      }
-    }
-
-    if (this.vx){
-      const maxSpeed = 600;
-      this.vx = clamp(this.vx, -maxSpeed, maxSpeed);
-      this.x += this.vx * dt;
-      const halfSize = (this.getBaseSize() * this.scale) / 2;
-      const minX = halfSize;
-      const maxX = BASE_W - halfSize;
-      this.x = clamp(this.x, minX, maxX);
-    }
-  }
-
-  updateScaleFromVerticalPosition(progressOverride){
-    const denom = Math.max(0.0001, (this.endY ?? BASE_H) - (this.startY ?? 0));
-    const fallbackProgress = (this.y - (this.startY ?? 0)) / denom;
-    const progress = clamp(progressOverride ?? fallbackProgress, 0, 1);
-    const startScale = this.spawnScale ?? 0.3;
-    const endScale = this.maxScale ?? 1;
-    this.scale = startScale + (endScale - startScale) * progress;
-    if (this.scale > endScale) this.scale = endScale;
-  }
-
-  get dead(){
-    return this._dead;
-  }
-
-  set dead(value){
-    if (value && !this._dead){
-      this._dead = true;
-      this.alive = false;
-      if (this._tween) this._tween.kill();
-    }
-  }
-
-  getBaseSize(){
-    const base = CONFIG.itemSize?.[this.subtype] ?? 64;
-    const mul = CONFIG.items?.scale ?? 1;
-    return base * mul;
-  }
-
-  getBounds(){
-    const size = this.getBaseSize() * this.scale;
-    return {
-      x: this.x - size / 2,
-      y: this.y - size / 2,
-      w: size,
-      h: size,
-    };
-  }
-
-  getCenter(){
-    return { x: this.x, y: this.y };
-  }
-
-  draw(g){
-    if (!this.alive) return;
-    const bounds = this.getBounds();
-    drawItemSprite(g, this.kind, this.subtype, bounds.x, bounds.y, bounds.w, bounds.h);
-  }
-}
-
 function spawnItem(gameInstance, kind, subtype, x, y, extra = {}) {
   if (!gameInstance) return null;
-  const item = new FallingItem(gameInstance, kind, subtype, x, y);
+  const FallingItemCtor = window.SD_ENTITIES?.FallingItem || window.FallingItem;
+  if (!FallingItemCtor) return null;
+  const item = new FallingItemCtor(gameInstance, kind, subtype, x, y);
   item.isNegative = NEGATIVE_TYPES.has(subtype);
   Object.assign(item, extra);
   gameInstance.items.push(item);
