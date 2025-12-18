@@ -797,7 +797,6 @@
                 setUsernameError('');
               }
             }
-            toggleFormDisabled(false);
             return;
           }
           if (result.requiresEmailConfirmation) {
@@ -805,13 +804,16 @@
             if (mode === 'signup') {
               setUsernameError('');
             }
-            toggleFormDisabled(false);
           } else {
             setMessage('Connexion réussie.', 'success');
+            if (typeof onRerender === 'function') {
+              await onRerender({ keepMode: true });
+            }
           }
         } catch (error) {
           console.error('[auth] form submit failed', error);
           setMessage('Une erreur inattendue est survenue.', 'error');
+        } finally {
           toggleFormDisabled(false);
         }
       }, { passive: false });
