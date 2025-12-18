@@ -120,6 +120,18 @@ const {
 } = window.SD_UI_CORE || {};
 
 const {
+  setInterLevelUiState = () => {},
+  showInterLevelScreen = () => {},
+  hideInterLevelScreen = () => {},
+  updateInterLevelSaveButtonState = () => {},
+  bindInterLevelButtons = () => {},
+  navigateToTitleAfterSaveQuit = () => {},
+  getSaveQuitStatus = () => ({ attemptSave: false, reason: 'unknown', message: '' }),
+  getLastInterLevelResult = () => "win",
+  renderPauseOverlay = () => {},
+} = window.SD_UI_OVERLAYS || {};
+
+const {
   levelAssets = {},
   preloadLevelAssets = () => Promise.resolve({}),
   ensureLevelAssets = async () => ({ bg: null, wallet: null, music: null }),
@@ -2162,94 +2174,6 @@ function resumeGameplay(){
   }
 }
 
-let lastInterLevelResult = "win";
-
-function getSaveQuitStatus(){
-  const state = getAuthStateSnapshot?.() || {};
-
-  if (!state.enabled) {
-    return { attemptSave: false, reason: 'supabase-disabled', message: 'Sauvegarde en ligne désactivée pour cette version.' };
-  }
-
-  if (state.lastError) {
-    return { attemptSave: false, reason: 'service-error', message: state.lastError };
-  }
-
-  if (!state.ready) {
-    return { attemptSave: false, reason: 'service-not-ready', message: 'Initialisation du service en cours.' };
-  }
-
-  if (!state.user || !state.profile) {
-    return { attemptSave: false, reason: 'no-auth', message: 'Connexion requise pour sauvegarder en ligne.' };
-  }
-
-  return { attemptSave: true, reason: 'ok', message: 'Sauvegarde en ligne disponible.' };
-}
-
-function updateInterLevelSaveButtonState(){
-  const btnSave = document.getElementById('btnSaveQuit');
-  if (!btnSave) return;
-
-  const status = getSaveQuitStatus();
-  const label = status.attemptSave
-    ? SAVE_AND_QUIT_LABELS.default
-    : status.reason === 'no-auth'
-      ? SAVE_AND_QUIT_LABELS.loginRequired
-      : SAVE_AND_QUIT_LABELS.unavailable;
-
-  btnSave.textContent = label;
-  btnSave.title = status.message || '';
-  btnSave.dataset.saveAvailable = status.attemptSave ? 'yes' : 'no';
-  btnSave.dataset.saveReason = status.reason || 'unknown';
-  btnSave.setAttribute('aria-disabled', status.attemptSave ? 'false' : 'true');
-}
-
-function navigateToTitleAfterSaveQuit(context = {}){
-  const { saveResult = 'skipped', reason = null } = context;
-  console.info('[progress] returning to title from save-quit', { saveResult, reason });
-
-  hideInterLevelScreen();
-
-  const instance = (typeof Game !== "undefined" && Game.instance)
-    ? Game.instance
-    : null;
-
-  if (instance && typeof instance.reset === "function") {
-    instance.reset({ showTitle: true });
-    return;
-  }
-
-  setInterLevelUiState(false);
-  enterTitleScreen();
-  const mainOverlay = overlay || document.getElementById("overlay");
-  if (mainOverlay) {
-    mainOverlay.innerHTML = "";
-    hideOverlay(mainOverlay);
-  }
-  setBackgroundImageSrc(MENU_BACKGROUND_SRC);
-}
-
-function setInterLevelUiState(active) {
-  const isActive = !!active;
-  const body = typeof document !== 'undefined' ? document.body : null;
-  const wrapper = document.getElementById('gameWrapper');
-  const canvasEl = document.getElementById('gameCanvas');
-  const hudEl = document.getElementById('hud');
-
-  if (body) {
-    body.classList.toggle('is-inter-level', isActive);
-  }
-  if (wrapper) {
-    wrapper.classList.toggle('is-inter-level', isActive);
-  }
-  if (canvasEl) {
-    canvasEl.setAttribute('aria-hidden', isActive ? 'true' : 'false');
-  }
-  if (hudEl) {
-    hudEl.setAttribute('aria-hidden', isActive ? 'true' : 'false');
-  }
-}
-
 function prepareLegendLevelWarmup(index) {
   const targetIndex = Number.isFinite(index) ? index : LEGEND_LEVEL_INDEX;
   if (!Number.isFinite(targetIndex) || targetIndex < 0) return;
@@ -2259,83 +2183,6 @@ function prepareLegendLevelWarmup(index) {
   }).catch(() => {});
 
   loadLegendBoostsForSession().catch(() => {});
-}
-
-function showInterLevelScreen(result = "win", options = {}){
-  lastInterLevelResult = result;
-  const screen = document.getElementById("interLevelScreen");
-  const title  = document.getElementById("interTitle");
-  const scoreText = document.getElementById("interScore");
-  const btnNext = document.getElementById("btnNextLevel");
-  if (!screen || !title || !scoreText) return;
-
-  const opts = (options && typeof options === "object") ? options : {};
-  const screenAlreadyVisible = screen.classList.contains("show");
-
-  clearMainOverlay(screen);
-
-  setActiveScreen('interLevel', { via: 'showInterLevelScreen', result });
-
-  // Important : la sauvegarde de progression reste manuelle (bouton "Sauvegarder & Quitter").
-  // Aucun appel à persistProgressSnapshot ne doit être déclenché automatiquement ici.
-
-  if (typeof Game !== "undefined" && Game.instance) {
-    Game.instance.settingsReturnView = "inter";
-  }
-
-  title.textContent = (result === "win") ? "Niveau terminé 🎉" : "Game Over 💀";
-  const numericScore = Number.isFinite(score) ? score : Number(window.score) || 0;
-  const formattedScore = typeof formatScore === "function"
-    ? formatScore(numericScore)
-    : String(numericScore | 0);
-  scoreText.textContent = "Score : " + formattedScore;
-
-  const levelIndex = Math.max(0, Number.isFinite(currentLevelIndex) ? Math.floor(currentLevelIndex) : 0);
-  const nextIndex = Math.min(levelIndex + 1, LEVELS.length - 1);
-  const isLegend = isLegendLevel(levelIndex);
-  const nextIsLegend = isLegendLevel(nextIndex);
-
-  if (result === "win" && nextIsLegend) {
-    prepareLegendLevelWarmup(nextIndex);
-  }
-
-  if (btnNext){
-    let nextLabel = "Rejouer";
-    if (result === "win") {
-      nextLabel = nextIsLegend ? "Passer au mode Légende" : "Niveau suivant";
-    }
-
-    btnNext.textContent = nextLabel;
-    btnNext.onclick = async () => {
-      hideInterLevelScreen({ immediate: true });
-      if (result === "win"){
-        await goToNextLevel();
-      } else {
-        hardResetRuntime();
-        await loadLevel(currentLevelIndex, { immediateBackground: true });
-        resumeGameplay();
-      }
-    };
-  }
-
-  const backgroundSrc = INTER_LEVEL_BACKGROUNDS[levelIndex];
-  const shouldUseInterVisuals = result === "win" && backgroundSrc && !isLegend;
-
-  screen.classList.toggle("inter-win", !!shouldUseInterVisuals);
-
-  if (shouldUseInterVisuals) {
-    applyLevelBackground(backgroundSrc, { immediate: true });
-    const shouldPlayAudio = opts.replaySound !== false && !screenAlreadyVisible;
-    if (shouldPlayAudio) {
-      playInterLevelAudioForLevel(levelIndex);
-    }
-  } else {
-    stopInterLevelAudio();
-  }
-
-  setInterLevelUiState(true);
-  updateInterLevelSaveButtonState();
-  showExclusiveOverlay(screen);
 }
 
 function showLegendResultScreen(reason = "time"){
@@ -2383,72 +2230,7 @@ function hideLegendResultScreen(options = {}){
   hideOverlay(screen, options);
 }
 
-function hideInterLevelScreen(options = {}){
-  const screen = document.getElementById("interLevelScreen");
-  stopInterLevelAudio();
-  setInterLevelUiState(false);
-  if (!screen) return;
-  hideOverlay(screen, options);
-}
-
 // --- Boutons ---
-function bindInterLevelButtons(){
-  const bNext = document.getElementById("btnNextLevel");
-  const bSave = document.getElementById("btnSaveQuit");
-
-  updateInterLevelSaveButtonState();
-
-  if (bNext){
-    bNext.onclick = () => {
-      hideInterLevelScreen({ immediate: true });
-      goToNextLevel();
-    };
-  }
-
-  if (bSave){
-    bSave.onclick = async () => {
-      if (typeof playSound === "function") {
-        playSound("click");
-      }
-
-      const status = getSaveQuitStatus();
-      console.info('[progress] save-quit clicked', {
-        attemptSave: status.attemptSave,
-        reason: status.reason,
-        user: getAuthStateSnapshot?.()?.user ? 'yes' : 'no',
-      });
-
-      let saveResult = 'skipped';
-
-      if (status.attemptSave) {
-        const saveAction = (async () => {
-          if (isLegendLevel()) {
-            await submitLegendScoreIfNeeded('save-quit');
-          }
-          await persistProgressSnapshot('save-quit');
-          return 'saved';
-        })();
-
-        saveResult = await Promise.race([
-          saveAction.catch((error) => {
-            console.warn('[progress] manual save failed', error);
-            return 'failed';
-          }),
-          new Promise((resolve) => setTimeout(() => resolve('timeout'), SAVE_AND_QUIT_TIMEOUT_MS)),
-        ]);
-
-        if (saveResult === 'timeout') {
-          console.warn('[progress] manual save timed out; navigating back to title.');
-        }
-      } else {
-        console.info('[progress] save-quit skipping save attempt', status);
-      }
-
-      navigateToTitleAfterSaveQuit({ saveResult, reason: status.reason });
-    };
-  }
-}
-
 function bindLegendResultButtons(){
   const btnHome = document.getElementById("legendHomeButton");
   const btnRetry = document.getElementById("legendRetryButton");
@@ -2480,21 +2262,7 @@ function bindLegendResultButtons(){
   }
 }
 
-// --- Test manuel temporaire : appuyer sur 'i' pour afficher l’écran ---
-addEvent(window, 'keydown', (e) => {
-  if (shouldBlockGameplayShortcuts(e)) return;
-  if (e.key === "i" || e.key === "I") {
-    console.info('[nav] debug shortcut -> interLevel');
-    showInterLevelScreen("win");
-  }
-});
-
-// Appeler le binding après chargement du DOM / init jeu
-window.addEventListener("load", bindInterLevelButtons);
 window.addEventListener("load", bindLegendResultButtons);
-
-window.showInterLevelScreen = showInterLevelScreen;
-window.hideInterLevelScreen = hideInterLevelScreen;
 
 setProgressHostContext({
   getGame: () => game,
@@ -3915,7 +3683,7 @@ class Game{
 
       if (returnView === "inter") {
         hideOverlay(overlay);
-        showInterLevelScreen(lastInterLevelResult || "win", { replaySound: false });
+        showInterLevelScreen(getLastInterLevelResult(), { replaySound: false });
         return;
       }
 
@@ -3980,7 +3748,7 @@ class Game{
       }
       if (target === 'interLevel') {
         hideOverlay(overlay);
-        showInterLevelScreen(lastInterLevelResult || "win", { replaySound: false });
+        showInterLevelScreen(getLastInterLevelResult(), { replaySound: false });
         return;
       }
       if (target === 'gameover') {
@@ -4240,49 +4008,24 @@ class Game{
     })();
   }
   renderPause(){
-    setActiveScreen('paused', { via: 'renderPause' });
-    if (overlay) overlay.classList.remove('overlay-title');
-    this.settingsReturnView = "pause";
-    overlay.innerHTML = `
-      <div class="panel panel-shell pause-panel" role="dialog" aria-modal="true" aria-labelledby="pauseTitle">
-        <div class="panel-header">
-          <h1 id="pauseTitle">Pause</h1>
-          <p class="panel-subtitle">Fais une pause, reprends quand tu veux.</p>
-        </div>
-        <div class="panel-grid">
-          <section class="panel-section panel-card">
-            <h2 class="panel-title">Actions</h2>
-            <div class="btnrow panel-actions">
-              <button id="resume" type="button">Reprendre</button>
-              <button type="button" class="btn-settings" data-action="open-settings">Paramètres</button>
-              <button id="quit" type="button">Menu</button>
-              <button id="btnRulesPause" type="button">Règle du jeu</button>
-            </div>
-          </section>
-        </div>
-      </div>`;
-    showExclusiveOverlay(overlay);
-    addEvent(document.getElementById('resume'), INPUT.tap, ()=>{
-      playSound("click");
-      overlay.innerHTML='';
-      hideOverlay(overlay);
-      setActiveScreen('running', { via: 'pause-resume' });
-      this.state='playing';
-      this.lastTime=performance.now();
-      this.loop();
+    renderPauseOverlay({
+      overlay,
+      onResume: () => {
+        setActiveScreen('running', { via: 'pause-resume' });
+        this.state='playing';
+        this.lastTime=performance.now();
+        this.loop();
+      },
+      onQuit: () => {
+        this.reset();
+      },
+      onShowRules: () => {
+        this.renderRules("pause");
+      },
+      setReturnView: () => {
+        this.settingsReturnView = "pause";
+      },
     });
-    addEvent(document.getElementById('quit'), INPUT.tap, ()=>{
-      playSound("click");
-      overlay.innerHTML='';
-      hideOverlay(overlay);
-      this.reset();
-    });
-    addEvent(document.getElementById('btnRulesPause'), INPUT.tap, (evt)=>{
-      evt.preventDefault();
-      evt.stopPropagation();
-      playSound("click");
-      this.renderRules("pause");
-    }, { passive:false });
   }
   renderRules(returnView){
     if (overlay) overlay.classList.remove('overlay-title');
