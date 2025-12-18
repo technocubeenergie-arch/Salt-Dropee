@@ -33,8 +33,15 @@
 
   let lastInterLevelResult = SD_UI_OVERLAYS.getLastInterLevelResult?.() || "win";
 
+  function getAuthState() {
+    if (global.SD_UI_ACCOUNT?.getAuthStateSnapshot) {
+      return global.SD_UI_ACCOUNT.getAuthStateSnapshot();
+    }
+    return global.getAuthStateSnapshot?.() || {};
+  }
+
   function getSaveQuitStatus() {
-    const state = global.getAuthStateSnapshot?.() || {};
+    const state = getAuthState();
 
     if (!state.enabled) {
       return { attemptSave: false, reason: 'supabase-disabled', message: 'Sauvegarde en ligne désactivée pour cette version.' };
@@ -223,12 +230,12 @@
           playSound("click");
         }
 
-        const status = getSaveQuitStatus();
-        console.info('[progress] save-quit clicked', {
-          attemptSave: status.attemptSave,
-          reason: status.reason,
-          user: getAuthStateSnapshot?.()?.user ? 'yes' : 'no',
-        });
+    const status = getSaveQuitStatus();
+    console.info('[progress] save-quit clicked', {
+      attemptSave: status.attemptSave,
+      reason: status.reason,
+      user: getAuthState()?.user ? 'yes' : 'no',
+    });
 
         let saveResult = 'skipped';
 
