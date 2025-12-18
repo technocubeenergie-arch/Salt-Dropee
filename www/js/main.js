@@ -105,6 +105,17 @@ const {
   clearMainOverlay = () => null,
 } = window.SD_RENDER || {};
 
+const {
+  levelAssets = {},
+  preloadLevelAssets = () => Promise.resolve({}),
+  ensureLevelAssets = async () => ({ bg: null, wallet: null, music: null }),
+  waitForImageReady = () => Promise.resolve(),
+  setWalletSprite = () => {},
+  applyWalletForLevel = () => Promise.resolve({ bg: null, wallet: null, music: null }),
+  getWalletImage = () => null,
+  getLegendWalletImage = () => null,
+} = window.SD_LEVELS || {};
+
 const BASE_W = CANVAS_BASE_W ?? CONFIG?.portraitBase?.w;
 const BASE_H = CANVAS_BASE_H ?? CONFIG?.portraitBase?.h;
 const setupCanvasContext = typeof initCanvasContext === 'function'
@@ -169,99 +180,6 @@ addEvent(document, 'click', (event) => {
     console.error("[settings] openSettings failed:", err);
   }
 }, { passive: false });
-
-// --- Cache d'assets par niveau ---
-const levelAssets = {}; // index -> { bg:Image, wallet:Image, music:HTMLAudioElement|null }
-
-// Précharge et renvoie {bg, wallet, music}
-function preloadLevelAssets(levelCfg) {
-  const tasks = [];
-
-  // Image de fond
-  const bg = new Image();
-  bg.src = levelCfg.background;
-  tasks.push(new Promise(res => { bg.onload = res; bg.onerror = res; }));
-
-  // Image de wallet
-  const wallet = new Image();
-  wallet.src = levelCfg.walletSprite;
-  tasks.push(new Promise(res => { wallet.onload = res; wallet.onerror = res; }));
-
-  // Musique (préparée mais non jouée ici)
-  let music = null;
-  if (levelCfg.music) {
-    music = new Audio(levelCfg.music);
-    music.loop = true;
-    music.preload = "auto";
-    tasks.push(Promise.resolve());
-  }
-
-  return Promise.all(tasks).then(() => ({ bg, wallet, music }));
-}
-
-async function ensureLevelAssets(index) {
-  if (!levelAssets[index]) {
-    const levelCfg = LEVELS[index];
-    if (!levelCfg) return { bg: null, wallet: null, music: null };
-    levelAssets[index] = await preloadLevelAssets(levelCfg);
-  }
-  return levelAssets[index];
-}
-
-function waitForImageReady(img) {
-  if (!img) return Promise.resolve();
-
-  if (img.complete && img.naturalWidth > 0) {
-    return Promise.resolve();
-  }
-
-  return new Promise((resolve) => {
-    const done = () => resolve();
-
-    if (img.complete) {
-      resolve();
-      return;
-    }
-
-    img.addEventListener('load', done, { once: true });
-    img.addEventListener('error', done, { once: true });
-  });
-}
-
-// --- Wallet ---
-let walletImage = null;
-
-const legendWalletSrc = LEGEND_LEVEL_INDEX >= 0 ? LEVELS[LEGEND_LEVEL_INDEX]?.walletSprite : null;
-const legendWalletImage = legendWalletSrc ? (() => {
-  const img = new Image();
-  img.src = legendWalletSrc;
-  img.decode?.().catch(() => {});
-  return img;
-})() : null;
-
-function setWalletSprite(img, options = {}) {
-  if (!img) return;
-  walletImage = img;
-
-  const { skipAnimation = false } = options;
-
-  const runtimeWallet = (typeof window !== 'undefined' && window.wallet)
-    ? window.wallet
-    : (typeof game !== 'undefined' ? game?.wallet : null);
-
-  if (runtimeWallet?.applyCaps) {
-    runtimeWallet.applyCaps();
-  }
-
-  if (skipAnimation || !window.gsap || !runtimeWallet) return;
-
-  if (Object.prototype.hasOwnProperty.call(runtimeWallet, 'visualScale')) {
-    runtimeWallet.visualScale = 1;
-    gsap.fromTo(runtimeWallet, { visualScale: 0.95 }, { visualScale: 1, duration: 0.25, ease: "back.out(2)" });
-  } else {
-    gsap.fromTo(runtimeWallet, { scale: 0.95 }, { scale: 1, duration: 0.25, ease: "back.out(2)" });
-  }
-}
 
 // --- Musique ---
 let currentMusic = null;
@@ -480,16 +398,6 @@ function unlockMusicOnce() {
 }
 
 window.addEventListener('load', unlockMusicOnce);
-
-async function applyWalletForLevel(levelNumber) {
-  const numeric = Math.floor(Number(levelNumber) || 1);
-  const index = Math.max(0, Math.min(LEVELS.length - 1, numeric - 1));
-  const assets = await ensureLevelAssets(index);
-  if (assets.wallet) {
-    setWalletSprite(assets.wallet);
-  }
-  return assets;
-}
 
 const originalSetSoundEnabled = typeof window.setSoundEnabled === 'function'
   ? window.setSoundEnabled
@@ -1354,7 +1262,7 @@ function resumeAllAnimations(){
 
 async function ensureLegendVisualsReady(options = {}) {
   const variant = HandVariants?.legend;
-  const wallet = options.walletImage || legendWalletImage;
+  const wallet = options.walletImage || (typeof getLegendWalletImage === 'function' ? getLegendWalletImage() : null);
   const tasks = [];
 
   if (variant) {
@@ -1424,7 +1332,7 @@ async function loadLevel(index, options = {}) {
   setActiveHandVariant(legendRunActive ? 'legend' : 'default');
 
   if (legendRunActive) {
-    const eagerLegendWallet = levelAssets[index]?.wallet || legendWalletImage;
+    const eagerLegendWallet = levelAssets[index]?.wallet || (typeof getLegendWalletImage === 'function' ? getLegendWalletImage() : null);
     if (eagerLegendWallet) {
       setWalletSprite(eagerLegendWallet, { skipAnimation: true });
     }
@@ -2390,10 +2298,12 @@ function setActiveHandVariant(key = 'default') {
 setActiveHandVariant('default');
 
 // Pré-decode (si supporté)
+const warmupWalletImage = typeof getWalletImage === 'function' ? getWalletImage() : null;
+const warmupLegendWallet = typeof getLegendWalletImage === 'function' ? getLegendWalletImage() : null;
 [GoldImg, SilverImg, BronzeImg, DiamondImg, BombImg,
  ShitcoinImg, RugpullImg, FakeADImg, AnvilImg,
  MagnetImg, X2Img, ShieldImg, TimeImg,
- walletImage, legendWalletImage, Hand.open, Hand.pinch,
+ warmupWalletImage, warmupLegendWallet, Hand.open, Hand.pinch,
  HandVariants.legend.open, HandVariants.legend.pinch,
  footerImg]
   .forEach(img => img?.decode?.().catch(()=>{}));
@@ -3126,11 +3036,12 @@ class Wallet{
   constructor(game){ this.g=game; this.level=1; this.x=BASE_W/2; this.y=BASE_H-40; this.w=48; this.h=40; this.slowTimer=0; this.dashCD=0; this.spriteHCapPx=0; this.impact=0; this.impactDir='vertical'; this.squashTimer=0; this.visualScale=1; targetX = this.x + this.w / 2; }
   bump(strength=0.35, dir='vertical'){ this.impact = Math.min(1, this.impact + strength); this.impactDir = dir; }
   applyCaps(){
+    const walletImg = typeof getWalletImage === 'function' ? getWalletImage() : null;
     const maxH = Math.floor(BASE_H * CONFIG.maxWalletH);
     this.spriteHCapPx = maxH;
     const baseWidth = CONFIG.wallet?.width ?? this.w;
-    const ratio = (walletImage && walletImage.naturalWidth > 0)
-      ? (walletImage.naturalHeight / walletImage.naturalWidth)
+    const ratio = (walletImg && walletImg.naturalWidth > 0)
+      ? (walletImg.naturalHeight / walletImg.naturalWidth)
       : 1;
     let targetWidth = baseWidth || 0;
     let targetHeight = targetWidth * ratio;
@@ -3174,10 +3085,11 @@ class Wallet{
     if (this.squashTimer>0) this.squashTimer -= dt;
   }
   draw(g){
-    if (!walletImage || !walletImage.complete) return;
+    const walletImg = typeof getWalletImage === 'function' ? getWalletImage() : null;
+    if (!walletImg || !walletImg.complete) return;
 
-    const aspectRatio = (walletImage.naturalWidth > 0)
-      ? walletImage.naturalHeight / walletImage.naturalWidth
+    const aspectRatio = (walletImg.naturalWidth > 0)
+      ? walletImg.naturalHeight / walletImg.naturalWidth
       : 1;
     let drawWidth = CONFIG.wallet?.width ?? this.w;
     let drawHeight = drawWidth * aspectRatio;
@@ -3211,7 +3123,7 @@ class Wallet{
     g.shadowBlur = 6;
     g.shadowOffsetY = 2;
 
-    g.drawImage(walletImage, x, y, drawWidth, drawHeight);
+    g.drawImage(walletImg, x, y, drawWidth, drawHeight);
 
     g.restore();
   }
@@ -3829,7 +3741,7 @@ class Game{
       const authSnapshot = getAuthStateSnapshot();
       console.info(`[progress] play clicked${debugFormatContext({ screen: activeScreen, auth: authSnapshot?.user ? 'authenticated' : 'guest' })}`);
       await new Promise(r=>requestAnimationFrame(r));
-      try{ const prev=ctx.imageSmoothingEnabled; ctx.imageSmoothingEnabled=false; const imgs=[walletImage, GoldImg, SilverImg, BronzeImg, DiamondImg, BombImg, Hand.open, Hand.pinch]; for (const im of imgs){ if (im && im.naturalWidth) ctx.drawImage(im,0,0,1,1); } ctx.save(); ctx.shadowColor='rgba(0,0,0,0.15)'; ctx.shadowBlur=4; ctx.shadowOffsetY=1; ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(4,4,2,0,Math.PI*2); ctx.fill(); ctx.restore(); ctx.imageSmoothingEnabled=prev; ctx.clearRect(0,0,8,8); }catch(_){ }
+      try{ const prev=ctx.imageSmoothingEnabled; ctx.imageSmoothingEnabled=false; const warmupWallet = typeof getWalletImage === 'function' ? getWalletImage() : null; const imgs=[warmupWallet, GoldImg, SilverImg, BronzeImg, DiamondImg, BombImg, Hand.open, Hand.pinch]; for (const im of imgs){ if (im && im.naturalWidth) ctx.drawImage(im,0,0,1,1); } ctx.save(); ctx.shadowColor='rgba(0,0,0,0.15)'; ctx.shadowBlur=4; ctx.shadowOffsetY=1; ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(4,4,2,0,Math.PI*2); ctx.fill(); ctx.restore(); ctx.imageSmoothingEnabled=prev; ctx.clearRect(0,0,8,8); }catch(_){ }
       this.uiStartFromTitle();
     }, { passive:false });
   }
