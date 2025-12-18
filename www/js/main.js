@@ -38,6 +38,10 @@ const {
 } = window.SD_UTILS || {};
 
 const {
+  checkAABB = () => false,
+} = window.SD_GAME_MATH || {};
+
+const {
   hasTouch,
   supportsPointerEvents,
   usePointerEventsForMouse,
@@ -2902,8 +2906,6 @@ class Game{
     ctx.restore();
   }
 }
-
-function checkAABB(a,b){ return a.x<b.x+b.w && a.x+a.w>b.x && a.y<b.y+b.h && a.y+a.h>b.y; }
 
 async function startGame(){
   if (window.__saltDroppeeStarted) return;
