@@ -185,6 +185,10 @@ const {
 const {
   Wallet = window.Wallet,
   Arm = window.Arm,
+  FallingItem = window.FallingItem,
+  drawItemSprite = window.drawItemSprite,
+  NEGATIVE_TYPES = window.NEGATIVE_TYPES,
+  getItemImagesForWarmup = () => [],
   computeWalletCenterBounds = window.computeWalletCenterBounds,
   animateWalletToCenter = window.animateWalletToCenter,
 } = window.SD_ENTITIES || {};
@@ -702,17 +706,6 @@ function endLegendRun(reason = "time") {
 window.loadLevel = loadLevel;
 
 // === Chargement des images ===
-const BronzeImg  = new Image(); let bronzeReady  = false; BronzeImg.onload  = ()=> bronzeReady  = true; BronzeImg.src  = 'assets/bronze.png';
-const SilverImg  = new Image(); let silverReady  = false; SilverImg.onload  = ()=> silverReady  = true; SilverImg.src  = 'assets/silver.png';
-const GoldImg    = new Image(); let goldReady    = false; GoldImg.onload    = ()=> goldReady    = true; GoldImg.src    = 'assets/gold.png';
-const DiamondImg = new Image(); let diamondReady = false; DiamondImg.onload = ()=> diamondReady = true; DiamondImg.src = 'assets/diamond.png';
-
-const BombImg     = new Image(); let bombReady     = false; BombImg.onload     = ()=> bombReady     = true; BombImg.src     = 'assets/bombe.png';
-const ShitcoinImg = new Image(); let shitcoinReady = false; ShitcoinImg.onload = ()=> shitcoinReady = true; ShitcoinImg.src = 'assets/shitcoin.png';
-const RugpullImg  = new Image(); let rugpullReady  = false; RugpullImg.onload  = ()=> rugpullReady  = true; RugpullImg.src  = 'assets/rugpull.png';
-const FakeADImg   = new Image(); let fakeADReady   = false; FakeADImg.onload   = ()=> fakeADReady   = true; FakeADImg.src   = 'assets/fakeairdrop.png';
-const AnvilImg    = new Image(); let anvilReady    = false; AnvilImg.onload    = ()=> anvilReady    = true; AnvilImg.src    = 'assets/anvil.png';
-
 const MagnetImg = new Image(); let magnetReady = false; MagnetImg.onload = ()=> magnetReady = true; MagnetImg.src = 'assets/magnet.png';
 const X2Img     = new Image(); let x2Ready     = false; X2Img.onload     = ()=> x2Ready     = true; X2Img.src     = 'assets/x2.png';
 const x2Image = new Image();
@@ -720,13 +713,19 @@ x2Image.src = 'assets/x2.png';
 const ShieldImg = new Image(); let shieldReady = false; ShieldImg.onload = ()=> shieldReady = true; ShieldImg.src = 'assets/shield.png';
 const shieldIconImage = new Image(); shieldIconImage.src = 'assets/shield.png';
 const TimeImg   = new Image(); let timeReady   = false; TimeImg.onload   = ()=> timeReady   = true; TimeImg.src   = 'assets/time.png';
+window.MagnetImg = MagnetImg; window.magnetReady = magnetReady;
+window.X2Img = X2Img; window.x2Ready = x2Ready;
+window.ShieldImg = ShieldImg; window.shieldReady = shieldReady;
+window.TimeImg = TimeImg; window.timeReady = timeReady;
+
+const ITEM_ASSETS = window.SD_ENTITIES?.ITEM_ASSETS || {};
 
 const BonusIcons = {
   magnet: MagnetImg,
   x2: X2Img,
   shield: ShieldImg,
-  fakeAirdrop: FakeADImg,
-  anvil: AnvilImg,
+  fakeAirdrop: ITEM_ASSETS?.bad?.fakeAirdrop?.getImg?.(),
+  anvil: ITEM_ASSETS?.bad?.anvil?.getImg?.(),
 };
 
 const POWERUP_PICKUP_ASSETS = {
@@ -736,19 +735,11 @@ const POWERUP_PICKUP_ASSETS = {
   timeShard: { image: TimeImg, ready: () => timeReady }
 };
 
-// Types négatifs du projet
-const NEGATIVE_TYPES = new Set([
-  "bomb",
-  "shitcoin",
-  "rugpull",
-  "fakeAirdrop",
-  "anvil"
-]);
-
 let activeBonuses = {
   magnet: { active: false, timeLeft: 0 },
   x2: { active: false, timeLeft: 0 }
 };
+window.__SD_ACTIVE_BONUSES = activeBonuses;
 
 let shield = {
   count: 0,
@@ -1501,8 +1492,11 @@ setActiveHandVariant('default');
 // Pré-decode (si supporté)
 const warmupWalletImage = typeof getWalletImage === 'function' ? getWalletImage() : null;
 const warmupLegendWallet = typeof getLegendWalletImage === 'function' ? getLegendWalletImage() : null;
-[GoldImg, SilverImg, BronzeImg, DiamondImg, BombImg,
- ShitcoinImg, RugpullImg, FakeADImg, AnvilImg,
+const warmupItemImages = typeof getItemImagesForWarmup === 'function'
+  ? getItemImagesForWarmup()
+  : [];
+
+[...warmupItemImages,
  MagnetImg, X2Img, ShieldImg, TimeImg,
  warmupWalletImage, warmupLegendWallet, Hand.open, Hand.pinch,
  HandVariants.legend.open, HandVariants.legend.pinch,
@@ -1985,153 +1979,7 @@ const DefaultSettings = { sound:true, haptics:true, sensitivity:1.0, controlMode
 function loadSettings(){ try{ const raw = JSON.parse(localStorage.getItem(LS.settings))||{}; const merged = { ...DefaultSettings, ...raw }; merged.controlMode = (merged.controlMode === 'zones' && hasTouch) ? 'zones' : 'swipe'; return merged; }catch(e){ return {...DefaultSettings}; } }
 function saveSettings(s){ try{ localStorage.setItem(LS.settings, JSON.stringify(s)); }catch(e){} }
 
-// === Assets registry pour simplifier le rendu ===
-const ITEM_ASSETS = {
-  good: {
-    bronze: { img: BronzeImg, ready: ()=>bronzeReady, fallback: (g,x,y,w,h)=>{ g.fillStyle='#c07a45'; g.beginPath(); g.arc(x+w/2, y+h/2, Math.min(w,h)/2, 0, Math.PI*2); g.fill(); } },
-    silver: { img: SilverImg, ready: ()=>silverReady, fallback: (g,x,y,w,h)=>{ g.fillStyle='#cfd6e6'; g.beginPath(); g.arc(x+w/2, y+h/2, Math.min(w,h)/2, 0, Math.PI*2); g.fill(); } },
-    gold:   { img: GoldImg,   ready: ()=>goldReady,   fallback: (g,x,y,w,h)=>{ g.fillStyle='#f2c14e'; g.beginPath(); g.arc(x+w/2, y+h/2, Math.min(w,h)/2, 0, Math.PI*2); g.fill(); } },
-    diamond:{ img: DiamondImg,ready: ()=>diamondReady,fallback: (g,x,y,w,h)=>{ g.fillStyle='#a8e6ff'; g.beginPath(); g.arc(x+w/2, y+h/2, Math.min(w,h)/2, 0, Math.PI*2); g.fill(); } }
-  },
-  bad: {
-    bomb: { img: BombImg, ready: ()=>bombReady, fallback: (g,x,y,w,h)=>{ g.fillStyle='#333'; g.fillRect(x, y, w, h); } },
-    shitcoin: { img: ShitcoinImg, ready: ()=>shitcoinReady, fallback: (g,x,y,w,h)=>{ g.fillStyle='#8a6b3a'; g.beginPath(); g.arc(x+w/2, y+h/2, Math.min(w,h)/2, 0, Math.PI*2); g.fill(); } },
-    rugpull: { img: RugpullImg, ready: ()=>rugpullReady, fallback: (g,x,y,w,h)=>{ g.fillStyle='#4a3d7a'; g.beginPath(); g.ellipse(x+w/2, y+h/2, w/2, h/2, 0, 0, Math.PI*2); g.fill(); } },
-    fakeAirdrop: { img: FakeADImg, ready: ()=>fakeADReady, fallback: (g,x,y,w,h)=>{ g.fillStyle='#6b7cff'; g.beginPath(); g.ellipse(x+w/2, y+h/2, w/2, h/2, 0, 0, Math.PI*2); g.fill(); g.fillStyle='#fff'; g.fillRect(x+w/2-3, y+h/2-3, 6, 6); } },
-    anvil: { img: AnvilImg, ready: ()=>anvilReady, fallback: (g,x,y,w,h)=>{ g.fillStyle='#60656f'; g.beginPath(); g.moveTo(x+2, y+h*0.7); g.lineTo(x+w-2, y+h*0.7); g.lineTo(x+w*0.7, y+h*0.4); g.lineTo(x+w*0.3, y+h*0.4); g.closePath(); g.fill(); } },
-  },
-  power: {
-    magnet: { img: MagnetImg, ready: ()=>magnetReady, fallback: (g,x,y,w,h)=>{ g.fillStyle='#00d1ff'; g.fillRect(x,y,w,h); } },
-    x2:     { img: X2Img,     ready: ()=>x2Ready,     fallback: (g,x,y,w,h)=>{ g.fillStyle='#00d1ff'; g.fillRect(x,y,w,h); } },
-    shield: { img: ShieldImg, ready: ()=>shieldReady, fallback: (g,x,y,w,h)=>{ g.fillStyle='#00d1ff'; g.fillRect(x,y,w,h); } },
-    timeShard:{img: TimeImg,  ready: ()=>timeReady,   fallback: (g,x,y,w,h)=>{ g.fillStyle='#00d1ff'; g.fillRect(x,y,w,h); } },
-  }
-};
-
-function drawItemSprite(g, kind, subtype, x, y, w, h){
-  const entry = ITEM_ASSETS[kind]?.[subtype];
-  if (entry){ const im = entry.img; if (im && im.complete) { g.drawImage(im, x, y, w, h); } else { entry.fallback(g,x,y,w,h); } return; }
-  // Fallback ultime
-  g.fillStyle = '#00d1ff'; g.fillRect(x,y,w,h);
-}
-
-class FallingItem{
-  constructor(game, kind, subtype, x, y){
-    this.g = game;
-    this.kind = kind;
-    this.subtype = subtype;
-    this.type = subtype;
-    this.x = x;
-    this.y = y;
-    this.spawnScale = (CONFIG.items?.spawnScale != null) ? CONFIG.items.spawnScale : 0.30;
-    this.maxScale = 1;
-    this.scale = this.spawnScale;
-    this.alive = true;
-    this._dead = false;
-    this._tween = null;
-    this.vx = 0;
-    this.isNegative = NEGATIVE_TYPES.has(subtype);
-
-    this.startY = y;
-    this.endY = BASE_H - 80;
-    this.fallDuration = Math.max(0.35, CONFIG.fallDuration ?? 2.5);
-    this.elapsed = 0;
-    this.progress = 0;
-  }
-
-  update(dt){
-    if (!this.alive || this.dead) return;
-
-    const fallSpeedMultiplier = getCurrentIntraLevelSpeedMultiplier();
-    const fallDt = dt * fallSpeedMultiplier;
-
-    this.elapsed += fallDt;
-    const duration = this.fallDuration || 1;
-    const linearProgress = clamp(this.elapsed / duration, 0, 1);
-    this.progress = linearProgress;
-
-    const eased = linearProgress * linearProgress;
-    this.y = this.startY + (this.endY - this.startY) * eased;
-    this.updateScaleFromVerticalPosition(linearProgress);
-
-    if (linearProgress >= 1){
-      this.dead = true;
-      return;
-    }
-
-    const damping = Math.exp(-8 * dt);
-    this.vx *= damping;
-    if (Math.abs(this.vx) < 0.01) this.vx = 0;
-
-    if (this.kind === 'good' && activeBonuses.magnet?.active){
-      const wallet = this.g?.wallet;
-      if (wallet){
-        const walletCenter = wallet.x + wallet.w / 2;
-        const dx = walletCenter - this.x;
-        const strength = CONFIG?.magnet?.horizontalStrength ?? 4;
-        this.vx += dx * strength * dt;
-      }
-    }
-
-    if (this.vx){
-      const maxSpeed = 600;
-      this.vx = clamp(this.vx, -maxSpeed, maxSpeed);
-      this.x += this.vx * dt;
-      const halfSize = (this.getBaseSize() * this.scale) / 2;
-      const minX = halfSize;
-      const maxX = BASE_W - halfSize;
-      this.x = clamp(this.x, minX, maxX);
-    }
-  }
-
-  updateScaleFromVerticalPosition(progressOverride){
-    const denom = Math.max(0.0001, (this.endY ?? BASE_H) - (this.startY ?? 0));
-    const fallbackProgress = (this.y - (this.startY ?? 0)) / denom;
-    const progress = clamp(progressOverride ?? fallbackProgress, 0, 1);
-    const startScale = this.spawnScale ?? 0.3;
-    const endScale = this.maxScale ?? 1;
-    this.scale = startScale + (endScale - startScale) * progress;
-    if (this.scale > endScale) this.scale = endScale;
-  }
-
-  get dead(){
-    return this._dead;
-  }
-
-  set dead(value){
-    if (value && !this._dead){
-      this._dead = true;
-      this.alive = false;
-      if (this._tween) this._tween.kill();
-    }
-  }
-
-  getBaseSize(){
-    const base = CONFIG.itemSize?.[this.subtype] ?? 64;
-    const mul = CONFIG.items?.scale ?? 1;
-    return base * mul;
-  }
-
-  getBounds(){
-    const size = this.getBaseSize() * this.scale;
-    return {
-      x: this.x - size / 2,
-      y: this.y - size / 2,
-      w: size,
-      h: size,
-    };
-  }
-
-  getCenter(){
-    return { x: this.x, y: this.y };
-  }
-
-  draw(g){
-    if (!this.alive) return;
-    const bounds = this.getBounds();
-    drawItemSprite(g, this.kind, this.subtype, bounds.x, bounds.y, bounds.w, bounds.h);
-  }
-}
+// === Assets registry géré dans entities/fallingItem.js ===
 
 function spawnItem(gameInstance, kind, subtype, x, y, extra = {}) {
   if (!gameInstance) return null;
@@ -2558,7 +2406,16 @@ class Game{
       const authSnapshot = getAuthStateSnapshot();
       console.info(`[progress] play clicked${debugFormatContext({ screen: getActiveScreen(), auth: authSnapshot?.user ? 'authenticated' : 'guest' })}`);
       await new Promise(r=>requestAnimationFrame(r));
-      try{ const prev=ctx.imageSmoothingEnabled; ctx.imageSmoothingEnabled=false; const warmupWallet = typeof getWalletImage === 'function' ? getWalletImage() : null; const imgs=[warmupWallet, GoldImg, SilverImg, BronzeImg, DiamondImg, BombImg, Hand.open, Hand.pinch]; for (const im of imgs){ if (im && im.naturalWidth) ctx.drawImage(im,0,0,1,1); } ctx.save(); ctx.shadowColor='rgba(0,0,0,0.15)'; ctx.shadowBlur=4; ctx.shadowOffsetY=1; ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(4,4,2,0,Math.PI*2); ctx.fill(); ctx.restore(); ctx.imageSmoothingEnabled=prev; ctx.clearRect(0,0,8,8); }catch(_){ }
+      try{
+        const prev=ctx.imageSmoothingEnabled;
+        ctx.imageSmoothingEnabled=false;
+        const warmupWallet = typeof getWalletImage === 'function' ? getWalletImage() : null;
+        const warmupItems = typeof getItemImagesForWarmup === 'function' ? getItemImagesForWarmup() : [];
+        const imgs=[warmupWallet, ...warmupItems, Hand.open, Hand.pinch];
+        for (const im of imgs){ if (im && im.naturalWidth) ctx.drawImage(im,0,0,1,1); }
+        ctx.save(); ctx.shadowColor='rgba(0,0,0,0.15)'; ctx.shadowBlur=4; ctx.shadowOffsetY=1; ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(4,4,2,0,Math.PI*2); ctx.fill(); ctx.restore();
+        ctx.imageSmoothingEnabled=prev; ctx.clearRect(0,0,8,8);
+      }catch(_){ }
       this.uiStartFromTitle();
     }, { passive:false });
   }
