@@ -182,6 +182,13 @@ const {
   unlockMusicOnce = () => {},
 } = window.SD_AUDIO || {};
 
+const {
+  Wallet = window.Wallet,
+  Arm = window.Arm,
+  computeWalletCenterBounds = window.computeWalletCenterBounds,
+  animateWalletToCenter = window.animateWalletToCenter,
+} = window.SD_ENTITIES || {};
+
 const BASE_W = CANVAS_BASE_W ?? CONFIG?.portraitBase?.w;
 const BASE_H = CANVAS_BASE_H ?? CONFIG?.portraitBase?.h;
 const setupCanvasContext = typeof initCanvasContext === 'function'
@@ -1801,42 +1808,9 @@ function fxMagnetActive(wallet, fxManager) {
   fxManager.add(effect);
 }
 
-function computeWalletCenterBounds(wallet){
-  const overflow = 60;
-  if (!wallet){
-    return { overflow, minCenter: overflow, maxCenter: BASE_W - overflow };
-  }
-  const halfWidth = wallet.w / 2;
-  return {
-    overflow,
-    minCenter: -overflow + halfWidth,
-    maxCenter: BASE_W - wallet.w + overflow + halfWidth,
-  };
-}
-
-function animateWalletToCenter(wallet, center, duration){
-  if (!wallet) return;
-  const bounds = computeWalletCenterBounds(wallet);
-  const clampedCenter = clamp(center, bounds.minCenter, bounds.maxCenter);
-  targetX = clampedCenter;
-  const destX = clampedCenter - wallet.w / 2;
-  const tweenDuration = (typeof duration === 'number') ? duration : CONFIG.control.easeDuration;
-  if (gsap && typeof gsap.to === 'function'){
-    gsap.to(wallet, {
-      x: destX,
-      duration: tweenDuration,
-      ease: CONFIG.control.easeFunction,
-      overwrite: 'auto',
-    });
-  } else {
-    wallet.x = destX;
-  }
-}
-
 // =====================
 // CANVAS & RENDER SETUP
 // =====================
-let targetX = (typeof BASE_W === 'number' ? BASE_W : 0) / 2;
 const WR = { x: 0, y: 0, w: 0, h: 0 };
 
 window.addEventListener('load', positionHudSafe);
@@ -2010,134 +1984,6 @@ const TG = window.Telegram?.WebApp; if (TG){ try{ TG.ready(); TG.expand(); }catc
 const DefaultSettings = { sound:true, haptics:true, sensitivity:1.0, controlMode:'swipe' };
 function loadSettings(){ try{ const raw = JSON.parse(localStorage.getItem(LS.settings))||{}; const merged = { ...DefaultSettings, ...raw }; merged.controlMode = (merged.controlMode === 'zones' && hasTouch) ? 'zones' : 'swipe'; return merged; }catch(e){ return {...DefaultSettings}; } }
 function saveSettings(s){ try{ localStorage.setItem(LS.settings, JSON.stringify(s)); }catch(e){} }
-
-// =====================
-// ENTITÉS
-// =====================
-class Wallet{
-  constructor(game){ this.g=game; this.level=1; this.x=BASE_W/2; this.y=BASE_H-40; this.w=48; this.h=40; this.slowTimer=0; this.dashCD=0; this.spriteHCapPx=0; this.impact=0; this.impactDir='vertical'; this.squashTimer=0; this.visualScale=1; targetX = this.x + this.w / 2; }
-  bump(strength=0.35, dir='vertical'){ this.impact = Math.min(1, this.impact + strength); this.impactDir = dir; }
-  applyCaps(){
-    const walletImg = typeof getWalletImage === 'function' ? getWalletImage() : null;
-    const maxH = Math.floor(BASE_H * CONFIG.maxWalletH);
-    this.spriteHCapPx = maxH;
-    const baseWidth = CONFIG.wallet?.width ?? this.w;
-    const ratio = (walletImg && walletImg.naturalWidth > 0)
-      ? (walletImg.naturalHeight / walletImg.naturalWidth)
-      : 1;
-    let targetWidth = baseWidth || 0;
-    let targetHeight = targetWidth * ratio;
-    if (maxH > 0 && targetHeight > maxH) {
-      const clampScale = maxH / targetHeight;
-      targetHeight = maxH;
-      targetWidth *= clampScale;
-    }
-    this.w = targetWidth;
-    this.h = targetHeight;
-    this.y = BASE_H - this.h - CONFIG.wallet.bottomOffset;
-    targetX = this.x + this.w / 2;
-  }
-  update(dt){
-    const sens = this.g.settings.sensitivity || 1.0;
-    const bounds = computeWalletCenterBounds(this);
-    const axis = getEffectiveHorizontalAxis();
-    const moveDir = Math.sign(axis);
-
-    if (input.dash && this.dashCD <= 0 && moveDir !== 0){
-      const effectiveSpeed = CONFIG.wallet.dashSpeed * (this.slowTimer>0 ? 0.6 : 1.0) * sens;
-      const dashDuration = Math.max(0.08, CONFIG.control.easeDuration * 0.5);
-      const dashDistance = moveDir * effectiveSpeed * dashDuration;
-      const desiredCenter = clamp(this.x + this.w / 2 + dashDistance, bounds.minCenter, bounds.maxCenter);
-      animateWalletToCenter(this, desiredCenter, dashDuration);
-      this.dashCD = CONFIG.wallet.dashCD;
-      input.dash = false;
-      this.bump(0.25, 'horizontal');
-    }
-
-    if (this.dashCD > 0) this.dashCD -= dt;
-    this.impact = Math.max(0, this.impact - 3 * dt);
-    const slowMul = this.slowTimer>0 ? 0.6 : 1.0;
-    const moveSpeed = CONFIG.wallet.speed * slowMul * sens;
-    if (axis !== 0) {
-      this.x += axis * moveSpeed * dt;
-    }
-    const overflow = 60;
-    this.x = clamp(this.x, -overflow, BASE_W - this.w + overflow);
-    if (this.slowTimer>0) this.slowTimer -= dt;
-    if (this.squashTimer>0) this.squashTimer -= dt;
-  }
-  draw(g){
-    const walletImg = typeof getWalletImage === 'function' ? getWalletImage() : null;
-    if (!walletImg || !walletImg.complete) return;
-
-    const aspectRatio = (walletImg.naturalWidth > 0)
-      ? walletImg.naturalHeight / walletImg.naturalWidth
-      : 1;
-    let drawWidth = CONFIG.wallet?.width ?? this.w;
-    let drawHeight = drawWidth * aspectRatio;
-    const maxH = this.spriteHCapPx || drawHeight;
-    if (drawHeight > maxH) {
-      const clampScale = maxH / drawHeight;
-      drawHeight = maxH;
-      drawWidth *= clampScale;
-    }
-
-    const x = this.x;
-    const y = this.y;
-    let sx = 1;
-    let sy = 1;
-    if (this.impactDir === 'vertical') {
-      sx = 1 + 0.18 * this.impact;
-      sy = 1 - 0.28 * this.impact;
-    } else {
-      sx = 1 + 0.25 * this.impact;
-      sy = 1 - 0.12 * this.impact;
-    }
-
-    g.save();
-    const cx = Math.round(x + drawWidth / 2);
-    const cy = Math.round(y + drawHeight / 2);
-    g.translate(cx, cy);
-    g.scale(sx * (this.visualScale || 1), sy * (this.visualScale || 1));
-    g.translate(-cx, -cy);
-
-    g.shadowColor = 'rgba(0,0,0,0.25)';
-    g.shadowBlur = 6;
-    g.shadowOffsetY = 2;
-
-    g.drawImage(walletImg, x, y, drawWidth, drawHeight);
-
-    g.restore();
-  }
-}
-
-const HAND_RIGHT_OVERFLOW_RATIO = 0.6;
-
-class Arm{
-  constructor(game){ this.g=game; this.t=0; this.frame=0; this.handX=BASE_W/2; this.spriteHCapPx=0; this.targetX=BASE_W/2; this.baseMoveSpeed=120; this.moveSpeed=this.baseMoveSpeed; this.level=1; this.retarget=0; this.baseRetargetMin=0.6; this.baseRetargetMax=1.8; this.baseMaxStep=140; this.baseJitter=0.05; this.activityFactor=1; this.minRetarget=this.baseRetargetMin; this.maxRetarget=this.baseRetargetMax; this.maxStep=this.baseMaxStep; this.maxIdleAtTarget=Infinity; this.jitterAmt=this.baseJitter; this._drawW=90; this._drawH=90; this._x=0; this._y=0; }
-  applyCaps(){ const maxH = Math.floor(BASE_H * CONFIG.maxTopActorH); this.h = Math.min(Math.floor(BASE_H * 0.21), maxH); }
-  applyLevelSpeed(levelNumber){
-    const numeric = Number(levelNumber);
-    const lvl = Number.isFinite(numeric) ? Math.max(1, Math.floor(numeric)) : 1;
-    const multiplier = 1 + 0.05 * (lvl - 1);
-    this.level = lvl;
-    this.activityFactor = multiplier;
-    this.moveSpeed = this.baseMoveSpeed * multiplier;
-    this.maxStep = this.baseMaxStep * this.activityFactor;
-    const intervalScale = 1 / this.activityFactor;
-    this.minRetarget = Math.max(0.25, this.baseRetargetMin * intervalScale);
-    this.maxRetarget = Math.max(this.minRetarget + 0.1, this.baseRetargetMax * intervalScale);
-    this.jitterAmt = this.baseJitter * (0.6 + 0.4 * this.activityFactor);
-    this.maxIdleAtTarget = (lvl > 1) ? Math.max(0.15, 0.45 * intervalScale) : Infinity;
-    if (this.retarget > this.maxRetarget) { this.retarget = this.maxRetarget; }
-  }
-  update(dt){ this.t += dt; if (this.t > 0.2){ this.t=0; this.frame=(this.frame+1)%2; } this.retarget -= dt; const padding=16; const approxW=this._drawW||90; const halfW=approxW/2; const minX=padding+halfW; const rightOverflow=approxW*HAND_RIGHT_OVERFLOW_RATIO; const maxX=BASE_W-(padding+halfW)+rightOverflow; if (this.retarget<=0){ const maxStep=this.maxStep; const next=clamp(this.handX + rand(-maxStep, maxStep), minX, maxX); this.targetX=next; this.retarget=rand(this.minRetarget, this.maxRetarget); } const dir=Math.sign(this.targetX - this.handX); this.handX += dir * this.moveSpeed * dt; this.handX = clamp(this.handX + rand(-this.jitterAmt, this.jitterAmt), minX, maxX); if (Math.abs(this.targetX - this.handX) < 2){ this.handX = this.targetX; if (Number.isFinite(this.maxIdleAtTarget)) this.retarget = Math.min(this.retarget, this.maxIdleAtTarget); } }
-  draw(g){ const maxH = Math.floor(BASE_H * CONFIG.maxTopActorH); const targetH = Math.min(this.h, maxH); const y=Math.max(0, CONFIG.topActorOffsetY ?? 13); const img=(this.frame===0?Hand.open:Hand.pinch); if (!Hand.ready || !img || !(img.naturalWidth>0)){ this._drawW=90; this._drawH=targetH; const w=this._drawW; const overflow=w*HAND_RIGHT_OVERFLOW_RATIO; const x=clamp(this.handX - w/2, 10, BASE_W - w - 10 + overflow); this._x=x; this._y=y; return; }
-    const natW=img.naturalWidth, natH=img.naturalHeight; const scale=targetH/natH; const drawW=natW*scale, drawH=natH*scale; const overflow=drawW*HAND_RIGHT_OVERFLOW_RATIO; const x = clamp(this.handX - drawW/2, 10, BASE_W - drawW - 10 + overflow);
-    g.save(); g.imageSmoothingEnabled = true; const drawX=Math.round(x), drawY=Math.round(y); g.drawImage(img, drawX, drawY, drawW, drawH); g.restore(); this._drawW=drawW; this._drawH=drawH; this._x=drawX; this._y=drawY; }
-  spawnX(){ return clamp((this._x||0) + (this._drawW||90) - 103, 16, BASE_W - 16); }
-  spawnY(){ return (this._y||0) + (this._drawH||48) - 88; }
-}
 
 // === Assets registry pour simplifier le rendu ===
 const ITEM_ASSETS = {
@@ -2934,7 +2780,7 @@ async function startGame(){
   addEvent(window, 'blur', () => resetPointerDragState({ releaseCapture: true }));
 
   game = new Game();
-  if (game && game.wallet) targetX = game.wallet.x + game.wallet.w / 2;
+  if (game && game.wallet) window.targetX = game.wallet.x + game.wallet.w / 2;
 
   // Synchronisation de la progression Supabase avant le tout premier chargement de niveau
   // pour éviter de lancer startLevel(0) avant d'avoir récupéré un snapshot éventuel.
