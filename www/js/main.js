@@ -81,6 +81,30 @@ const {
   getCanvasPoint,
 } = window.SD_CANVAS || {};
 
+const {
+  getBackgroundState = () => ({ hasBackgroundImage: false, currentBackgroundSrc: '' }),
+  setBackgroundImageSrc = () => {},
+  fadeOutBgThen = () => {},
+  applyLevelBackground = () => {},
+  setHUDScore = () => {},
+  setHUDCombo = () => {},
+  setHUDComboProgress = () => {},
+  setHUDLives = () => {},
+  setHUDTime = () => {},
+  setHUDLegendBoost = () => {},
+  updateComboChipVisual = () => {},
+  drawCompactHUD = () => null,
+  comboVis = { scale: 1, flash: 0 },
+  triggerHudBonusPop = () => {},
+  getHudBonusScale = () => 1,
+  showOverlay = () => {},
+  hideOverlay = () => {},
+  getOverlayElements = () => [],
+  deactivateOtherOverlays = () => {},
+  showExclusiveOverlay = () => {},
+  clearMainOverlay = () => null,
+} = window.SD_RENDER || {};
+
 const BASE_W = CANVAS_BASE_W ?? CONFIG?.portraitBase?.w;
 const BASE_H = CANVAS_BASE_H ?? CONFIG?.portraitBase?.h;
 const setupCanvasContext = typeof initCanvasContext === 'function'
@@ -202,86 +226,6 @@ function waitForImageReady(img) {
     img.addEventListener('load', done, { once: true });
     img.addEventListener('error', done, { once: true });
   });
-}
-
-// --- Fond (HTML) ---
-let hasBackgroundImage = false;
-let currentBackgroundSrc = '';
-
-function setBackgroundImageSrc(src, options = {}) {
-  const el = document.getElementById('bgLayer');
-  if (!el) return;
-
-  const { immediate = false } = options;
-
-  const enableNoTransition = () => {
-    if (immediate && el.classList) {
-      el.classList.add('no-transition');
-    }
-  };
-
-  const disableNoTransition = () => {
-    if (immediate && el.classList) {
-      requestAnimationFrame(() => el.classList.remove('no-transition'));
-    }
-  };
-
-  if (typeof src !== 'string' || !src.trim()) {
-    el.style.backgroundImage = 'none';
-    hasBackgroundImage = false;
-    currentBackgroundSrc = '';
-    return;
-  }
-
-  enableNoTransition();
-  el.style.backgroundImage = `url("${src}")`;
-  if (immediate) {
-    el.style.opacity = 1;
-    disableNoTransition();
-  } else {
-    requestAnimationFrame(() => {
-      el.style.opacity = 1;
-    });
-  }
-  hasBackgroundImage = true;
-  currentBackgroundSrc = src;
-}
-
-function fadeOutBgThen(next, options = {}) {
-  const el = document.getElementById('bgLayer');
-  const { immediate = false } = options;
-  const applyNext = () => {
-    if (typeof next === 'function') {
-      next();
-    } else if (typeof next === 'string') {
-      setBackgroundImageSrc(next);
-    }
-  };
-
-  if (!el || !hasBackgroundImage || immediate) {
-    applyNext();
-    return;
-  }
-
-  el.style.opacity = 0;
-  setTimeout(applyNext, 250);
-}
-
-function applyLevelBackground(src, options = {}) {
-  if (!src) return;
-
-  const { immediate = false } = options;
-
-  if (currentBackgroundSrc === src) {
-    setBackgroundImageSrc(src, { immediate });
-    return;
-  }
-
-  if (immediate || !hasBackgroundImage) {
-    setBackgroundImageSrc(src, { immediate: true });
-  } else {
-    fadeOutBgThen(() => setBackgroundImageSrc(src), { immediate: false });
-  }
 }
 
 // --- Wallet ---
@@ -563,48 +507,6 @@ window.setSoundEnabled = function patchedSetSoundEnabled(enabled) {
     safePlayMusic(currentMusic);
   }
 };
-
-// ---- HUD CONFIG (barre compacte) ----
-// Utils nécessaires au HUD
-
-function setHUDScore(v){
-  const el = document.getElementById('hudScore');
-  if (el) el.textContent = formatScore(v);
-}
-function setHUDCombo(mult, streak){
-  const multEl = document.getElementById('hudComboMult');
-  const streakEl = document.getElementById('hudComboStreak');
-  if (multEl) multEl.textContent = 'x' + Number(mult ?? 0).toFixed(1);
-  if (streakEl) streakEl.textContent = '(' + Math.max(0, Math.floor(Number(streak) || 0)) + ')';
-}
-function setHUDComboProgress(p){ // p: 0..1
-  const fill = document.getElementById('hudComboFill');
-  if (!fill) return;
-  const pct = (Math.max(0, Math.min(1, Number.isFinite(p) ? p : Number(p) || 0)) * 100).toFixed(0) + '%';
-  fill.style.width = pct;
-}
-function setHUDLives(n){
-  const livesEl = document.getElementById('hudLives');
-  if (livesEl) livesEl.textContent = '♥'.repeat(Math.max(0, (Number.isFinite(n) ? n : Number(n) || 0) | 0));
-}
-function setHUDTime(s){
-  const timeEl = document.getElementById('hudTime');
-  if (timeEl) timeEl.textContent = Math.max(0, (Number.isFinite(s) ? s : Number(s) || 0) | 0) + 's';
-}
-
-function setHUDLegendBoost(level, shouldShow, color){
-  const container = document.getElementById('hudLegendBoost');
-  const valueEl = document.getElementById('hudLegendBoostValue');
-  if (!container || !valueEl) return;
-
-  const visible = Boolean(shouldShow) && Math.max(0, Number(level) || 0) > 0;
-  container.style.display = visible ? 'flex' : 'none';
-
-  if (visible) {
-    valueEl.textContent = `Lvl ${Math.floor(level)}`;
-    container.style.color = color || '#fff';
-  }
-}
 
 function normalizeProgressLevel(level){
   const numeric = Number.isFinite(level) ? level : Number(level) || 1;
@@ -963,12 +865,6 @@ function progressToNext(streak) {
   if (nxt.min === cur.min) return 1;
   return clamp((streak - cur.min) / (nxt.min - cur.min), 0, 1);
 }
-
-// État visuel combo (pour GSAP)
-const comboVis = {
-  scale: 1,
-  flash: 0
-};
 
 let activeScreen = 'boot';
 let lastNonSettingsScreen = 'boot';
@@ -1767,50 +1663,6 @@ let shield = {
   active: false,
   _effect: null
 };
-
-const hudBonusPopState = {};
-const HUD_BONUS_POP_DEFAULTS = {
-
-  // Pop-in départ plus large pour que l'icône soit bien visible avant de revenir à 1
-  fromScale: 4,
-
-  duration: 0.8,
-  ease: "back.out(2.2)",
-};
-
-function getHudBonusState(type) {
-  if (!hudBonusPopState[type]) {
-    hudBonusPopState[type] = { scale: 1, tween: null };
-  }
-  return hudBonusPopState[type];
-}
-
-function triggerHudBonusPop(type, options = {}) {
-  const state = getHudBonusState(type);
-  const { fromScale, duration, ease } = { ...HUD_BONUS_POP_DEFAULTS, ...options };
-
-  if (state.tween?.kill) {
-    state.tween.kill();
-  }
-
-  state.scale = fromScale;
-
-  if (gsap?.to) {
-    state.tween = gsap.to(state, {
-      scale: 1,
-      duration,
-      ease,
-      overwrite: "auto",
-    });
-  } else {
-    state.scale = 1;
-  }
-}
-
-function getHudBonusScale(type) {
-  const state = hudBonusPopState[type];
-  return state?.scale || 1;
-}
 
 let shieldConsumedThisFrame = false;
 
@@ -2903,97 +2755,6 @@ const WR = { x: 0, y: 0, w: 0, h: 0 };
 window.addEventListener('load', positionHudSafe);
 window.addEventListener('resize', positionHudSafe);
 
-function showOverlay(el){
-  if (!el) return;
-  el.classList.add("show");
-  if (typeof el.setAttribute === "function") {
-    el.setAttribute("aria-hidden", "false");
-  }
-  if (typeof el.removeAttribute === "function") {
-    try {
-      el.removeAttribute("inert");
-    } catch (err) {
-      void err;
-    }
-  }
-  if (el?.style) {
-    el.style.pointerEvents = "auto";
-  }
-}
-
-function hideOverlay(el, options = {}){
-  if (!el) return;
-  const { immediate = false } = options;
-  const shouldSkipTransition = Boolean(immediate && el.classList);
-  if (shouldSkipTransition) {
-    el.classList.add('no-transition');
-  }
-  el.classList.remove("show");
-  if (typeof el.setAttribute === "function") {
-    el.setAttribute("aria-hidden", "true");
-  }
-  if (typeof el.setAttribute === "function") {
-    try {
-      el.setAttribute("inert", "");
-    } catch (err) {
-      void err;
-    }
-  }
-  if (el?.style) {
-    el.style.pointerEvents = "none";
-  }
-  if (typeof document !== 'undefined' && typeof el.contains === 'function') {
-    const active = document.activeElement;
-    if (active && el.contains(active) && typeof active.blur === 'function') {
-      active.blur();
-    }
-  }
-  if (shouldSkipTransition && typeof requestAnimationFrame === 'function') {
-    requestAnimationFrame(() => {
-      if (el?.classList) {
-        el.classList.remove('no-transition');
-      }
-    });
-  } else if (shouldSkipTransition && el?.classList) {
-    el.classList.remove('no-transition');
-  }
-}
-
-function getOverlayElements() {
-  if (typeof document === 'undefined') return [];
-  const ids = ['overlay', 'interLevelScreen', 'legendResultScreen'];
-  return ids
-    .map((id) => document.getElementById(id))
-    .filter((node) => !!node);
-}
-
-function deactivateOtherOverlays(activeEl) {
-  const overlays = getOverlayElements();
-  overlays.forEach((node) => {
-    if (!node || node === activeEl) return;
-    hideOverlay(node);
-    if (node !== overlay && node.classList) {
-      node.classList.remove('overlay-title', 'overlay-rules');
-    }
-  });
-}
-
-function showExclusiveOverlay(el) {
-  if (!el) return;
-  deactivateOtherOverlays(el);
-  showOverlay(el);
-}
-
-function clearMainOverlay(except){
-  const mainOverlay = overlay || document.getElementById("overlay");
-  if (!mainOverlay || mainOverlay === except) return mainOverlay || null;
-
-  mainOverlay.innerHTML = "";
-  hideOverlay(mainOverlay);
-  mainOverlay.classList.remove("overlay-title", "overlay-rules");
-  return mainOverlay;
-}
-
 // --- Écran intermédiaire : show/hide ---
 async function goToNextLevel(){
   const next = currentLevelIndex + 1;
@@ -3688,51 +3449,23 @@ class Spawner{
   }
 }
 
-function drawCompactHUD(ctx, g) {
-  if (!g) return null;
-
-  const W = BASE_W;
-  const H = BASE_H;
-
-  const desired = H * 0.08;
-  const barH = Math.round(clamp(desired, H * HUD_CONFIG.barHFracMin, H * HUD_CONFIG.barHFracMax));
-  const topFrac = g.maxTopActorH || CONFIG.maxTopActorH || 0.14;
-  const y = Math.round(Math.floor(H * topFrac));
-  const x = HUD_CONFIG.padX;
-  const w = W - HUD_CONFIG.padX * 2;
-  const h = barH;
-
-  const scoreValue = Math.round(g.score ?? 0);
-  setHUDScore(scoreValue);
-
-  const streak = Math.max(0, Math.floor(g.comboStreak ?? 0));
-  const cur = currentTier(streak) || comboTiers[0];
-  const comboMult = cur.mult;
-  setHUDCombo(comboMult, streak);
-  setHUDComboProgress(progressToNext(streak));
-
-  const color =
-    HUD_CONFIG.comboColors[String(cur.mult)] ||
-    (cur.mult >= 3.0 ? HUD_CONFIG.comboColors['3.0'] : HUD_CONFIG.comboColors['1.0']);
-
-  updateComboChipVisual(color);
-
-  const heartsCount = Math.max(0, Math.round(g.lives ?? 0));
-  setHUDLives(heartsCount);
-
-  const timeSeconds = Math.max(0, Math.floor(g.timeLeft ?? 0));
-  setHUDTime(timeSeconds);
-
-  const legendBoostLevel = Math.max(0, Math.floor(Number(g?.legendBoostLevel) || 0));
-  setHUDLegendBoost(legendBoostLevel, isLegendLevel(), color);
-
-  return { x, y, w, h };
-}
-
 class HUD{
   constructor(game){ this.g=game; }
   draw(g){
-    const metrics = drawCompactHUD(g, this.g);
+    const metrics = drawCompactHUD(g, this.g, {
+      HUD_CONFIG,
+      baseWidth: BASE_W,
+      baseHeight: BASE_H,
+      comboTiers,
+      progressToNext,
+      comboVis,
+      activeBonuses,
+      controlInversionState,
+      shield,
+      bonusIcons: BonusIcons,
+      shieldIconImage,
+      isLegendLevel,
+    });
     const barY = metrics?.y ?? 0;
     const barH = metrics?.h ?? 0;
 
@@ -4055,16 +3788,17 @@ class Game{
       overlay.innerHTML = '';
       hideOverlay(overlay);
       this.start();
-    } finally {
-      this.titleStartInFlight = false;
-    }
+  } finally {
+    this.titleStartInFlight = false;
   }
+}
   renderTitle(){
     setActiveScreen('title', { via: 'renderTitle' });
     this.settingsReturnView = "title";
-    if (currentBackgroundSrc === MENU_BACKGROUND_SRC) {
+    const bgState = typeof getBackgroundState === 'function' ? getBackgroundState() : { currentBackgroundSrc: '', hasBackgroundImage: false };
+    if (bgState.currentBackgroundSrc === MENU_BACKGROUND_SRC) {
       setBackgroundImageSrc(MENU_BACKGROUND_SRC);
-    } else if (hasBackgroundImage) {
+    } else if (bgState.hasBackgroundImage) {
       fadeOutBgThen(MENU_BACKGROUND_SRC);
     } else {
       setBackgroundImageSrc(MENU_BACKGROUND_SRC);
