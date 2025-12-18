@@ -115,6 +115,11 @@ const {
 } = window.SD_PROGRESS || {};
 
 const {
+  getOrCreateTitleAccountAnchor = () => null,
+  setTitleAccountAnchorVisible = () => {},
+} = window.SD_UI_CORE || {};
+
+const {
   levelAssets = {},
   preloadLevelAssets = () => Promise.resolve({}),
   ensureLevelAssets = async () => ({ bg: null, wallet: null, music: null }),
@@ -362,7 +367,6 @@ let canvas;
 let ctx;
 let overlay;
 let game;
-let titleAccountAnchor;
 
 function isActiveGameplayInProgress(){
   return Boolean(game && game.state === 'playing' && activeScreen === 'running');
@@ -476,30 +480,6 @@ function handleAuthStateUpdate(nextState){
   refreshAccountPanelIfVisible();
   updateInterLevelSaveButtonState();
   syncProgressFromAuthState(authState);
-}
-
-function getOrCreateTitleAccountAnchor(){
-  if (typeof document === 'undefined') return null;
-  if (titleAccountAnchor && titleAccountAnchor.isConnected) return titleAccountAnchor;
-  const wrapper = document.getElementById('gameWrapper');
-  if (!wrapper) return null;
-  const anchor = document.createElement('div');
-  anchor.id = 'titleAccountAnchor';
-  anchor.className = 'title-account-anchor title-account-bar account-status-wrapper';
-  anchor.innerHTML = `
-    <div class="title-account-card">
-      <span id="titleAccountStatus" class="title-account-status">Connexion en cours…</span>
-      <button id="btnAccount" type="button" class="title-account-button">Compte</button>
-    </div>`;
-  wrapper.appendChild(anchor);
-  titleAccountAnchor = anchor;
-  return anchor;
-}
-
-function setTitleAccountAnchorVisible(isVisible = false) {
-  const anchor = titleAccountAnchor || (isVisible ? getOrCreateTitleAccountAnchor() : null);
-  if (!anchor) return;
-  anchor.classList.toggle('is-visible', Boolean(isVisible));
 }
 
 function updateTitleAccountStatus(){
