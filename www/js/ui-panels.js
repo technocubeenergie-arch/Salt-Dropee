@@ -2,6 +2,10 @@
   const SD_UI_PANELS = global.SD_UI_PANELS || {};
 
   const {
+    SCREEN_NAME_ALIASES = {},
+  } = global.SD_CONFIG || {};
+
+  const {
     addEvent = () => {},
     removeEvent = () => {},
     INPUT = {},
@@ -19,6 +23,11 @@
   } = global.SD_UI_CORE || {};
 
   const {
+    debugDescribeElement = () => '',
+    debugFormatContext = () => '',
+  } = global.SD_INPUT || {};
+
+  const {
     showInterLevelScreen = () => {},
     hideInterLevelScreen = () => {},
     getLastInterLevelResult = () => "win",
@@ -27,6 +36,127 @@
   const {
     formatScore = (value) => String(value),
   } = global.SD_UTILS || {};
+
+  const NAV_SCREEN_LOG_TARGETS = new Set(['title', 'running', 'paused', 'interLevel', 'settings', 'gameover', 'leaderboard']);
+  let activeScreen = 'boot';
+  global.activeScreen = activeScreen;
+  let lastNonSettingsScreen = 'boot';
+
+  function normalizeScreenName(name) {
+    if (typeof name !== 'string' || name.trim() === '') return 'unknown';
+    const key = name.trim();
+    const lower = key.toLowerCase();
+    return SCREEN_NAME_ALIASES[lower] || key;
+  }
+
+  function logNavigation(target, context = {}) {
+    const navContext = debugFormatContext(context);
+    console.info(`[nav] goto(${target})${navContext}`);
+  }
+
+  function logPlayClickIgnored(reason, extra = {}) {
+    const details = debugFormatContext({
+      reason,
+      ...extra,
+    });
+    console.info(`[nav] play click ignored because ${reason}${details}`);
+  }
+
+  function logLogoutClickIgnored(reason, extra = {}) {
+    const details = debugFormatContext({
+      reason,
+      ...extra,
+    });
+    console.info(`[auth] logout click ignored because ${reason}${details}`);
+  }
+
+  function setActiveScreen(next, context = {}) {
+    const normalized = normalizeScreenName(next);
+    const prev = activeScreen;
+    const sameScreen = normalized === prev;
+    const info = { from: prev, ...(context && typeof context === 'object' ? context : {}) };
+    if (sameScreen) {
+      console.info(`[state] setActiveScreen: ${prev} (unchanged)${debugFormatContext(info)}`);
+      return normalized;
+    }
+    activeScreen = normalized;
+    global.activeScreen = normalized;
+    if (normalized !== 'settings' && normalized !== 'unknown') {
+      lastNonSettingsScreen = normalized;
+    }
+    console.info(`[state] setActiveScreen: ${prev} -> ${normalized}${debugFormatContext(info)}`);
+    if (NAV_SCREEN_LOG_TARGETS.has(normalized)) {
+      logNavigation(normalized, info);
+    }
+    setTitleAccountAnchorVisible(normalized === 'title');
+    return normalized;
+  }
+
+  function getActiveScreen() {
+    return activeScreen;
+  }
+
+  function getLastNonSettingsScreen() {
+    return lastNonSettingsScreen;
+  }
+
+  function isFormFieldElement(el) {
+    if (!el) return false;
+    const tag = (el.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || tag === 'select' || tag === 'button') return true;
+    if (el.isContentEditable) return true;
+    const role = typeof el.getAttribute === 'function' ? el.getAttribute('role') : null;
+    return role === 'textbox' || role === 'combobox' || role === 'searchbox';
+  }
+
+  function getFocusedElementForShortcuts(evt) {
+    if (evt && evt.target && evt.target !== global && evt.target !== global.document) {
+      return evt.target;
+    }
+    if (typeof global.document !== 'undefined') {
+      return global.document.activeElement;
+    }
+    return null;
+  }
+
+  function shouldBlockGameplayShortcuts(evt) {
+    const focusEl = getFocusedElementForShortcuts(evt);
+    const blockedByFocus = isFormFieldElement(focusEl);
+    const blockedByScreen = activeScreen === 'account';
+    if (blockedByFocus || blockedByScreen) {
+      console.info(
+        `[input] ignore global key${debugFormatContext({
+          reason: blockedByScreen ? 'account' : 'form-focus',
+          key: evt?.key,
+          code: evt?.code,
+          screen: activeScreen,
+          target: debugDescribeElement(focusEl),
+        })}`
+      );
+      return true;
+    }
+    return false;
+  }
+
+  global.normalizeScreenName = normalizeScreenName;
+  global.logNavigation = logNavigation;
+  global.logPlayClickIgnored = logPlayClickIgnored;
+  global.logLogoutClickIgnored = logLogoutClickIgnored;
+  global.setActiveScreen = setActiveScreen;
+  global.isFormFieldElement = isFormFieldElement;
+  global.getFocusedElementForShortcuts = getFocusedElementForShortcuts;
+  global.shouldBlockGameplayShortcuts = shouldBlockGameplayShortcuts;
+
+  SD_UI_PANELS.normalizeScreenName = normalizeScreenName;
+  SD_UI_PANELS.logNavigation = logNavigation;
+  SD_UI_PANELS.logPlayClickIgnored = logPlayClickIgnored;
+  SD_UI_PANELS.logLogoutClickIgnored = logLogoutClickIgnored;
+  SD_UI_PANELS.setActiveScreen = setActiveScreen;
+  SD_UI_PANELS.getActiveScreen = getActiveScreen;
+  SD_UI_PANELS.getLastNonSettingsScreen = getLastNonSettingsScreen;
+  SD_UI_PANELS.isFormFieldElement = isFormFieldElement;
+  SD_UI_PANELS.getFocusedElementForShortcuts = getFocusedElementForShortcuts;
+  SD_UI_PANELS.shouldBlockGameplayShortcuts = shouldBlockGameplayShortcuts;
 
   function getGameInstance() {
     return (typeof Game !== "undefined" && Game.instance)

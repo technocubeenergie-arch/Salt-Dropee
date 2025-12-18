@@ -145,6 +145,19 @@ const {
 } = window.SD_UI_ACCOUNT || {};
 
 const {
+  normalizeScreenName = (value) => (typeof value === 'string' && value.trim()) ? value : 'unknown',
+  logNavigation = () => {},
+  logPlayClickIgnored = () => {},
+  logLogoutClickIgnored = () => {},
+  setActiveScreen = () => 'unknown',
+  shouldBlockGameplayShortcuts = () => false,
+  isFormFieldElement = () => false,
+  getFocusedElementForShortcuts = () => null,
+  getActiveScreen = () => 'boot',
+  getLastNonSettingsScreen = () => 'boot',
+} = window.SD_UI_PANELS || {};
+
+const {
   levelAssets = {},
   preloadLevelAssets = () => Promise.resolve({}),
   ensureLevelAssets = async () => ({ bg: null, wallet: null, music: null }),
@@ -243,104 +256,13 @@ function progressToNext(streak) {
   return clamp((streak - cur.min) / (nxt.min - cur.min), 0, 1);
 }
 
-let activeScreen = 'boot';
-let lastNonSettingsScreen = 'boot';
-const NAV_SCREEN_LOG_TARGETS = new Set(['title', 'running', 'paused', 'interLevel', 'settings', 'gameover', 'leaderboard']);
-
-function isFormFieldElement(el) {
-  if (!el) return false;
-  const tag = (el.tagName || '').toLowerCase();
-  if (tag === 'input' || tag === 'textarea' || tag === 'select' || tag === 'button') return true;
-  if (el.isContentEditable) return true;
-  const role = typeof el.getAttribute === 'function' ? el.getAttribute('role') : null;
-  return role === 'textbox' || role === 'combobox' || role === 'searchbox';
-}
-
-function getFocusedElementForShortcuts(evt) {
-  if (evt && evt.target && evt.target !== window && evt.target !== document) {
-    return evt.target;
-  }
-  if (typeof document !== 'undefined') {
-    return document.activeElement;
-  }
-  return null;
-}
-
-function shouldBlockGameplayShortcuts(evt) {
-  const focusEl = getFocusedElementForShortcuts(evt);
-  const blockedByFocus = isFormFieldElement(focusEl);
-  const blockedByScreen = activeScreen === 'account';
-  if (blockedByFocus || blockedByScreen) {
-    console.info(
-      `[input] ignore global key${debugFormatContext({
-        reason: blockedByScreen ? 'account' : 'form-focus',
-        key: evt?.key,
-        code: evt?.code,
-        screen: activeScreen,
-        target: debugDescribeElement(focusEl),
-      })}`
-    );
-    return true;
-  }
-  return false;
-}
-
-function normalizeScreenName(name) {
-  if (typeof name !== 'string' || name.trim() === '') return 'unknown';
-  const key = name.trim();
-  const lower = key.toLowerCase();
-  return SCREEN_NAME_ALIASES[lower] || key;
-}
-
-function logNavigation(target, context = {}) {
-  const navContext = debugFormatContext(context);
-  console.info(`[nav] goto(${target})${navContext}`);
-}
-
-function logPlayClickIgnored(reason, extra = {}) {
-  const details = debugFormatContext({
-    reason,
-    ...extra,
-  });
-  console.info(`[nav] play click ignored because ${reason}${details}`);
-}
-
-function logLogoutClickIgnored(reason, extra = {}) {
-  const details = debugFormatContext({
-    reason,
-    ...extra,
-  });
-  console.info(`[auth] logout click ignored because ${reason}${details}`);
-}
-
-function setActiveScreen(next, context = {}) {
-  const normalized = normalizeScreenName(next);
-  const prev = activeScreen;
-  const sameScreen = normalized === prev;
-  const info = { from: prev, ...(context && typeof context === 'object' ? context : {}) };
-  if (sameScreen) {
-    console.info(`[state] setActiveScreen: ${prev} (unchanged)${debugFormatContext(info)}`);
-    return normalized;
-  }
-  activeScreen = normalized;
-  if (normalized !== 'settings' && normalized !== 'unknown') {
-    lastNonSettingsScreen = normalized;
-  }
-  console.info(`[state] setActiveScreen: ${prev} -> ${normalized}${debugFormatContext(info)}`);
-  if (NAV_SCREEN_LOG_TARGETS.has(normalized)) {
-    logNavigation(normalized, info);
-  }
-  setTitleAccountAnchorVisible(normalized === 'title');
-  return normalized;
-}
-
 let canvas;
 let ctx;
 let overlay;
 let game;
 
 function isActiveGameplayInProgress(){
-  return Boolean(game && game.state === 'playing' && activeScreen === 'running');
+  return Boolean(game && game.state === 'playing' && getActiveScreen() === 'running');
 }
 
 function getScoreService(){
@@ -2697,18 +2619,18 @@ class Game{
   }
   async uiStartFromTitle(){
     if (this.titleStartInFlight){
-      logPlayClickIgnored('start-in-flight', { screen: activeScreen, state: this.state });
+      logPlayClickIgnored('start-in-flight', { screen: getActiveScreen(), state: this.state });
       return;
     }
 
     if (this.state !== 'title'){
-      if (activeScreen === 'title') {
+      if (getActiveScreen() === 'title') {
         console.warn(
           `[nav] title start recovery${debugFormatContext({ previous: this.state })}`
         );
         this.state = 'title';
       } else {
-        logPlayClickIgnored('invalid-state', { screen: activeScreen, state: this.state });
+        logPlayClickIgnored('invalid-state', { screen: getActiveScreen(), state: this.state });
         return;
       }
     }
@@ -2717,10 +2639,10 @@ class Game{
 
     try {
       setProgressApplicationEnabled(true);
-      console.info(`[progress] start requested${debugFormatContext({ via: 'uiStartFromTitle', screen: activeScreen })}`);
+      console.info(`[progress] start requested${debugFormatContext({ via: 'uiStartFromTitle', screen: getActiveScreen() })}`);
       await refreshProgressSnapshotForTitleStart({ eagerWaitMs: TITLE_START_PROGRESS_EAGER_WAIT_MS });
 
-      const resumedFromSnapshot = getHasAppliedProgressSnapshot() && activeScreen === 'interLevel';
+      const resumedFromSnapshot = getHasAppliedProgressSnapshot() && getActiveScreen() === 'interLevel';
 
       if (resumedFromSnapshot) {
         overlay.innerHTML = '';
@@ -2784,7 +2706,7 @@ class Game{
       e.preventDefault(); e.stopPropagation();
       playSound("click");
       const authSnapshot = getAuthStateSnapshot();
-      console.info(`[progress] play clicked${debugFormatContext({ screen: activeScreen, auth: authSnapshot?.user ? 'authenticated' : 'guest' })}`);
+      console.info(`[progress] play clicked${debugFormatContext({ screen: getActiveScreen(), auth: authSnapshot?.user ? 'authenticated' : 'guest' })}`);
       await new Promise(r=>requestAnimationFrame(r));
       try{ const prev=ctx.imageSmoothingEnabled; ctx.imageSmoothingEnabled=false; const warmupWallet = typeof getWalletImage === 'function' ? getWalletImage() : null; const imgs=[warmupWallet, GoldImg, SilverImg, BronzeImg, DiamondImg, BombImg, Hand.open, Hand.pinch]; for (const im of imgs){ if (im && im.naturalWidth) ctx.drawImage(im,0,0,1,1); } ctx.save(); ctx.shadowColor='rgba(0,0,0,0.15)'; ctx.shadowBlur=4; ctx.shadowOffsetY=1; ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(4,4,2,0,Math.PI*2); ctx.fill(); ctx.restore(); ctx.imageSmoothingEnabled=prev; ctx.clearRect(0,0,8,8); }catch(_){ }
       this.uiStartFromTitle();
@@ -2801,7 +2723,7 @@ class Game{
       showExclusiveOverlay,
       setActiveScreen,
       LOGOUT_WATCHDOG_TIMEOUT_MS,
-      activeScreen,
+      activeScreen: getActiveScreen(),
       accountMode: this.accountMode,
       setAccountMode: (mode) => {
         this.accountMode = mode === 'signup' ? 'signup' : 'signin';
@@ -2825,8 +2747,8 @@ class Game{
         settings: this.settings,
         settingsReturnView: this.settingsReturnView,
         state: this.state,
-        activeScreen,
-        lastNonSettingsScreen,
+        activeScreen: getActiveScreen(),
+        lastNonSettingsScreen: getLastNonSettingsScreen(),
         showExclusiveOverlay,
         hideOverlay,
         hideLegendResultScreen,
@@ -2853,7 +2775,7 @@ class Game{
     if (window.SD_UI_PANELS?.renderLeaderboardPanel) {
       window.SD_UI_PANELS.renderLeaderboardPanel({
         overlay,
-        activeScreen,
+        activeScreen: getActiveScreen(),
         setActiveScreen,
         setTitleAccountAnchorVisible,
         showExclusiveOverlay,
