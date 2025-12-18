@@ -836,23 +836,6 @@ async function submitLegendScoreIfNeeded(reason = 'end'){
   }
 }
 
-function updateComboChipVisual(color){
-  const chip = document.getElementById('hudComboChip');
-  if (chip){
-    const scale = Number.isFinite(comboVis.scale) ? comboVis.scale : 1;
-    chip.style.transform = `scale(${scale.toFixed(3)})`;
-    const flash = clamp(Number.isFinite(comboVis.flash) ? comboVis.flash : 0, 0, 1);
-    const base = 0.12;
-    const bgAlpha = clamp(base + flash * 0.35, base, 0.6);
-    chip.style.backgroundColor = `rgba(255,255,255,${bgAlpha.toFixed(3)})`;
-    chip.style.boxShadow = flash > 0.01 ? `0 0 ${Math.round(12 + flash * 10)}px rgba(255,255,255,${(0.45 * flash).toFixed(2)})` : '';
-  }
-  const fill = document.getElementById('hudComboFill');
-  if (fill && color) fill.style.background = color;
-  const multEl = document.getElementById('hudComboMult');
-  if (multEl && color) multEl.style.color = color;
-}
-
 // Tiers & progression
 function currentTier(streak) { return comboTiers.filter(t => streak >= t.min).pop(); }
 function nextTier(streak) {
