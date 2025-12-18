@@ -11,6 +11,8 @@
     ? clamp
     : (value, min, max) => Math.min(Math.max(value, min), max);
 
+  const canvasAPI = global.SD_CANVAS || {};
+
   const DEBUG_INPUT_EVENT_TYPES = new Set([
     'pointerdown', 'pointermove', 'pointerup', 'pointercancel',
     'mousedown', 'mousemove', 'mouseup',
@@ -322,6 +324,9 @@
   }
 
   function projectClientToCanvas(clientX, clientY) {
+    if (typeof canvasAPI.projectClientToCanvas === 'function') {
+      return canvasAPI.projectClientToCanvas(clientX, clientY);
+    }
     if (!global.canvas) return { x: 0, y: 0 };
     const rect = global.canvas.getBoundingClientRect();
     const width = rect.width || 0;
@@ -339,6 +344,9 @@
   }
 
   function getCanvasPoint(evt){
+    if (typeof canvasAPI.getCanvasPoint === 'function') {
+      return canvasAPI.getCanvasPoint(evt);
+    }
     if (!global.canvas) return { x:0, y:0 };
     const point = getPrimaryPoint(evt);
     if (!point) return { x:0, y:0 };
