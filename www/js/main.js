@@ -163,60 +163,6 @@ const getCanvasPointSafe = typeof getCanvasPoint === 'function'
   ? getCanvasPoint
   : () => ({ x: 0, y: 0 });
 
-if (typeof window.openSettings !== "function") {
-  window.openSettings = function openSettingsFallback() {
-    const instance = (typeof Game !== "undefined" && Game.instance)
-      ? Game.instance
-      : null;
-
-    if (instance && typeof instance.renderSettings === "function") {
-      if (typeof playSound === "function") {
-        playSound("click");
-      }
-      instance.renderSettings();
-      return;
-    }
-
-    throw new Error("No settings handler available");
-  };
-}
-
-console.info("[settings] listener initialized");
-addEvent(document, 'click', (event) => {
-  const btn = event.target.closest('[data-action="open-settings"]');
-  if (!btn) return;
-
-  event.preventDefault();
-
-  const instance = (typeof Game !== "undefined" && Game.instance)
-    ? Game.instance
-    : null;
-
-  if (instance) {
-    let returnView = "title";
-
-    if (btn.closest("#interLevelScreen")) {
-      returnView = "inter";
-    } else if (instance.state === "paused") {
-      returnView = "pause";
-    } else if (instance.state === "inter") {
-      returnView = "inter";
-    } else if (instance.state === "over") {
-      returnView = "over";
-    } else if (instance.state === "title") {
-      returnView = "title";
-    }
-
-    instance.settingsReturnView = returnView;
-  }
-
-  try {
-    openSettings();
-  } catch (err) {
-    console.error("[settings] openSettings failed:", err);
-  }
-}, { passive: false });
-
 // --- Musique ---
 // moved to SD_AUDIO module
 
@@ -484,6 +430,12 @@ setProgressHostContext({
   getAuthStateSnapshot,
   isActiveGameplayInProgress,
 });
+
+if (window.SD_UI_PANELS?.initSettingsOpener) {
+  window.SD_UI_PANELS.initSettingsOpener({
+    getInstance: () => (typeof Game !== "undefined" && Game.instance) ? Game.instance : null,
+  });
+}
 
 function handleAuthStateUpdate(nextState){
   authState = { ...DEFAULT_AUTH_FRONT_STATE, ...(nextState || {}) };
@@ -3007,13 +2959,15 @@ class Game{
       }
     }
     updateTitleAccountStatus();
-    addEvent(document.getElementById('btnLB'), INPUT.tap, ()=>{ playSound("click"); this.renderLeaderboard(); });
-    addEvent(document.getElementById('btnRulesTitle'), INPUT.tap, (evt)=>{
-      evt.preventDefault();
-      evt.stopPropagation();
-      playSound("click");
-      this.renderRules("title");
-    }, { passive:false });
+    if (window.SD_UI_PANELS?.bindTitlePanelButtons) {
+      window.SD_UI_PANELS.bindTitlePanelButtons({
+        INPUT,
+        addEvent,
+        playSound,
+        onShowRules: () => this.renderRules("title"),
+        onShowLeaderboard: () => this.renderLeaderboard(),
+      });
+    }
     addEvent(document.getElementById('btnPlay'), INPUT.tap, async (e)=>{
       e.preventDefault(); e.stopPropagation();
       playSound("click");
@@ -3568,444 +3522,60 @@ class Game{
     }
   }
   renderSettings(){
-    if (overlay) overlay.classList.remove('overlay-title');
-    const fromViewRaw = this.settingsReturnView || this.state || activeScreen;
-    const fromView = normalizeScreenName(fromViewRaw);
-    console.info(`[overlay] open settings (from ${fromView})${debugFormatContext({ raw: fromViewRaw, screen: activeScreen })}`);
-    setActiveScreen('settings', { via: 'renderSettings', from: fromView, raw: fromViewRaw });
-    const s=this.settings;
-    const controlMode = (s.controlMode === 'zones') ? 'zones' : 'swipe';
-    s.controlMode = controlMode;
-    overlay.innerHTML = `
-    <div class="panel panel-shell settings-panel" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
-      <div class="panel-header">
-        <h1 id="settingsTitle">Paramètres</h1>
-        <p class="panel-subtitle">Ajuste ton expérience de jeu.</p>
-      </div>
-
-      <div class="panel-grid settings-grid">
-        <section class="panel-section panel-card settings-audio-card">
-          <h2 class="panel-title">Audio & retours</h2>
-          <div class="panel-field settings-toggle-group">
-            <label class="settings-toggle"><input type="checkbox" id="sound" ${s.sound?'checked':''}/> Son</label>
-            <label class="settings-toggle"><input type="checkbox" id="haptics" ${s.haptics?'checked':''}/> Vibrations</label>
-          </div>
-        </section>
-
-        ${hasTouch ? `
-        <section class="panel-section panel-card">
-          <div class="control-mode-setting">
-            <span class="control-mode-label" id="controlModeLabel">Mode de contrôle (mobile)</span>
-            <div class="control-mode-toggle" role="group" aria-labelledby="controlModeLabel" data-control-toggle>
-              <button type="button" class="control-mode-option" data-mode="swipe">Swipe</button>
-              <button type="button" class="control-mode-option" data-mode="zones">Zones tactiles</button>
-            </div>
-          </div>
-        </section>` : ''}
-
-        <section class="panel-section panel-card settings-sensitivity-card">
-          <h2 class="panel-title">Sensibilité</h2>
-          <p class="panel-subline">Ajuste la vitesse de déplacement.</p>
-          <input type="range" id="sens" min="0.5" max="1.5" step="0.05" value="${s.sensitivity}">
-        </section>
-      </div>
-
-      <div class="panel-footer">
-        <div class="btnrow panel-actions"><button id="back">Retour</button></div>
-      </div>
-    </div>`;
-    showExclusiveOverlay(overlay);
-    addEvent(document.getElementById('sound'), 'change', e=>{ playSound("click"); this.settings.sound = e.target.checked; saveSettings(this.settings); if (typeof setSoundEnabled === "function") { setSoundEnabled(this.settings.sound); } });
-    addEvent(document.getElementById('haptics'), 'change', e=>{ playSound("click"); this.settings.haptics = e.target.checked; saveSettings(this.settings); });
-    if (hasTouch) {
-      const controlToggle = overlay.querySelector('[data-control-toggle]');
-      if (controlToggle) {
-        const controlButtons = Array.from(controlToggle.querySelectorAll('button[data-mode]'));
-        const updateToggleState = (mode)=>{
-          const normalized = mode === 'zones' ? 'zones' : 'swipe';
-          controlButtons.forEach(btn=>{
-            const isActive = btn.dataset.mode === normalized;
-            btn.classList.toggle('is-active', isActive);
-            btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
-          });
-        };
-        updateToggleState(this.settings.controlMode);
-        controlButtons.forEach(btn=>{
-          addEvent(btn, 'click', (evt)=>{
-            if (evt && typeof evt.preventDefault === 'function') {
-              evt.preventDefault();
-            }
-            if (evt && typeof evt.stopPropagation === 'function') {
-              evt.stopPropagation();
-            }
-            const value = btn.dataset.mode === 'zones' ? 'zones' : 'swipe';
-            if (value === this.settings.controlMode) {
-              updateToggleState(value);
-              return;
-            }
-            playSound("click");
-            this.settings.controlMode = value;
-            saveSettings(this.settings);
-            setActiveControlMode(value);
-            updateToggleState(value);
-          }, { passive: false });
-        });
-      }
+    if (window.SD_UI_PANELS?.renderSettingsPanel) {
+      window.SD_UI_PANELS.renderSettingsPanel({
+        overlay,
+        settings: this.settings,
+        settingsReturnView: this.settingsReturnView,
+        state: this.state,
+        activeScreen,
+        lastNonSettingsScreen,
+        showExclusiveOverlay,
+        hideOverlay,
+        hideLegendResultScreen,
+        hideInterLevelScreen,
+        showInterLevelScreen,
+        getLastInterLevelResult,
+        playSound,
+        saveSettings,
+        setSoundEnabled,
+        setActiveControlMode,
+        addEvent,
+        INPUT,
+        normalizeScreenName,
+        setActiveScreen,
+        debugFormatContext,
+        onSettingsReturnViewChange: (value) => { this.settingsReturnView = value; },
+        onRenderPause: () => this.renderPause(),
+        onRenderGameOver: () => this.renderGameOver(),
+        onRenderTitle: () => this.renderTitle(),
+      });
     }
-    addEvent(document.getElementById('sens'), 'input', e=>{ this.settings.sensitivity = parseFloat(e.target.value); saveSettings(this.settings); });
-    addEvent(document.getElementById('back'), INPUT.tap, (evt)=>{
-      if (evt && typeof evt.preventDefault === 'function') {
-        evt.preventDefault();
-      }
-      if (evt && typeof evt.stopImmediatePropagation === 'function') {
-        evt.stopImmediatePropagation();
-      } else if (evt && typeof evt.stopPropagation === 'function') {
-        evt.stopPropagation();
-      }
-      playSound("click");
-      const returnViewRaw = this.settingsReturnView || this.state || "title";
-      const targetScreen = normalizeScreenName(returnViewRaw);
-      const nextScreen = targetScreen === 'unknown' ? lastNonSettingsScreen : targetScreen;
-      console.info(`[overlay] close settings (to ${nextScreen})${debugFormatContext({ raw: returnViewRaw })}`);
-      setActiveScreen(nextScreen, { via: 'settings-back', raw: returnViewRaw });
-      const returnView = returnViewRaw;
-      this.settingsReturnView = "title";
-      if (nextScreen !== 'interLevel') {
-        hideLegendResultScreen();
-        hideInterLevelScreen();
-      }
-      overlay.innerHTML='';
-
-      if (returnView === "pause" || returnView === "paused") {
-        this.renderPause();
-        return;
-      }
-
-      if (returnView === "inter") {
-        hideOverlay(overlay);
-        showInterLevelScreen(getLastInterLevelResult(), { replaySound: false });
-        return;
-      }
-
-      if (returnView === "over") {
-        this.renderGameOver();
-        return;
-      }
-
-      this.renderTitle();
-    }, { passive: false });
   }
   renderLeaderboard(){
-    const originScreen = normalizeScreenName(activeScreen);
-    this.leaderboardReturnView = originScreen === 'unknown' ? 'title' : originScreen;
-
-    if (!overlay) return;
-
-    overlay.classList.remove('overlay-title', 'overlay-rules');
-    setActiveScreen('leaderboard', { via: 'renderLeaderboard', from: originScreen });
-    setTitleAccountAnchorVisible(false);
-    overlay.innerHTML = `
-    <div class="panel legend-leaderboard-panel" role="dialog" aria-modal="true" aria-labelledby="legendLeaderboardTitle">
-        <div class="legend-leaderboard-header">
-          <h1 id="legendLeaderboardTitle">Leaderboard Legend</h1>
-        </div>
-
-      <div class="legend-leaderboard-grid">
-        <section class="panel-section legend-leaderboard-card">
-          <div class="legend-leaderboard-card-header">
-            <h2 class="panel-title">Top 20</h2>
-            <p class="panel-subline">Classement Legend</p>
-          </div>
-          <div class="legend-leaderboard-body">
-            <div class="legend-leaderboard-scroll" aria-live="polite">
-              <div id="leaderboardStatus" class="leaderboard-status">Chargement du classement…</div>
-              <ol id="leaderboardList" class="leaderboard-list"></ol>
-              <div id="leaderboardEmpty" class="leaderboard-empty" style="display:none;">Aucun score Legend pour le moment.</div>
-            </div>
-            <div id="leaderboardStickyWrapper" class="leaderboard-sticky" style="display:none;">
-              <div id="leaderboardStickyEntry" class="leaderboard-entry"></div>
-            </div>
-          </div>
-        </section>
-      </div>
-
-      <div class="panel-footer">
-        <div class="btnrow legend-leaderboard-actions"><button id="back" type="button" class="btn btn-secondary">Retour</button></div>
-      </div>
-    </div>`;
-    showExclusiveOverlay(overlay);
-    const goBack = () => {
-      playSound("click");
-      teardownStickyListeners();
-      const target = normalizeScreenName(this.leaderboardReturnView || 'title');
-      if (target === 'title') {
-        this.renderTitle();
-        return;
-      }
-      if (target === 'paused' || target === 'pause') {
-        this.renderPause();
-        return;
-      }
-      if (target === 'interLevel') {
-        hideOverlay(overlay);
-        showInterLevelScreen(getLastInterLevelResult(), { replaySound: false });
-        return;
-      }
-      if (target === 'gameover') {
-        this.renderGameOver();
-        return;
-      }
-      this.renderTitle();
-    };
-    addEvent(document.getElementById('back'), INPUT.tap, (evt)=>{
-      if (evt && typeof evt.preventDefault === 'function') {
-        evt.preventDefault();
-      }
-      if (evt && typeof evt.stopPropagation === 'function') {
-        evt.stopPropagation();
-      }
-      goBack();
-    }, { passive: false });
-
-    const scoreService = getScoreService();
-    const listEl = overlay.querySelector('#leaderboardList');
-    const statusEl = overlay.querySelector('#leaderboardStatus');
-    const emptyEl = overlay.querySelector('#leaderboardEmpty');
-    const stickyWrapper = overlay.querySelector('#leaderboardStickyWrapper');
-    const stickyEntry = overlay.querySelector('#leaderboardStickyEntry');
-    const scrollContainer = overlay.querySelector('.legend-leaderboard-scroll');
-
-    let currentPlayerId = null;
-    let playerRowEl = null;
-    let stickyData = null;
-    let teardownStickyListeners = () => {};
-
-    let referralCountsByPlayer = new Map();
-
-    const buildReferralCountMap = (rows = []) => {
-      const map = new Map();
-      rows.forEach((row) => {
-        if (!row?.player_id) return;
-        const numeric = Number(row.credited_count);
-        map.set(row.player_id, Number.isFinite(numeric) ? numeric : 0);
+    if (window.SD_UI_PANELS?.renderLeaderboardPanel) {
+      window.SD_UI_PANELS.renderLeaderboardPanel({
+        overlay,
+        activeScreen,
+        setActiveScreen,
+        setTitleAccountAnchorVisible,
+        showExclusiveOverlay,
+        addEvent,
+        removeEvent,
+        INPUT,
+        playSound,
+        normalizeScreenName,
+        formatScore,
+        getScoreService,
+        getLastInterLevelResult,
+        showInterLevelScreen,
+        hideOverlay,
+        onRenderTitle: () => this.renderTitle(),
+        onRenderPause: () => this.renderPause(),
+        onRenderGameOver: () => this.renderGameOver(),
+        onSetReturnView: (value) => { this.leaderboardReturnView = value; },
       });
-      return map;
-    };
-
-    const getBadgeNameForReferrals = (count) => {
-      const n = Number(count) || 0;
-      if (n >= 20) return 'badge7.png';
-      if (n >= 12) return 'badge6.png';
-      if (n >= 8) return 'badge5.png';
-      if (n >= 5) return 'badge4.png';
-      if (n >= 3) return 'badge3.png';
-      if (n >= 1) return 'badge2.png';
-      return 'badge1.png';
-    };
-
-    const getReferralCountForEntry = (entry) => {
-      if (!entry?.player_id) return 0;
-      return referralCountsByPlayer.get(entry.player_id) ?? 0;
-    };
-
-    const formatValue = (value) => {
-      if (typeof formatScore === 'function') {
-        return formatScore(value);
-      }
-      const parsed = Number(value);
-      return Number.isFinite(parsed) ? parsed.toString() : '0';
-    };
-
-    const renderEntry = (target, entry, rank, { isSticky = false } = {}) => {
-      if (!target || !entry) return;
-      target.innerHTML = '';
-      if (target.tagName === 'LI') {
-        target.classList.add('leaderboard-row');
-      }
-      target.classList.add('leaderboard-entry', 'legend-leaderboard-row');
-
-      const isPlayerRow = Boolean(currentPlayerId && entry.player_id === currentPlayerId);
-      const displayRank = Number.isFinite(rank) ? rank : (Number(entry.rank) || '?');
-
-      if (isPlayerRow) {
-        target.classList.add('is-player-row');
-        target.dataset.playerId = entry.player_id;
-      }
-      if (isSticky) {
-        target.classList.add('is-sticky-row');
-      }
-      target.dataset.rank = displayRank;
-
-      const rankEl = document.createElement('span');
-      rankEl.className = 'lb-rank legend-leaderboard-rank';
-      rankEl.textContent = `#${displayRank} `;
-
-      const badgeEl = document.createElement('img');
-      badgeEl.className = 'lb-badge';
-      const badgeName = getBadgeNameForReferrals(getReferralCountForEntry(entry));
-      badgeEl.src = `assets/${badgeName}`;
-      badgeEl.alt = 'Badge joueur';
-
-      const nameEl = document.createElement('span');
-      nameEl.className = 'lb-name legend-leaderboard-name';
-      nameEl.textContent = `${entry.username || 'Anonyme'} : `;
-
-      const scoreEl = document.createElement('span');
-      scoreEl.className = 'lb-score legend-leaderboard-score';
-      scoreEl.textContent = formatValue(entry.best_score);
-
-      target.appendChild(rankEl);
-      target.appendChild(badgeEl);
-      target.appendChild(nameEl);
-      target.appendChild(scoreEl);
-    };
-
-    // Vérifie si la vraie ligne du joueur est visible dans la zone scrollable pour basculer le mode sticky.
-    const isPlayerRowVisible = () => {
-      if (!playerRowEl || !scrollContainer) return false;
-      const containerRect = scrollContainer.getBoundingClientRect();
-      const rowRect = playerRowEl.getBoundingClientRect();
-      const overlap = Math.min(containerRect.bottom, rowRect.bottom) - Math.max(containerRect.top, rowRect.top);
-      return overlap > 0 && overlap >= Math.min(rowRect.height * 0.65, rowRect.height);
-    };
-
-    const syncStickyFloatingState = () => {
-      const hasStickyEntry = Boolean(stickyData?.entry);
-      if (!hasStickyEntry) {
-        stickyWrapper.style.display = 'none';
-        stickyWrapper.classList.remove('floating');
-        if (playerRowEl) {
-          playerRowEl.classList.remove('is-player-row-active', 'is-player-row-hidden');
-        }
-        if (scrollContainer) {
-          scrollContainer.classList.remove('has-sticky-overlay');
-        }
-        return;
-      }
-
-      const shouldFloat = !isPlayerRowVisible();
-      stickyWrapper.style.display = shouldFloat ? '' : 'none';
-      stickyWrapper.classList.toggle('floating', shouldFloat);
-
-      if (scrollContainer) {
-        scrollContainer.classList.toggle('has-sticky-overlay', shouldFloat);
-      }
-
-      if (playerRowEl) {
-        playerRowEl.classList.toggle('is-player-row-active', !shouldFloat);
-        playerRowEl.classList.toggle('is-player-row-hidden', shouldFloat);
-      }
-    };
-
-    const renderTop = (entries = []) => {
-      listEl.innerHTML = '';
-      playerRowEl = null;
-
-      const hasEntries = Array.isArray(entries) && entries.length > 0;
-      emptyEl.style.display = hasEntries ? 'none' : '';
-
-      if (!hasEntries) {
-        return;
-      }
-
-      entries.forEach((entry, index) => {
-        const li = document.createElement('li');
-        li.className = 'leaderboard-row';
-        const rank = index + 1;
-        renderEntry(li, entry, rank);
-        if (currentPlayerId && entry.player_id === currentPlayerId) {
-          playerRowEl = li;
-        }
-        listEl.appendChild(li);
-      });
-    };
-
-    const renderSticky = (sticky) => {
-      stickyData = sticky;
-      if (!sticky?.entry) {
-        syncStickyFloatingState();
-        return;
-      }
-      stickyWrapper.style.display = '';
-      const fallbackRank = Number.isFinite(sticky.entry.rank)
-        ? sticky.entry.rank
-        : Number(playerRowEl?.dataset?.rank) || sticky.entry.rank;
-      renderEntry(stickyEntry, sticky.entry, fallbackRank, { isSticky: true });
-      syncStickyFloatingState();
-    };
-
-    const handleScrollChange = () => {
-      // Détection manuelle pour éviter un observer quand le container change de taille ou de scroll.
-      syncStickyFloatingState();
-    };
-
-    if (scrollContainer) {
-      addEvent(scrollContainer, 'scroll', handleScrollChange, { passive: true });
-      addEvent(scrollContainer, 'touchmove', handleScrollChange, { passive: true });
     }
-    addEvent(window, 'resize', handleScrollChange, { passive: true });
-
-    teardownStickyListeners = () => {
-      if (scrollContainer) {
-        removeEvent(scrollContainer, 'scroll', handleScrollChange, { passive: true });
-        removeEvent(scrollContainer, 'touchmove', handleScrollChange, { passive: true });
-      }
-      removeEvent(window, 'resize', handleScrollChange, { passive: true });
-    };
-
-    const renderError = (message) => {
-      if (statusEl) {
-        statusEl.textContent = message;
-      }
-    };
-
-    if (!scoreService || typeof scoreService.fetchLegendTop !== 'function') {
-      renderError('Leaderboard indisponible pour le moment.');
-      return;
-    }
-
-    (async () => {
-      try {
-        renderError('Chargement du classement…');
-        // On élargit l'affichage au top 20 pour la liste scrollable.
-        const topResult = await scoreService.fetchLegendTop(20);
-        const entries = Array.isArray(topResult?.entries) ? topResult.entries : [];
-
-        let sticky = null;
-        if (typeof scoreService.fetchMyLegendRank === 'function') {
-          sticky = await scoreService.fetchMyLegendRank();
-        }
-
-        currentPlayerId = sticky?.entry?.player_id || null;
-
-        const playerIds = new Set();
-        entries.forEach((entry) => {
-          if (entry?.player_id) {
-            playerIds.add(entry.player_id);
-          }
-        });
-        if (sticky?.entry?.player_id) {
-          playerIds.add(sticky.entry.player_id);
-        }
-
-        if (playerIds.size > 0 && typeof scoreService.fetchLegendReferralCounts === 'function') {
-          const referralResult = await scoreService.fetchLegendReferralCounts(Array.from(playerIds));
-          if (referralResult?.error) {
-            console.warn('[leaderboard] referral counts unavailable', referralResult.error);
-          }
-          if (Array.isArray(referralResult?.rows)) {
-            referralCountsByPlayer = buildReferralCountMap(referralResult.rows);
-          }
-        }
-
-        renderTop(entries);
-        renderError(topResult?.error ? 'Classement indisponible pour le moment.' : '');
-        renderSticky(sticky);
-      } catch (error) {
-        console.warn('[leaderboard] rendering failed', error);
-        renderError('Impossible de charger le leaderboard.');
-      }
-    })();
   }
   renderPause(){
     renderPauseOverlay({
@@ -4028,37 +3598,22 @@ class Game{
     });
   }
   renderRules(returnView){
-    if (overlay) overlay.classList.remove('overlay-title');
-    this.rulesReturnView = returnView || this.state || "title";
-    setTitleAccountAnchorVisible(false);
-    overlay.innerHTML = `
-      <div class="rules-screen" role="dialog" aria-modal="true" aria-label="Règles du jeu">
-        <img src="assets/rules.webp" alt="Règles du jeu" />
-      </div>`;
-    overlay.classList.add('overlay-rules');
-    showExclusiveOverlay(overlay);
-
-    const closeRules = () => {
-      removeEvent(overlay, INPUT.tap, onTap, { passive: false });
-      overlay.classList.remove('overlay-rules');
-      overlay.innerHTML = '';
-      hideOverlay(overlay);
-
-      if (this.rulesReturnView === 'pause' || this.rulesReturnView === 'paused') {
-        this.renderPause();
-      } else {
-        this.renderTitle();
-      }
-    };
-
-    const onTap = (evt) => {
-      evt.preventDefault();
-      evt.stopPropagation();
-      playSound("click");
-      closeRules();
-    };
-
-    addEvent(overlay, INPUT.tap, onTap, { passive:false });
+    if (window.SD_UI_PANELS?.renderRulesPanel) {
+      window.SD_UI_PANELS.renderRulesPanel({
+        overlay,
+        rulesReturnView: returnView || this.state || "title",
+        setTitleAccountAnchorVisible,
+        showExclusiveOverlay,
+        hideOverlay,
+        addEvent,
+        removeEvent,
+        INPUT,
+        playSound,
+        onSetRulesReturnView: (value) => { this.rulesReturnView = value; },
+        onReturnToPause: () => this.renderPause(),
+        onReturnToTitle: () => this.renderTitle(),
+      });
+    }
   }
   renderGameOver(){
     const best=parseInt(localStorage.getItem(LS.bestScore)||'0',10);
