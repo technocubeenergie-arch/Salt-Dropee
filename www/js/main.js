@@ -62,8 +62,6 @@ const {
   isMatchingPointer,
   handleTouchZoneEvent,
   getPrimaryPoint,
-  projectClientToCanvas,
-  getCanvasPoint,
   logPointerTrace,
   onKeyDown,
   onKeyUp,
@@ -73,6 +71,26 @@ const {
   disablePlayerInput,
   enablePlayerInput,
 } = window.SD_INPUT || {};
+
+const {
+  BASE_W: CANVAS_BASE_W,
+  BASE_H: CANVAS_BASE_H,
+  initCanvasContext,
+  resizeCanvas,
+  positionHUD,
+  getCanvasPoint,
+} = window.SD_CANVAS || {};
+
+const BASE_W = CANVAS_BASE_W ?? CONFIG?.portraitBase?.w;
+const BASE_H = CANVAS_BASE_H ?? CONFIG?.portraitBase?.h;
+const setupCanvasContext = typeof initCanvasContext === 'function'
+  ? initCanvasContext
+  : () => ({ canvas: null, ctx: null });
+const resizeGameCanvas = typeof resizeCanvas === 'function' ? resizeCanvas : () => {};
+const positionHudSafe = typeof positionHUD === 'function' ? positionHUD : () => {};
+const getCanvasPointSafe = typeof getCanvasPoint === 'function'
+  ? getCanvasPoint
+  : () => ({ x: 0, y: 0 });
 
 if (typeof window.openSettings !== "function") {
   window.openSettings = function openSettingsFallback() {
@@ -2879,41 +2897,11 @@ function animateWalletToCenter(wallet, center, duration){
 // =====================
 // CANVAS & RENDER SETUP
 // =====================
-let DPR=1, SS=1, SCALE_FACTOR=1;
-
-function setupHiDPI(){
-  if (!canvas || !ctx) return;
-  DPR = Math.max(1, window.devicePixelRatio || 1);
-  const u = new URLSearchParams(location.search);
-  const q = parseFloat(u.get('ss'));
-  SS  = (Number.isFinite(q) && q > 0) ? q : (CONFIG.render?.supersample || 1);
-  SCALE_FACTOR = Math.min(4, DPR * SS);
-  canvas.width  = CONFIG.portraitBase.w * SCALE_FACTOR;
-  canvas.height = CONFIG.portraitBase.h * SCALE_FACTOR;
-  ctx.setTransform(SCALE_FACTOR, 0, 0, SCALE_FACTOR, 0, 0);
-  ctx.imageSmoothingEnabled = true;
-  if ('imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality = 'high';
-}
-
-const BASE_W = CONFIG.portraitBase.w;
-const BASE_H = CONFIG.portraitBase.h;
-let SCALE = 1, VIEW_W = BASE_W, VIEW_H = BASE_H;
-let targetX = BASE_W / 2;
+let targetX = (typeof BASE_W === 'number' ? BASE_W : 0) / 2;
 const WR = { x: 0, y: 0, w: 0, h: 0 };
 
-function positionHUD(){
-  const canvasEl = document.getElementById('gameCanvas');
-  const hud = document.getElementById('hud');
-  if (!canvasEl || !hud) return;
-
-  const rect = canvasEl.getBoundingClientRect();
-  const offsetPx = Math.round(rect.height * 0.21);
-
-  hud.style.setProperty('--hud-top', offsetPx + 'px');
-}
-
-window.addEventListener('load', positionHUD);
-window.addEventListener('resize', positionHUD);
+window.addEventListener('load', positionHudSafe);
+window.addEventListener('resize', positionHudSafe);
 
 function showOverlay(el){
   if (!el) return;
@@ -3004,19 +2992,6 @@ function clearMainOverlay(except){
   hideOverlay(mainOverlay);
   mainOverlay.classList.remove("overlay-title", "overlay-rules");
   return mainOverlay;
-}
-
-function resize(){
-  if (!canvas) return;
-  const vw = window.innerWidth, vh = window.innerHeight;
-  const scale = Math.min(vw/BASE_W, vh/BASE_H);
-  SCALE   = scale;
-  VIEW_W  = Math.floor(BASE_W * SCALE);
-  VIEW_H  = Math.floor(BASE_H * SCALE);
-  canvas.style.width  = VIEW_W + 'px';
-  canvas.style.height = VIEW_H + 'px';
-  setupHiDPI();
-  positionHUD();
 }
 
 // --- Écran intermédiaire : show/hide ---
@@ -5276,8 +5251,9 @@ function checkAABB(a,b){ return a.x<b.x+b.w && a.x+a.w>b.x && a.y<b.y+b.h && a.y
 async function startGame(){
   if (window.__saltDroppeeStarted) return;
 
-  canvas = document.getElementById('gameCanvas');
-  ctx = canvas?.getContext('2d');
+  const canvasRefs = setupCanvasContext();
+  canvas = canvasRefs.canvas;
+  ctx = canvasRefs.ctx;
   overlay = document.getElementById('overlay');
   if (!canvas || !ctx || !overlay) return;
 
@@ -5288,8 +5264,8 @@ async function startGame(){
   }
   unlockMusicOnce();
 
-  resize();
-  addEvent(window, 'resize', resize);
+  resizeGameCanvas();
+  addEvent(window, 'resize', resizeGameCanvas);
   addEvent(window, 'keydown', onKeyDown);
   addEvent(window, 'keyup', onKeyUp);
   addEvent(canvas, INPUT.down, onPointerDown);
@@ -5322,7 +5298,7 @@ async function startGame(){
 
   addEvent(document, 'visibilitychange', ()=>{ if (document.hidden && game.state==='playing'){ const now = performance.now(); if (game.ignoreVisibilityUntil && now < game.ignoreVisibilityUntil) return; resetPointerDragState({ releaseCapture: true }); game.state='paused'; game.renderPause(); } });
 
-  addEvent(canvas, INPUT.tap, (e)=>{ if (game.state!=='playing') return; const now=performance.now(); if (game.ignoreClicksUntil && now < game.ignoreClicksUntil) return; const pt=getCanvasPoint(e); if (pt.y<40 && pt.x>BASE_W-80){ playSound("click"); game.state='paused'; game.renderPause(); } });
+  addEvent(canvas, INPUT.tap, (e)=>{ if (game.state!=='playing') return; const now=performance.now(); if (game.ignoreClicksUntil && now < game.ignoreClicksUntil) return; const pt=getCanvasPointSafe(e); if (pt.y<40 && pt.x>BASE_W-80){ playSound("click"); game.state='paused'; game.renderPause(); } });
 
   game.render();
 }
