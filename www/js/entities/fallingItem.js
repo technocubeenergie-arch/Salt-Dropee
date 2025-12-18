@@ -8,34 +8,35 @@
 
   const ITEM_ASSETS = {
     good: {
-      bronze: { img: global.BronzeImg, ready: () => global.bronzeReady, fallback: (g, x, y, w, h) => { g.fillStyle = '#c07a45'; g.beginPath(); g.arc(x + w / 2, y + h / 2, Math.min(w, h) / 2, 0, Math.PI * 2); g.fill(); } },
-      silver: { img: global.SilverImg, ready: () => global.silverReady, fallback: (g, x, y, w, h) => { g.fillStyle = '#cfd6e6'; g.beginPath(); g.arc(x + w / 2, y + h / 2, Math.min(w, h) / 2, 0, Math.PI * 2); g.fill(); } },
-      gold: { img: global.GoldImg, ready: () => global.goldReady, fallback: (g, x, y, w, h) => { g.fillStyle = '#f2c14e'; g.beginPath(); g.arc(x + w / 2, y + h / 2, Math.min(w, h) / 2, 0, Math.PI * 2); g.fill(); } },
-      diamond: { img: global.DiamondImg, ready: () => global.diamondReady, fallback: (g, x, y, w, h) => { g.fillStyle = '#a8e6ff'; g.beginPath(); g.arc(x + w / 2, y + h / 2, Math.min(w, h) / 2, 0, Math.PI * 2); g.fill(); } },
+      bronze: { getImg: () => global.BronzeImg, ready: () => global.bronzeReady, fallback: (g, x, y, w, h) => { g.fillStyle = '#c07a45'; g.beginPath(); g.arc(x + w / 2, y + h / 2, Math.min(w, h) / 2, 0, Math.PI * 2); g.fill(); } },
+      silver: { getImg: () => global.SilverImg, ready: () => global.silverReady, fallback: (g, x, y, w, h) => { g.fillStyle = '#cfd6e6'; g.beginPath(); g.arc(x + w / 2, y + h / 2, Math.min(w, h) / 2, 0, Math.PI * 2); g.fill(); } },
+      gold: { getImg: () => global.GoldImg, ready: () => global.goldReady, fallback: (g, x, y, w, h) => { g.fillStyle = '#f2c14e'; g.beginPath(); g.arc(x + w / 2, y + h / 2, Math.min(w, h) / 2, 0, Math.PI * 2); g.fill(); } },
+      diamond: { getImg: () => global.DiamondImg, ready: () => global.diamondReady, fallback: (g, x, y, w, h) => { g.fillStyle = '#a8e6ff'; g.beginPath(); g.arc(x + w / 2, y + h / 2, Math.min(w, h) / 2, 0, Math.PI * 2); g.fill(); } },
     },
     bad: {
-      bomb: { img: global.BombImg, ready: () => global.bombReady, fallback: (g, x, y, w, h) => { g.fillStyle = '#333'; g.fillRect(x, y, w, h); } },
-      shitcoin: { img: global.ShitcoinImg, ready: () => global.shitcoinReady, fallback: (g, x, y, w, h) => { g.fillStyle = '#8a6b3a'; g.beginPath(); g.arc(x + w / 2, y + h / 2, Math.min(w, h) / 2, 0, Math.PI * 2); g.fill(); } },
-      rugpull: { img: global.RugpullImg, ready: () => global.rugpullReady, fallback: (g, x, y, w, h) => { g.fillStyle = '#4a3d7a'; g.beginPath(); g.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2); g.fill(); } },
-      fakeAirdrop: { img: global.FakeADImg, ready: () => global.fakeADReady, fallback: (g, x, y, w, h) => { g.fillStyle = '#6b7cff'; g.beginPath(); g.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2); g.fill(); g.fillStyle = '#fff'; g.fillRect(x + w / 2 - 3, y + h / 2 - 3, 6, 6); } },
-      anvil: { img: global.AnvilImg, ready: () => global.anvilReady, fallback: (g, x, y, w, h) => { g.fillStyle = '#60656f'; g.beginPath(); g.moveTo(x + 2, y + h * 0.7); g.lineTo(x + w - 2, y + h * 0.7); g.lineTo(x + w * 0.7, y + h * 0.4); g.lineTo(x + w * 0.3, y + h * 0.4); g.closePath(); g.fill(); } },
+      bomb: { getImg: () => global.BombImg, ready: () => global.bombReady, fallback: (g, x, y, w, h) => { g.fillStyle = '#333'; g.fillRect(x, y, w, h); } },
+      shitcoin: { getImg: () => global.ShitcoinImg, ready: () => global.shitcoinReady, fallback: (g, x, y, w, h) => { g.fillStyle = '#8a6b3a'; g.beginPath(); g.arc(x + w / 2, y + h / 2, Math.min(w, h) / 2, 0, Math.PI * 2); g.fill(); } },
+      rugpull: { getImg: () => global.RugpullImg, ready: () => global.rugpullReady, fallback: (g, x, y, w, h) => { g.fillStyle = '#4a3d7a'; g.beginPath(); g.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2); g.fill(); } },
+      fakeAirdrop: { getImg: () => global.FakeADImg, ready: () => global.fakeADReady, fallback: (g, x, y, w, h) => { g.fillStyle = '#6b7cff'; g.beginPath(); g.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2); g.fill(); g.fillStyle = '#fff'; g.fillRect(x + w / 2 - 3, y + h / 2 - 3, 6, 6); } },
+      anvil: { getImg: () => global.AnvilImg, ready: () => global.anvilReady, fallback: (g, x, y, w, h) => { g.fillStyle = '#60656f'; g.beginPath(); g.moveTo(x + 2, y + h * 0.7); g.lineTo(x + w - 2, y + h * 0.7); g.lineTo(x + w * 0.7, y + h * 0.4); g.lineTo(x + w * 0.3, y + h * 0.4); g.closePath(); g.fill(); } },
     },
     power: {
-      magnet: { img: global.MagnetImg, ready: () => global.magnetReady, fallback: (g, x, y, w, h) => { g.fillStyle = '#00d1ff'; g.fillRect(x, y, w, h); } },
-      x2: { img: global.X2Img, ready: () => global.x2Ready, fallback: (g, x, y, w, h) => { g.fillStyle = '#00d1ff'; g.fillRect(x, y, w, h); } },
-      shield: { img: global.ShieldImg, ready: () => global.shieldReady, fallback: (g, x, y, w, h) => { g.fillStyle = '#00d1ff'; g.fillRect(x, y, w, h); } },
-      timeShard: { img: global.TimeImg, ready: () => global.timeReady, fallback: (g, x, y, w, h) => { g.fillStyle = '#00d1ff'; g.fillRect(x, y, w, h); } },
+      magnet: { getImg: () => global.MagnetImg, ready: () => global.magnetReady, fallback: (g, x, y, w, h) => { g.fillStyle = '#00d1ff'; g.fillRect(x, y, w, h); } },
+      x2: { getImg: () => global.X2Img, ready: () => global.x2Ready, fallback: (g, x, y, w, h) => { g.fillStyle = '#00d1ff'; g.fillRect(x, y, w, h); } },
+      shield: { getImg: () => global.ShieldImg, ready: () => global.shieldReady, fallback: (g, x, y, w, h) => { g.fillStyle = '#00d1ff'; g.fillRect(x, y, w, h); } },
+      timeShard: { getImg: () => global.TimeImg, ready: () => global.timeReady, fallback: (g, x, y, w, h) => { g.fillStyle = '#00d1ff'; g.fillRect(x, y, w, h); } },
     },
   };
 
   function drawItemSprite(g, kind, subtype, x, y, w, h) {
     const entry = ITEM_ASSETS[kind]?.[subtype];
     if (entry) {
-      const im = entry.img;
-      if (im && im.complete) {
+      const im = (typeof entry.getImg === 'function') ? entry.getImg() : entry.img;
+      const ready = (typeof entry.ready === 'function') ? entry.ready() : undefined;
+      if (im && (ready ?? im.complete)) {
         g.drawImage(im, x, y, w, h);
       } else {
-        entry.fallback(g, x, y, w, h);
+        entry.fallback?.(g, x, y, w, h);
       }
       return;
     }
