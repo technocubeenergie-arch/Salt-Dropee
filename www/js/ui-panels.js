@@ -231,10 +231,11 @@
       playSoundFn("click");
       const targetScreen = normalize(fromViewRaw);
       const nextScreen = targetScreen === 'unknown' ? lastNonSettingsScreen : targetScreen;
+      const isInterLevelTarget = nextScreen === 'interLevel';
       console.info(`[overlay] close settings (to ${nextScreen})${formatContext({ raw: fromViewRaw })}`);
       setActiveScreenFn(nextScreen, { via: 'settings-back', raw: fromViewRaw });
       onSettingsReturnViewChange("title");
-      if (nextScreen !== 'interLevel') {
+      if (!isInterLevelTarget) {
         hideLegendResultScreen();
         hideInterLevelScreenFn();
       }
@@ -245,7 +246,7 @@
         return;
       }
 
-      if (targetScreen === "inter") {
+      if (isInterLevelTarget) {
         hideOverlayFn(overlay);
         showInterLevelScreenFn(getLastInterLevelResultFn(), { replaySound: false });
         return;
