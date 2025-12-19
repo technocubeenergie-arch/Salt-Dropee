@@ -103,6 +103,9 @@
           const dx = walletCenter - this.x;
           const strength = CONFIG?.magnet?.horizontalStrength ?? 4;
           this.vx += dx * strength * dt;
+          if (global.location?.search?.includes('debug')) {
+            console.debug(`[magnet] attraction dx=${dx.toFixed(2)} vx=${this.vx.toFixed(2)}`);
+          }
         }
       }
 

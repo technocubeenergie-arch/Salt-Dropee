@@ -365,6 +365,13 @@ const runtime = window.SD_GAME_RUNTIME?.createRuntime
   ? window.SD_GAME_RUNTIME.createRuntime(runtimeHost)
   : null;
 
+if (window.SD_PROGRESS) {
+  window.SD_PROGRESS.runtime = runtime;
+  if (typeof window.SD_PROGRESS.getRuntime !== "function") {
+    window.SD_PROGRESS.getRuntime = () => runtime;
+  }
+}
+
 const DEFAULT_LEGEND_BOOSTS = { timeBonusSeconds: 0, extraShields: 0, scoreMultiplier: 1 };
 let legendBoostsCache = null;
 let legendBoostsPromise = null;
@@ -788,6 +795,8 @@ let activeBonuses = {
   x2: { active: false, timeLeft: 0 }
 };
 
+window.activeBonuses = activeBonuses;
+
 let shield = {
   count: 0,
   active: false,
@@ -1031,6 +1040,9 @@ function activateBonus(type, duration) {
   }
 
   if (!wasActive && bonus.active) {
+    if (type === "magnet" && window?.location?.search?.includes("debug")) {
+      console.debug(`[magnet] activated (timeLeft=${bonus.timeLeft.toFixed(2)}s)`);
+    }
     triggerHudBonusPop(type);
   }
 }
