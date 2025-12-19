@@ -359,6 +359,14 @@ const runtimeHost = {
     state: game?.state,
     gameState,
   }),
+  get lastTime() {
+    return game?.lastTime;
+  },
+  set lastTime(value) {
+    if (game) {
+      game.lastTime = value;
+    }
+  },
 };
 
 const runtime = window.SD_GAME_RUNTIME?.createRuntime
@@ -688,7 +696,9 @@ function finalizeLevelTransition(afterStop){
     }
   }
 
-  window.__saltDroppeeLoopStarted = false;
+  if (runtime?.stop) {
+    runtime.stop();
+  }
 
   stopLevelMusic();
 
@@ -1881,7 +1891,6 @@ function resumeGameplay(){
       game.spawner.acc = 0;
     }
     game.lastTime = performance.now();
-    window.__saltDroppeeLoopStarted = false;
     score = game.score;
     lives = game.lives;
     timeLeft = game.timeLeft;
@@ -2175,7 +2184,9 @@ class Game{
     this.reset({ showTitle:true });
   }
   reset({showTitle=true}={}){
-    window.__saltDroppeeLoopStarted = false;
+    if (runtime?.stop) {
+      runtime.stop();
+    }
     setInterLevelUiState(false);
     gameState = "paused";
     levelEnded = false;
@@ -2259,30 +2270,12 @@ class Game{
     this.loop();
   }
   loop(){
-    if (this.state!=='playing'){
-      window.__saltDroppeeLoopStarted = false;
+    if (this.state !== 'playing'){
       return;
     }
-    if (window.__saltDroppeeLoopStarted) return;
-    window.__saltDroppeeLoopStarted = true;
-
-    const now=performance.now();
-    const dt=Math.min(0.033, (now-this.lastTime)/1000);
-    this.lastTime=now;
-    const tick = runtime?.tick ?? ((delta) => this.step(delta));
-    const draw = runtime?.draw ?? (() => this.render());
-    tick(dt);
-    draw();
-
-    if (this.state!=='playing'){
-      window.__saltDroppeeLoopStarted = false;
-      return;
+    if (runtime?.start) {
+      runtime.start();
     }
-
-    requestAnimationFrame(()=>{
-      window.__saltDroppeeLoopStarted = false;
-      this.loop();
-    });
   }
   step(dt){
     beginFrame();
