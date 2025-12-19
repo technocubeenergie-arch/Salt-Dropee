@@ -4,6 +4,24 @@
   const createRuntime = (host = {}) => {
     let rafId = null;
     let lastTime = null;
+    let running = false;
+    let paused = false;
+    let lastTickLogTime = 0;
+
+    const logState = (label) => {
+      try {
+        console.debug(`[runtime] ${label} ${JSON.stringify({ running, paused, rafId })}`);
+      } catch (_) {}
+    };
+
+    const logTick = () => {
+      const nowTs = performance?.now ? performance.now() : Date.now();
+      if (nowTs - lastTickLogTime < 1000) return;
+      lastTickLogTime = nowTs;
+      try {
+        console.debug(`[runtime] tick ${JSON.stringify({ running, paused })}`);
+      } catch (_) {}
+    };
 
     const getState = (...args) => (typeof host?.getState === 'function' ? host.getState(...args) : undefined);
     const isPlaying = () => {
@@ -14,10 +32,18 @@
     const startLoop = () => {
       if (!isPlaying()) {
         window.__saltDroppeeLoopStarted = false;
+        running = false;
+        paused = true;
+        if (rafId !== null) {
+          rafId = null;
+        }
+        logState('pause');
         return;
       }
 
       window.__saltDroppeeLoopStarted = true;
+      paused = false;
+      running = true;
 
       const now = performance.now();
       const dt = Math.min(0.033, (now - lastTime) / 1000);
@@ -27,13 +53,18 @@
         host.tick(dt);
       }
 
+      logTick();
+
       if (typeof host?.draw === 'function') {
         host.draw();
       }
 
       if (!isPlaying()) {
         window.__saltDroppeeLoopStarted = false;
+        running = false;
+        paused = true;
         rafId = null;
+        logState('pause');
         return;
       }
 
@@ -53,6 +84,8 @@
       start: (options = {}) => {
         if (rafId !== null) return;
         lastTime = Number.isFinite(options?.lastTime) ? options.lastTime : performance.now();
+        paused = false;
+        logState('resume');
         startLoop();
       },
       stop: (...args) => {
@@ -60,6 +93,9 @@
           cancelAnimationFrame(rafId);
         }
         rafId = null;
+        running = false;
+        paused = true;
+        logState('pause');
         window.__saltDroppeeLoopStarted = false;
         return host?.stop?.(...args);
       },
