@@ -2268,33 +2268,14 @@ class Game{
     this.lastTime=performance.now();
     this.ignoreClicksUntil=this.lastTime+500;
     this.ignoreVisibilityUntil=this.lastTime+1000;
-    this.loop();
+    if (runtime?.start) {
+      runtime.start({ lastTime: this.lastTime });
+    }
   }
   loop(){
-    if (this.state!=='playing'){
-      window.__saltDroppeeLoopStarted = false;
-      return;
+    if (runtime?.start) {
+      runtime.start({ lastTime: this.lastTime });
     }
-    if (window.__saltDroppeeLoopStarted) return;
-    window.__saltDroppeeLoopStarted = true;
-
-    const now=performance.now();
-    const dt=Math.min(0.033, (now-this.lastTime)/1000);
-    this.lastTime=now;
-    const tick = runtime?.tick ?? ((delta) => this.step(delta));
-    const draw = runtime?.draw ?? (() => this.render());
-    tick(dt);
-    draw();
-
-    if (this.state!=='playing'){
-      window.__saltDroppeeLoopStarted = false;
-      return;
-    }
-
-    requestAnimationFrame(()=>{
-      window.__saltDroppeeLoopStarted = false;
-      this.loop();
-    });
   }
   step(dt){
     beginFrame();
