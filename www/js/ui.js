@@ -163,6 +163,15 @@
         onShowLeaderboard: () => game?.renderLeaderboard?.(),
       });
     }
+    const settingsBtn = overlay?.querySelector('[data-action="open-settings"]');
+    if (settingsBtn && typeof INPUT?.addEvent === 'function' && INPUT?.tap) {
+      INPUT.addEvent(settingsBtn, INPUT.tap, (evt) => {
+        evt?.preventDefault?.();
+        evt?.stopPropagation?.();
+        global.playSound?.("click");
+        global.openSettings?.();
+      }, { passive: false });
+    }
     const playBtn = global.document?.getElementById('btnPlay');
     if (playBtn && typeof INPUT?.addEvent === 'function' && INPUT?.tap) {
       INPUT.addEvent(playBtn, INPUT.tap, async (e) => {
