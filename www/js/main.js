@@ -153,13 +153,20 @@ const {
   logNavigation = () => {},
   logPlayClickIgnored = () => {},
   logLogoutClickIgnored = () => {},
-  setActiveScreen = () => 'unknown',
+  setActiveScreen: setActiveScreenBase = () => 'unknown',
   shouldBlockGameplayShortcuts = () => false,
   isFormFieldElement = () => false,
   getFocusedElementForShortcuts = () => null,
   getActiveScreen = () => 'boot',
   getLastNonSettingsScreen = () => 'boot',
 } = window.SD_UI_PANELS || {};
+
+const {
+  init: initNav = () => {},
+  goto: gotoScreenBase = () => 'unknown',
+  back: backScreenBase = () => 'unknown',
+  getCurrent: getCurrentScreenBase = () => 'unknown',
+} = window.SD_NAV || {};
 
 const {
   levelAssets = {},
@@ -289,6 +296,27 @@ setProgressHostContext({
   isActiveGameplayInProgress,
 });
 
+const navState = {
+  activeScreen: typeof getActiveScreen === 'function' ? getActiveScreen() : 'boot',
+  previousScreen: null,
+  returnTo: null,
+};
+
+initNav({
+  getState: () => navState,
+  setState: (value = {}) => Object.assign(navState, value),
+});
+
+const gotoScreen = (...args) => (typeof gotoScreenBase === 'function'
+  ? gotoScreenBase(...args)
+  : setActiveScreenBase(...args));
+const backScreen = (...args) => (typeof backScreenBase === 'function'
+  ? backScreenBase(...args)
+  : setActiveScreenBase(...args));
+const getCurrentScreen = () => (typeof getCurrentScreenBase === 'function'
+  ? getCurrentScreenBase()
+  : getActiveScreen());
+
 if (window.SD_UI_PANELS?.initSettingsOpener) {
   window.SD_UI_PANELS.initSettingsOpener({
     getInstance: () => (typeof Game !== "undefined" && Game.instance) ? Game.instance : null,
@@ -300,7 +328,7 @@ captureReferralCodeFromUrl();
 tryConnectAuthFacade();
 
 function enterTitleScreen() {
-  setActiveScreen('title', { via: 'enterTitleScreen' });
+  gotoScreen('title', { via: 'enterTitleScreen' });
   setProgressApplicationEnabled(false);
   if (typeof document !== 'undefined' && document.body) {
     document.body.classList.add('is-title');
@@ -328,7 +356,7 @@ function enterTitleScreen() {
 }
 
 function leaveTitleScreen({ stopMusic = true } = {}) {
-  setActiveScreen('running', { via: 'leaveTitleScreen' });
+  gotoScreen('running', { via: 'leaveTitleScreen' });
   if (typeof document !== 'undefined' && document.body) {
     document.body.classList.remove('is-title');
   }
@@ -1858,7 +1886,7 @@ async function goToNextLevel(){
 function resumeGameplay(){
   hideLegendResultScreen({ immediate: true });
   hideInterLevelScreen({ immediate: true });
-  setActiveScreen('running', { via: 'resumeGameplay' });
+  gotoScreen('running', { via: 'resumeGameplay' });
   levelEnded = false;
   gameState = "playing";
   spawningEnabled = true;
@@ -1902,7 +1930,7 @@ function showLegendResultScreen(reason = "time"){
 
   clearMainOverlay(screen);
 
-  setActiveScreen('interLevel', { via: 'showLegendResultScreen', reason });
+  gotoScreen('interLevel', { via: 'showLegendResultScreen', reason });
 
   // Les résultats du mode Légende sont enregistrés uniquement dans la table "scores".
   // On évite ici toute sauvegarde de progression automatique afin de ne pas écrire
@@ -2197,7 +2225,7 @@ class Game{
     const u=new URLSearchParams(location.search); const seed=u.get('seed'); this.random = seed? (function(seed){ let t=seed>>>0; return function(){ t += 0x6D2B79F5; let r = Math.imul(t ^ t >>> 15, 1 | t); r ^= r + Math.imul(r ^ r >>> 7, 61 | r); return ((r ^ r >>> 14) >>> 0) / 4294967296; };})(parseInt(seed)||1) : Math.random;
     this.state='title';
     this.settingsReturnView = "title";
-    setActiveScreen(showTitle ? 'title' : 'running', { via: 'Game.reset', showTitle });
+    gotoScreen(showTitle ? 'title' : 'running', { via: 'Game.reset', showTitle });
     if (typeof setSoundEnabled === "function") {
       setSoundEnabled(!!this.settings.sound);
     }
@@ -2243,7 +2271,7 @@ class Game{
     spawningEnabled = true;
     enablePlayerInput('Game.start');
     this.state='playing';
-    setActiveScreen('running', { via: 'Game.start' });
+    gotoScreen('running', { via: 'Game.start' });
     this.lastTime=performance.now();
     this.ignoreClicksUntil=this.lastTime+500;
     this.ignoreVisibilityUntil=this.lastTime+1000;
@@ -2382,7 +2410,7 @@ class Game{
   }
 }
   renderTitle(){
-    setActiveScreen('title', { via: 'renderTitle' });
+    gotoScreen('title', { via: 'renderTitle' });
     this.settingsReturnView = "title";
     const bgState = typeof getBackgroundState === 'function' ? getBackgroundState() : { currentBackgroundSrc: '', hasBackgroundImage: false };
     if (bgState.currentBackgroundSrc === MENU_BACKGROUND_SRC) {
@@ -2437,7 +2465,7 @@ class Game{
       INPUT,
       playSound,
       showExclusiveOverlay,
-      setActiveScreen,
+      setActiveScreen: gotoScreen,
       LOGOUT_WATCHDOG_TIMEOUT_MS,
       activeScreen: getActiveScreen(),
       accountMode: this.accountMode,
@@ -2478,7 +2506,7 @@ class Game{
         addEvent,
         INPUT,
         normalizeScreenName,
-        setActiveScreen,
+        setActiveScreen: gotoScreen,
         debugFormatContext,
         onSettingsReturnViewChange: (value) => { this.settingsReturnView = value; },
         onRenderPause: () => this.renderPause(),
@@ -2492,7 +2520,7 @@ class Game{
       window.SD_UI_PANELS.renderLeaderboardPanel({
         overlay,
         activeScreen: getActiveScreen(),
-        setActiveScreen,
+        setActiveScreen: gotoScreen,
         setTitleAccountAnchorVisible,
         showExclusiveOverlay,
         addEvent,
@@ -2516,7 +2544,7 @@ class Game{
     renderPauseOverlay({
       overlay,
       onResume: () => {
-        setActiveScreen('running', { via: 'pause-resume' });
+        gotoScreen('running', { via: 'pause-resume' });
         this.state='playing';
         this.lastTime=performance.now();
         this.loop();
@@ -2553,7 +2581,7 @@ class Game{
   renderGameOver(){
     const best=parseInt(localStorage.getItem(LS.bestScore)||'0',10);
     this.settingsReturnView = "over";
-    setActiveScreen('gameover', { via: 'renderGameOver' });
+    gotoScreen('gameover', { via: 'renderGameOver' });
     overlay.innerHTML = `
     <div class="panel panel-shell gameover-panel" role="dialog" aria-modal="true" aria-labelledby="gameOverTitle">
       <div class="panel-header">
