@@ -271,6 +271,7 @@ let canvas;
 let ctx;
 let overlay;
 let game;
+let runtime = null;
 
 function isActiveGameplayInProgress(){
   return Boolean(game && game.state === 'playing' && getActiveScreen() === 'running');
@@ -349,28 +350,6 @@ let gameState = "playing";  // "playing" | "paused" | "inter"
 let levelEnded = false;
 let legendScoreSubmissionAttempted = false;
 let legendRunActive = false;
-
-const runtimeHost = {
-  start: (...args) => (typeof game?.start === 'function' ? game.start(...args) : undefined),
-  stop: (...args) => (typeof game?.renderPause === 'function' ? game.renderPause(...args) : undefined),
-  tick: (...args) => (typeof game?.step === 'function' ? game.step(...args) : undefined),
-  draw: (...args) => (typeof game?.render === 'function' ? game.render(...args) : undefined),
-  getState: () => ({
-    state: game?.state,
-    gameState,
-  }),
-};
-
-const runtime = window.SD_GAME_RUNTIME?.createRuntime
-  ? window.SD_GAME_RUNTIME.createRuntime(runtimeHost)
-  : null;
-
-if (window.SD_PROGRESS) {
-  window.SD_PROGRESS.runtime = runtime;
-  if (typeof window.SD_PROGRESS.getRuntime !== "function") {
-    window.SD_PROGRESS.getRuntime = () => runtime;
-  }
-}
 
 const DEFAULT_LEGEND_BOOSTS = { timeBonusSeconds: 0, extraShields: 0, scoreMultiplier: 1 };
 let legendBoostsCache = null;
@@ -2666,8 +2645,37 @@ async function startGame(){
   if (INPUT.cancel) addEvent(window, INPUT.cancel, onPointerUp);
   addEvent(window, 'blur', () => resetPointerDragState({ releaseCapture: true }));
 
-  game = new Game();
+  const session = window.SD_GAME_SESSION?.createGameSession
+    ? window.SD_GAME_SESSION.createGameSession({
+        Game,
+        getGameState: () => gameState,
+      })
+    : null;
+
+  game = session?.game || null;
   if (game && game.wallet) window.targetX = game.wallet.x + game.wallet.w / 2;
+
+  const runtimeHost = {
+    start: (...args) => (typeof game?.start === 'function' ? game.start(...args) : undefined),
+    stop: (...args) => (typeof game?.renderPause === 'function' ? game.renderPause(...args) : undefined),
+    tick: session?.tick || ((...args) => (typeof game?.step === 'function' ? game.step(...args) : undefined)),
+    draw: session?.draw || ((...args) => (typeof game?.render === 'function' ? game.render(...args) : undefined)),
+    getState: session?.getState || (() => ({
+      state: game?.state,
+      gameState,
+    })),
+  };
+
+  runtime = window.SD_GAME_RUNTIME?.createRuntime
+    ? window.SD_GAME_RUNTIME.createRuntime(runtimeHost)
+    : null;
+
+  if (window.SD_PROGRESS) {
+    window.SD_PROGRESS.runtime = runtime;
+    if (typeof window.SD_PROGRESS.getRuntime !== "function") {
+      window.SD_PROGRESS.getRuntime = () => runtime;
+    }
+  }
 
   // Synchronisation de la progression Supabase avant le tout premier chargement de niveau
   // pour éviter de lancer startLevel(0) avant d'avoir récupéré un snapshot éventuel.
