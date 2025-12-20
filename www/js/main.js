@@ -169,6 +169,21 @@ const {
 } = window.SD_NAV || {};
 
 const {
+  init: initUiModule = () => ({}),
+  getOverlay: getUiOverlay = () => null,
+  enterTitleScreen: enterTitleScreenUi = () => {},
+  leaveTitleScreen: leaveTitleScreenUi = () => {},
+  clearOverlay: clearUiOverlay = () => {},
+  renderTitle: renderTitleUi = () => {},
+  renderAccountPanel: renderAccountPanelUiBridge = () => {},
+  renderSettings: renderSettingsUi = () => {},
+  renderLeaderboard: renderLeaderboardUi = () => {},
+  renderPause: renderPauseUi = () => {},
+  renderRules: renderRulesUi = () => {},
+  renderGameOver: renderGameOverUi = () => {},
+} = window.SD_UI || {};
+
+const {
   levelAssets = {},
   preloadLevelAssets = () => Promise.resolve({}),
   ensureLevelAssets = async () => ({ bg: null, wallet: null, music: null }),
@@ -276,7 +291,6 @@ function progressToNext(streak) {
 
 let canvas;
 let ctx;
-let overlay;
 let game;
 let runtime = null;
 
@@ -327,47 +341,8 @@ captureReferralCodeFromUrl();
 
 tryConnectAuthFacade();
 
-function enterTitleScreen() {
-  gotoScreen('title', { via: 'enterTitleScreen' });
-  setProgressApplicationEnabled(false);
-  if (typeof document !== 'undefined' && document.body) {
-    document.body.classList.add('is-title');
-  }
-  if (typeof overlay !== 'undefined' && overlay) {
-    overlay.classList.remove('overlay-rules');
-    overlay.classList.add('overlay-title');
-  }
-
-  const runtimeInstance = (typeof Game !== 'undefined' && Game.instance)
-    ? Game.instance
-    : (game || null);
-  if (runtimeInstance && runtimeInstance.state !== 'title') {
-    console.info(
-      `[nav] syncing runtime state to title${debugFormatContext({
-        previous: runtimeInstance.state,
-      })}`
-    );
-    runtimeInstance.state = 'title';
-  }
-
-  playMenuMusic();
-
-  applyPendingProgressIfPossible();
-}
-
-function leaveTitleScreen({ stopMusic = true } = {}) {
-  gotoScreen('running', { via: 'leaveTitleScreen' });
-  if (typeof document !== 'undefined' && document.body) {
-    document.body.classList.remove('is-title');
-  }
-  if (typeof overlay !== 'undefined' && overlay) {
-    overlay.classList.remove('overlay-title');
-  }
-  setTitleAccountAnchorVisible(false);
-  if (stopMusic) {
-    stopMenuMusic();
-  }
-}
+const enterTitleScreen = (...args) => enterTitleScreenUi(...args);
+const leaveTitleScreen = (...args) => leaveTitleScreenUi(...args);
 
 // --- État "niveaux" ---
 let currentLevelIndex = 0; // 0 → LEVELS[0] = niveau 1
@@ -2389,230 +2364,38 @@ class Game{
       const resumedFromSnapshot = getHasAppliedProgressSnapshot() && getActiveScreen() === 'interLevel';
 
       if (resumedFromSnapshot) {
-        overlay.innerHTML = '';
-        hideOverlay(overlay);
-        if (typeof document !== 'undefined' && document.body) {
-          document.body.classList.remove('is-title');
-        }
-        if (overlay) {
-          overlay.classList.remove('overlay-title');
-        }
+        clearUiOverlay({ removeTitleState: true });
         stopMenuMusic();
         return;
       }
 
       leaveTitleScreen();
-      overlay.innerHTML = '';
-      hideOverlay(overlay);
+      clearUiOverlay();
       this.start();
   } finally {
     this.titleStartInFlight = false;
   }
 }
   renderTitle(){
-    gotoScreen('title', { via: 'renderTitle' });
-    this.settingsReturnView = "title";
-    const bgState = typeof getBackgroundState === 'function' ? getBackgroundState() : { currentBackgroundSrc: '', hasBackgroundImage: false };
-    if (bgState.currentBackgroundSrc === MENU_BACKGROUND_SRC) {
-      setBackgroundImageSrc(MENU_BACKGROUND_SRC);
-    } else if (bgState.hasBackgroundImage) {
-      fadeOutBgThen(MENU_BACKGROUND_SRC);
-    } else {
-      setBackgroundImageSrc(MENU_BACKGROUND_SRC);
-    }
-    setTitleAccountAnchorVisible(true);
-    enterTitleScreen();
-    overlay.innerHTML = `
-      <div class="title-screen" role="presentation">
-        <div class="title-screen-spacer" aria-hidden="true"></div>
-        <div class="title-buttons" role="navigation">
-          <button id="btnPlay" type="button">Jouer</button>
-          <button id="btnRulesTitle" type="button">Règle du jeu</button>
-          <button type="button" class="btn-settings" data-action="open-settings">Paramètres</button>
-      <button id="btnLB" type="button">Leaderboard</button>
-        </div>
-      </div>`;
-    showExclusiveOverlay(overlay);
-    bindTitleAccountButton({
-      onOpenAccount: () => this.renderAccountPanel({ keepMode: true }),
-      playSound,
-    });
-    if (window.SD_UI_PANELS?.bindTitlePanelButtons) {
-      window.SD_UI_PANELS.bindTitlePanelButtons({
-        INPUT,
-        addEvent,
-        playSound,
-        onShowRules: () => this.renderRules("title"),
-        onShowLeaderboard: () => this.renderLeaderboard(),
-      });
-    }
-    addEvent(document.getElementById('btnPlay'), INPUT.tap, async (e)=>{
-      e.preventDefault(); e.stopPropagation();
-      playSound("click");
-      const authSnapshot = getAuthStateSnapshot();
-      console.info(`[progress] play clicked${debugFormatContext({ screen: getActiveScreen(), auth: authSnapshot?.user ? 'authenticated' : 'guest' })}`);
-      await new Promise(r=>requestAnimationFrame(r));
-      try{ const prev=ctx.imageSmoothingEnabled; ctx.imageSmoothingEnabled=false; const warmupWallet = typeof getWalletImage === 'function' ? getWalletImage() : null; const imgs=[warmupWallet, GoldImg, SilverImg, BronzeImg, DiamondImg, BombImg, Hand.open, Hand.pinch]; for (const im of imgs){ if (im && im.naturalWidth) ctx.drawImage(im,0,0,1,1); } ctx.save(); ctx.shadowColor='rgba(0,0,0,0.15)'; ctx.shadowBlur=4; ctx.shadowOffsetY=1; ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(4,4,2,0,Math.PI*2); ctx.fill(); ctx.restore(); ctx.imageSmoothingEnabled=prev; ctx.clearRect(0,0,8,8); }catch(_){ }
-      this.uiStartFromTitle();
-    }, { passive:false });
+    renderTitleUi({ game: this, ctx });
   }
   async renderAccountPanel(options = {}){
-    if (typeof renderAccountPanelUi !== 'function') return;
-    await renderAccountPanelUi({
-      ...options,
-      overlay,
-      addEvent,
-      INPUT,
-      playSound,
-      showExclusiveOverlay,
-      setActiveScreen: gotoScreen,
-      LOGOUT_WATCHDOG_TIMEOUT_MS,
-      activeScreen: getActiveScreen(),
-      accountMode: this.accountMode,
-      setAccountMode: (mode) => {
-        this.accountMode = mode === 'signup' ? 'signup' : 'signin';
-      },
-      accountFlashMessage: this.accountFlashMessage,
-      setAccountFlashMessage: (value) => {
-        this.accountFlashMessage = value;
-      },
-      clearAccountFlashMessage: () => {
-        this.accountFlashMessage = null;
-      },
-      onReturnToTitle: () => this.renderTitle(),
-      onRerender: (args = {}) => this.renderAccountPanel({ ...args, keepMode: true }),
-      logLogoutClickIgnored,
-    });
+    await renderAccountPanelUiBridge({ game: this, options });
   }
   renderSettings(){
-    if (window.SD_UI_PANELS?.renderSettingsPanel) {
-      window.SD_UI_PANELS.renderSettingsPanel({
-        overlay,
-        settings: this.settings,
-        settingsReturnView: this.settingsReturnView,
-        state: this.state,
-        activeScreen: getActiveScreen(),
-        lastNonSettingsScreen: getLastNonSettingsScreen(),
-        showExclusiveOverlay,
-        hideOverlay,
-        hideLegendResultScreen,
-        hideInterLevelScreen,
-        showInterLevelScreen,
-        getLastInterLevelResult,
-        playSound,
-        saveSettings,
-        setSoundEnabled,
-        setActiveControlMode,
-        addEvent,
-        INPUT,
-        normalizeScreenName,
-        setActiveScreen: gotoScreen,
-        debugFormatContext,
-        onSettingsReturnViewChange: (value) => { this.settingsReturnView = value; },
-        onRenderPause: () => this.renderPause(),
-        onRenderGameOver: () => this.renderGameOver(),
-        onRenderTitle: () => this.renderTitle(),
-      });
-    }
+    renderSettingsUi({ game: this });
   }
   renderLeaderboard(){
-    if (window.SD_UI_PANELS?.renderLeaderboardPanel) {
-      window.SD_UI_PANELS.renderLeaderboardPanel({
-        overlay,
-        activeScreen: getActiveScreen(),
-        setActiveScreen: gotoScreen,
-        setTitleAccountAnchorVisible,
-        showExclusiveOverlay,
-        addEvent,
-        removeEvent,
-        INPUT,
-        playSound,
-        normalizeScreenName,
-        formatScore,
-        getScoreService,
-        getLastInterLevelResult,
-        showInterLevelScreen,
-        hideOverlay,
-        onRenderTitle: () => this.renderTitle(),
-        onRenderPause: () => this.renderPause(),
-        onRenderGameOver: () => this.renderGameOver(),
-        onSetReturnView: (value) => { this.leaderboardReturnView = value; },
-      });
-    }
+    renderLeaderboardUi({ game: this });
   }
   renderPause(){
-    renderPauseOverlay({
-      overlay,
-      onResume: () => {
-        gotoScreen('running', { via: 'pause-resume' });
-        this.state='playing';
-        this.lastTime=performance.now();
-        this.loop();
-      },
-      onQuit: () => {
-        this.reset();
-      },
-      onShowRules: () => {
-        this.renderRules("pause");
-      },
-      setReturnView: () => {
-        this.settingsReturnView = "pause";
-      },
-    });
+    renderPauseUi({ game: this });
   }
   renderRules(returnView){
-    if (window.SD_UI_PANELS?.renderRulesPanel) {
-      window.SD_UI_PANELS.renderRulesPanel({
-        overlay,
-        rulesReturnView: returnView || this.state || "title",
-        setTitleAccountAnchorVisible,
-        showExclusiveOverlay,
-        hideOverlay,
-        addEvent,
-        removeEvent,
-        INPUT,
-        playSound,
-        onSetRulesReturnView: (value) => { this.rulesReturnView = value; },
-        onReturnToPause: () => this.renderPause(),
-        onReturnToTitle: () => this.renderTitle(),
-      });
-    }
+    renderRulesUi({ game: this, returnView });
   }
   renderGameOver(){
-    const best=parseInt(localStorage.getItem(LS.bestScore)||'0',10);
-    this.settingsReturnView = "over";
-    gotoScreen('gameover', { via: 'renderGameOver' });
-    overlay.innerHTML = `
-    <div class="panel panel-shell gameover-panel" role="dialog" aria-modal="true" aria-labelledby="gameOverTitle">
-      <div class="panel-header">
-        <h1 id="gameOverTitle">Fin de partie</h1>
-        <p class="panel-subtitle">Récapitulatif de ta dernière session.</p>
-      </div>
-
-      <div class="panel-grid">
-        <section class="panel-section panel-card">
-          <h2 class="panel-title">Résumé</h2>
-          <ul class="panel-stat-list">
-            <li><span>Score</span><strong>${this.score}</strong></li>
-            <li><span>Record local</span><strong>${best}</strong></li>
-            <li><span>Combo max</span><strong>${this.maxCombo}</strong></li>
-            <li><span>Niveau atteint</span><strong>N${this.levelReached}</strong></li>
-          </ul>
-        </section>
-      </div>
-
-      <div class="panel-footer">
-        <div class="btnrow panel-actions">
-          <button id="again">Rejouer</button>
-          <button id="menu">Menu</button>
-          ${TG? '<button id="share">Partager</button>': ''}
-        </div>
-      </div>
-    </div>`;
-    showExclusiveOverlay(overlay);
-    addEvent(document.getElementById('again'), INPUT.tap, async ()=>{ playSound("click"); overlay.innerHTML=''; hideOverlay(overlay); this.reset({showTitle:false}); await new Promise(r=>requestAnimationFrame(r)); this.start(); }, { passive:false });
-    addEvent(document.getElementById('menu'), INPUT.tap, ()=>{ playSound("click"); overlay.innerHTML=''; hideOverlay(overlay); this.reset({showTitle:true}); });
-    if (TG){ const sh=document.getElementById('share'); if (sh) addEvent(sh, INPUT.tap, ()=>{ playSound("click"); try{ TG.sendData(JSON.stringify({ score:this.score, duration:CONFIG.runSeconds, version:VERSION })); }catch(e){} }); }
+    renderGameOverUi({ game: this });
   }
   render(){
     const sx = this.shake>0? Math.round(rand(-2,2)):0;
@@ -2653,7 +2436,22 @@ async function startGame(){
   const canvasRefs = setupCanvasContext();
   canvas = canvasRefs.canvas;
   ctx = canvasRefs.ctx;
-  overlay = document.getElementById('overlay');
+  const uiInitResult = initUiModule({
+    overlayId: 'overlay',
+    NAV: window.SD_NAV,
+    AUDIO: window.SD_AUDIO,
+    PROGRESS: window.SD_PROGRESS,
+    RENDER: window.SD_RENDER,
+    LEVELS: window.SD_LEVELS,
+    UI_CORE: window.SD_UI_CORE,
+    UI_OVERLAYS: window.SD_UI_OVERLAYS,
+    UI_PANELS: window.SD_UI_PANELS,
+    UI_ACCOUNT: window.SD_UI_ACCOUNT,
+    INPUT: window.SD_INPUT,
+    UTILS: window.SD_UTILS,
+    CONFIG: window.SD_CONFIG,
+  });
+  const overlay = uiInitResult?.overlay || getUiOverlay();
   if (!canvas || !ctx || !overlay) return;
 
   window.__saltDroppeeStarted = true;
