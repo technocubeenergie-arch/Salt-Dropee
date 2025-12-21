@@ -16,6 +16,26 @@
 
   let overlay = null;
 
+  function bindTapIfPresent(el, {
+    idLabel,
+    onTap,
+  } = {}) {
+    if (!el) {
+      console.warn(`[ui] missing ${idLabel || 'element'}`);
+      return;
+    }
+    if (!INPUT?.addEvent || !INPUT?.tap || typeof onTap !== 'function') return;
+    if (el.dataset?.uiBound === 'true') return;
+    INPUT.addEvent(el, INPUT.tap, (evt) => {
+      evt?.preventDefault?.();
+      evt?.stopPropagation?.();
+      onTap(evt);
+    }, { passive: false });
+    if (el.dataset) {
+      el.dataset.uiBound = 'true';
+    }
+  }
+
   function init(options = {}) {
     CONFIG = options.CONFIG || CONFIG;
     UTIL = options.UTILS || UTIL;
@@ -94,6 +114,77 @@
     PROGRESS?.applyPendingProgressIfPossible?.();
   }
 
+  function bindTitleButtons({ game, ctx } = {}) {
+    const addLeaderboard = () => bindTapIfPresent(global.document?.getElementById('btnLB'), {
+      idLabel: '#btnLB',
+      onTap: () => {
+        global.playSound?.("click");
+        game?.renderLeaderboard?.();
+      },
+    });
+
+    const addRules = () => bindTapIfPresent(global.document?.getElementById('btnRulesTitle'), {
+      idLabel: '#btnRulesTitle',
+      onTap: () => {
+        global.playSound?.("click");
+        game?.renderRules?.("title");
+      },
+    });
+
+    const addSettings = () => bindTapIfPresent(global.document?.getElementById('btnSettings'), {
+      idLabel: '#btnSettings',
+      onTap: () => {
+        global.playSound?.("click");
+        global.openSettings?.();
+      },
+    });
+
+    const addPlay = () => bindTapIfPresent(global.document?.getElementById('btnPlay'), {
+      idLabel: '#btnPlay',
+      onTap: async () => {
+        global.playSound?.("click");
+        const authSnapshot = UI_ACCOUNT?.getAuthStateSnapshot?.();
+        console.info(`[progress] play clicked${UTIL?.debugFormatContext?.({ screen: getActiveScreen(), auth: authSnapshot?.user
+          ? 'authenticated' : 'guest' })}`);
+        await new Promise((r) => global.requestAnimationFrame?.(r));
+        try {
+          const prev = ctx?.imageSmoothingEnabled;
+          if (ctx) {
+            ctx.imageSmoothingEnabled = false;
+            const warmupWallet = typeof LEVELS?.getWalletImage === 'function' ? LEVELS.getWalletImage() : null;
+            const imgs = [warmupWallet, global.GoldImg, global.SilverImg, global.BronzeImg, global.DiamondImg, global.BombImg, global.Hand?.open, global.Hand?.pinch];
+            for (const im of imgs) {
+              if (im && im.naturalWidth && typeof ctx.drawImage === 'function') ctx.drawImage(im, 0, 0, 1, 1);
+            }
+            ctx.save?.();
+            ctx.shadowColor = 'rgba(0,0,0,0.15)';
+            ctx.shadowBlur = 4;
+            ctx.shadowOffsetY = 1;
+            ctx.fillStyle = '#fff';
+            ctx.beginPath?.();
+            ctx.arc?.(4, 4, 2, 0, Math.PI * 2);
+            ctx.fill?.();
+            ctx.restore?.();
+            ctx.imageSmoothingEnabled = prev;
+            ctx.clearRect?.(0, 0, 8, 8);
+          }
+        } catch (_) {
+          /* ignore warmup errors */
+        }
+        game?.uiStartFromTitle?.();
+      },
+    });
+
+    addPlay();
+    addRules();
+    addSettings();
+    addLeaderboard();
+
+    if (!global.document?.getElementById('btnAccount')) {
+      console.warn('[ui] missing #btnAccount');
+    }
+  }
+
   function leaveTitleScreen({ stopMusic = true } = {}) {
     gotoScreen('running', { via: 'leaveTitleScreen' });
     if (typeof global.document !== 'undefined' && global.document.body) {
@@ -144,7 +235,7 @@
         <div class="title-buttons" role="navigation">
           <button id="btnPlay" type="button">Jouer</button>
           <button id="btnRulesTitle" type="button">Règle du jeu</button>
-          <button type="button" class="btn-settings" data-action="open-settings">Paramètres</button>
+          <button id="btnSettings" type="button" class="btn-settings" data-action="open-settings">Paramètres</button>
       <button id="btnLB" type="button">Leaderboard</button>
         </div>
       </div>`;
@@ -154,37 +245,7 @@
       onOpenAccount: () => game?.renderAccountPanel?.({ keepMode: true }),
       playSound: global.playSound,
     });
-    if (UI_PANELS?.bindTitlePanelButtons) {
-      UI_PANELS.bindTitlePanelButtons({
-        INPUT,
-        addEvent: INPUT?.addEvent || global.addEvent,
-        playSound: global.playSound,
-        onShowRules: () => game?.renderRules?.("title"),
-        onShowLeaderboard: () => game?.renderLeaderboard?.(),
-      });
-    }
-    const settingsBtn = overlay?.querySelector('[data-action="open-settings"]');
-    if (settingsBtn && typeof INPUT?.addEvent === 'function' && INPUT?.tap) {
-      INPUT.addEvent(settingsBtn, INPUT.tap, (evt) => {
-        evt?.preventDefault?.();
-        evt?.stopPropagation?.();
-        global.playSound?.("click");
-        global.openSettings?.();
-      }, { passive: false });
-    }
-    const playBtn = global.document?.getElementById('btnPlay');
-    if (playBtn && typeof INPUT?.addEvent === 'function' && INPUT?.tap) {
-      INPUT.addEvent(playBtn, INPUT.tap, async (e) => {
-        e.preventDefault(); e.stopPropagation();
-        global.playSound?.("click");
-        const authSnapshot = UI_ACCOUNT?.getAuthStateSnapshot?.();
-        console.info(`[progress] play clicked${UTIL?.debugFormatContext?.({ screen: getActiveScreen(), auth: authSnapshot?.user ? 'authenticated' : 'guest' })}`);
-        await new Promise(r=>global.requestAnimationFrame(r));
-        try{ const prev=ctx?.imageSmoothingEnabled; if (ctx){ ctx.imageSmoothingEnabled=false; const warmupWallet = typeof LEVELS?.getWalletImage === 'function' ? LEVELS.getWalletImage() : null; const imgs=[warmupWallet, global.GoldImg, global.SilverImg, global.BronzeImg, global.DiamondImg, global.BombImg, global.Hand?.open, global.Hand?.pinch]; for (const im of imgs){ if (im && im.naturalWidth && typeof ctx.drawImage === 'function') ctx.drawImage(im,0,0,1,1); } ctx.save?.(); ctx.shadowColor='rgba(0,0,0,0.15)'; ctx.shadowBlur=4; ctx.shadowOffsetY=1; ctx.fillStyle='#fff'; ctx.beginPath?.(); ctx.arc?.(4,4,2,0,Math.PI*2); ctx.fill?.(); ctx.restore?.(); ctx.imageSmoothingEnabled=prev; ctx.clearRect?.(0,0,8,8); }
-        }catch(_){ }
-        game?.uiStartFromTitle?.();
-      }, { passive:false });
-    }
+    bindTitleButtons({ game, ctx });
   }
 
   async function renderAccountPanel({ game, options = {} } = {}) {
