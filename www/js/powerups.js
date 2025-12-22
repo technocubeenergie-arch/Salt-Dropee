@@ -318,4 +318,5 @@
   scope.POWERUP_PICKUP_ASSETS = POWERUP_PICKUP_ASSETS;
   scope.activeBonuses = activeBonuses;
   scope.shieldIconImage = shieldIconImage;
+  scope.controlsAreInverted = controlsAreInverted;
 })(window);
