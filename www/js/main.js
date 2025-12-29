@@ -1472,6 +1472,11 @@ class Game{
   static instance=null;
   constructor(){
     Game.instance=this;
+    try {
+      window.Game = Game;
+      window.game = this;
+      window.Game.instance = this;
+    } catch (_) {}
     this.rulesReturnView = "title";
     this.accountMode = 'signin';
     this.titleStartInFlight = false;
