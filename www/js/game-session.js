@@ -5,6 +5,13 @@
     const { Game = global.Game, getGameState = () => undefined } = deps;
 
     const game = typeof Game === 'function' ? new Game() : null;
+    if (game) {
+      global.game = game;
+      if (typeof Game === 'function') {
+        global.Game = Game;
+        global.Game.instance = game;
+      }
+    }
     if (game && game.wallet) global.targetX = game.wallet.x + game.wallet.w / 2;
 
     const tick = (...args) => (typeof game?.step === 'function' ? game.step(...args) : undefined);

@@ -196,6 +196,32 @@ const {
   animateWalletToCenter = window.animateWalletToCenter,
 } = window.SD_ENTITIES || {};
 
+const {
+  NEGATIVE_TYPES = new Set(),
+  BonusIcons = {},
+  POWERUP_PICKUP_ASSETS = {},
+  activeBonuses = {},
+  shield = { count: 0, active: false, _effect: null },
+  shieldRuntimeState = { consumedThisFrame: false },
+  controlInversionState = { active: false, timeLeft: 0 },
+  applyLegendShieldBoost = () => {},
+  activateBonus = () => {},
+  updateActiveBonuses = () => {},
+  beginFrame = () => {},
+  resetActiveBonuses = () => {},
+  updateShieldHUD = () => {},
+  collectShield = () => {},
+  resetShieldState = () => {},
+  getControlInversionDuration = () => 5,
+  resetControlInversion = () => {},
+  applyControlInversion = () => {},
+  controlsAreInverted = () => false,
+  updateControlInversionTimer = () => {},
+  getBadItemAssets = () => ({}),
+  getPowerItemAssets = () => ({}),
+  getPowerupWarmupImages = () => [],
+} = window.SD_POWERUPS || {};
+
 const BASE_W = CANVAS_BASE_W ?? CONFIG?.portraitBase?.w;
 const BASE_H = CANVAS_BASE_H ?? CONFIG?.portraitBase?.h;
 const setupCanvasContext = typeof initCanvasContext === 'function'
@@ -736,27 +762,8 @@ const SilverImg  = new Image(); let silverReady  = false; SilverImg.onload  = ()
 const GoldImg    = new Image(); let goldReady    = false; GoldImg.onload    = ()=> goldReady    = true; GoldImg.src    = 'assets/gold.png';
 const DiamondImg = new Image(); let diamondReady = false; DiamondImg.onload = ()=> diamondReady = true; DiamondImg.src = 'assets/diamond.png';
 
-const BombImg     = new Image(); let bombReady     = false; BombImg.onload     = ()=> bombReady     = true; BombImg.src     = 'assets/bombe.png';
-const ShitcoinImg = new Image(); let shitcoinReady = false; ShitcoinImg.onload = ()=> shitcoinReady = true; ShitcoinImg.src = 'assets/shitcoin.png';
-const RugpullImg  = new Image(); let rugpullReady  = false; RugpullImg.onload  = ()=> rugpullReady  = true; RugpullImg.src  = 'assets/rugpull.png';
-const FakeADImg   = new Image(); let fakeADReady   = false; FakeADImg.onload   = ()=> fakeADReady   = true; FakeADImg.src   = 'assets/fakeairdrop.png';
-const AnvilImg    = new Image(); let anvilReady    = false; AnvilImg.onload    = ()=> anvilReady    = true; AnvilImg.src    = 'assets/anvil.png';
-
-const MagnetImg = new Image(); let magnetReady = false; MagnetImg.onload = ()=> magnetReady = true; MagnetImg.src = 'assets/magnet.png';
-const X2Img     = new Image(); let x2Ready     = false; X2Img.onload     = ()=> x2Ready     = true; X2Img.src     = 'assets/x2.png';
-const x2Image = new Image();
-x2Image.src = 'assets/x2.png';
-const ShieldImg = new Image(); let shieldReady = false; ShieldImg.onload = ()=> shieldReady = true; ShieldImg.src = 'assets/shield.png';
-const shieldIconImage = new Image(); shieldIconImage.src = 'assets/shield.png';
-const TimeImg   = new Image(); let timeReady   = false; TimeImg.onload   = ()=> timeReady   = true; TimeImg.src   = 'assets/time.png';
-
-const BonusIcons = {
-  magnet: MagnetImg,
-  x2: X2Img,
-  shield: ShieldImg,
-  fakeAirdrop: FakeADImg,
-  anvil: AnvilImg,
-};
+const badItemAssets = (typeof getBadItemAssets === "function") ? getBadItemAssets() : {};
+const powerItemAssets = (typeof getPowerItemAssets === "function") ? getPowerItemAssets() : {};
 
 window.SD_RENDER = window.SD_RENDER || {};
 SD_RENDER.ITEM_ASSETS = {
@@ -766,242 +773,14 @@ SD_RENDER.ITEM_ASSETS = {
     gold: { image: GoldImg, ready: () => goldReady },
     diamond: { image: DiamondImg, ready: () => diamondReady },
   },
-  bad: {
-    bomb: { image: BombImg, ready: () => bombReady },
-    shitcoin: { image: ShitcoinImg, ready: () => shitcoinReady },
-    rugpull: { image: RugpullImg, ready: () => rugpullReady },
-    fakeAirdrop: { image: FakeADImg, ready: () => fakeADReady },
-    anvil: { image: AnvilImg, ready: () => anvilReady }
-  },
-  power: {
-    magnet: { image: MagnetImg, ready: () => magnetReady },
-    x2: { image: X2Img, ready: () => x2Ready },
-    shield: { image: ShieldImg, ready: () => shieldReady },
-    timeShard: { image: TimeImg, ready: () => timeReady }
-  }
+  bad: badItemAssets,
+  power: powerItemAssets
 };
-
-const POWERUP_PICKUP_ASSETS = {
-  magnet: { image: MagnetImg, ready: () => magnetReady },
-  x2: { image: x2Image, ready: () => x2Image.complete },
-  shield: { image: shieldIconImage, ready: () => shieldIconImage.complete },
-  timeShard: { image: TimeImg, ready: () => timeReady }
-};
-
-// Types négatifs du projet
-const NEGATIVE_TYPES = new Set([
-  "bomb",
-  "shitcoin",
-  "rugpull",
-  "fakeAirdrop",
-  "anvil"
-]);
-
-let activeBonuses = {
-  magnet: { active: false, timeLeft: 0 },
-  x2: { active: false, timeLeft: 0 }
-};
-
-window.activeBonuses = activeBonuses;
-
-let shield = {
-  count: 0,
-  active: false,
-  _effect: null
-};
-
-let shieldConsumedThisFrame = false;
-
-function applyLegendShieldBoost(extraCount = 0) {
-  const additional = Number.isFinite(extraCount) ? Math.max(0, Math.floor(extraCount)) : 0;
-  if (additional <= 0) return;
-
-  shield.count = Math.max(0, shield.count) + additional;
-  shield.active = shield.count > 0;
-
-  if (shield.active) {
-    startShieldEffect();
-    updateShieldHUD();
-  }
-}
-
-// --- Control inversion state (Fake Airdrop malus) ---
-const controlInversionState = {
-  active: false,
-  timeLeft: 0,
-};
-
-function getControlInversionDuration(duration) {
-  const custom = Number(duration);
-  if (Number.isFinite(custom) && custom > 0) {
-    return custom;
-  }
-  const configValue = Number(CONFIG?.malus?.fakeAirdropDuration);
-  if (Number.isFinite(configValue) && configValue > 0) {
-    return configValue;
-  }
-  return 5;
-}
-
-function resetControlInversion(options = {}) {
-  void options;
-  const instance = game || Game.instance || null;
-  if (instance?.effects) {
-    instance.effects.invert = 0;
-  }
-  controlInversionState.active = false;
-  controlInversionState.timeLeft = 0;
-}
-
-function applyControlInversion(gameInstance, duration) {
-  const instance = gameInstance || game || Game.instance || null;
-  if (!instance) return;
-
-  if (!instance.effects) {
-    instance.effects = {};
-  }
-
-  const totalDuration = getControlInversionDuration(duration);
-  instance.effects.invert = totalDuration;
-  controlInversionState.timeLeft = totalDuration;
-  controlInversionState.active = true;
-}
-
-function controlsAreInverted() {
-  const instance = game || Game.instance || null;
-  if (!instance?.effects) return false;
-  return (Number(instance.effects.invert) || 0) > 0;
-}
-
-function updateControlInversionTimer(gameInstance, dt) {
-  if (!gameInstance?.effects) return;
-
-  let remaining = Number(gameInstance.effects.invert) || 0;
-  if (remaining <= 0) {
-    gameInstance.effects.invert = 0;
-    if (controlInversionState.active) {
-      controlInversionState.active = false;
-      controlInversionState.timeLeft = 0;
-    }
-    return;
-  }
-
-  remaining = Math.max(0, remaining - dt);
-  gameInstance.effects.invert = remaining;
-  controlInversionState.timeLeft = remaining;
-  if (remaining <= 0 && controlInversionState.active) {
-    controlInversionState.active = false;
-    controlInversionState.timeLeft = 0;
-  }
-}
 
 function showX2Animation() {
   if (typeof window?.SD_FX?.showX2Animation === "function") {
     window.SD_FX.showX2Animation();
   }
-}
-
-function activateBonus(type, duration) {
-  if (type === "shield") {
-    collectShield();
-    return;
-  }
-
-  const bonus = activeBonuses[type];
-  if (!bonus) return;
-
-  const wasActive = bonus.active;
-
-  const extra = Math.max(0, Number(duration) || 0);
-  if (bonus.active) {
-    bonus.timeLeft += extra;
-    if (extra > 0) {
-      playSound("bonusok");
-    }
-  } else if (extra > 0) {
-    bonus.active = true;
-    bonus.timeLeft = extra;
-    playSound("bonusok");
-    startBonusEffect(type);
-  }
-
-  if (!wasActive && bonus.active) {
-    if (type === "magnet" && window?.location?.search?.includes("debug")) {
-      console.debug(`[magnet] activated (timeLeft=${bonus.timeLeft.toFixed(2)}s)`);
-    }
-    triggerHudBonusPop(type);
-  }
-}
-
-function updateActiveBonuses(dt) {
-  for (const type in activeBonuses) {
-    const bonus = activeBonuses[type];
-    if (!bonus.active) continue;
-    bonus.timeLeft -= dt;
-    if (bonus.timeLeft <= 0) {
-      bonus.active = false;
-      bonus.timeLeft = 0;
-      stopBonusEffect(type);
-    }
-  }
-}
-
-function beginFrame() {
-  shieldConsumedThisFrame = false;
-}
-
-function resetActiveBonuses() {
-  for (const type in activeBonuses) {
-    if (activeBonuses[type].active) {
-      stopBonusEffect(type);
-    }
-    activeBonuses[type].active = false;
-    activeBonuses[type].timeLeft = 0;
-  }
-}
-
-function updateShieldHUD() {
-  if (!game || typeof game.render !== "function") return;
-  if (game.state === "playing") return;
-  game.render();
-}
-
-function collectShield() {
-  const wasActive = shield.count > 0;
-  shield.count += 1;
-  playSound("bonusok");
-
-  if (!wasActive) {
-    if (typeof requestAnimationFrame === "function") {
-      requestAnimationFrame(() => playSound("forcefield"));
-    } else {
-      playSound("forcefield");
-    }
-  }
-
-  if (!shield.active) {
-    shield.active = true;
-    startShieldEffect();
-  } else if (shield._effect?.aura && gsap?.fromTo) {
-    gsap.fromTo(
-      shield._effect.aura,
-      { scale: 1.3, opacity: 0.35 },
-      {
-        scale: 1.2,
-        opacity: 0.2,
-        duration: 0.6,
-        ease: "sine.out",
-        overwrite: "auto"
-      }
-    );
-  }
-
-  if (!wasActive) {
-    triggerHudBonusPop("shield");
-  }
-
-  showPowerupPickup("shield");
-  updateShieldHUD();
 }
 
 
@@ -1169,12 +948,12 @@ function resolveNegativeCollision(item, gameInstance, firstCatch) {
 
   const walletRef = gameInstance?.wallet ?? game?.wallet;
   const fxManager = gameInstance?.fx ?? game?.fx;
-  const shieldActiveThisFrame = shield.count > 0 || shieldConsumedThisFrame;
+  const shieldActiveThisFrame = shield.count > 0 || shieldRuntimeState.consumedThisFrame;
 
   if (shieldActiveThisFrame) {
-    if (!shieldConsumedThisFrame && shield.count > 0) {
+    if (!shieldRuntimeState.consumedThisFrame && shield.count > 0) {
       shield.count = Math.max(0, shield.count - 1);
-      shieldConsumedThisFrame = true;
+      shieldRuntimeState.consumedThisFrame = true;
       shield.active = shield.count > 0;
       updateShieldHUD();
       if (shield.count === 0) {
@@ -1229,21 +1008,6 @@ function handleCollision(item) {
   }
 
   gameInstance.didFirstCatch = true;
-}
-
-function resetShieldState(options = {}) {
-  const { silent = false } = options;
-  if (shield.active || shield.count > 0 || shield._effect) {
-    shield.count = 0;
-    shield.active = false;
-    stopShieldEffect({ silent });
-  } else {
-    shield.count = 0;
-    shield.active = false;
-  }
-  shield._effect = null;
-  shieldConsumedThisFrame = false;
-  updateShieldHUD();
 }
 
 const footerImg = new Image();
@@ -1303,9 +1067,10 @@ setActiveHandVariant('default');
 // Pré-decode (si supporté)
 const warmupWalletImage = typeof getWalletImage === 'function' ? getWalletImage() : null;
 const warmupLegendWallet = typeof getLegendWalletImage === 'function' ? getLegendWalletImage() : null;
-[GoldImg, SilverImg, BronzeImg, DiamondImg, BombImg,
- ShitcoinImg, RugpullImg, FakeADImg, AnvilImg,
- MagnetImg, X2Img, ShieldImg, TimeImg,
+const powerupWarmupImages = (typeof getPowerupWarmupImages === 'function') ? getPowerupWarmupImages() : [];
+
+[GoldImg, SilverImg, BronzeImg, DiamondImg,
+ ...powerupWarmupImages,
  warmupWalletImage, warmupLegendWallet, Hand.open, Hand.pinch,
  HandVariants.legend.open, HandVariants.legend.pinch,
  footerImg]
@@ -1972,7 +1737,7 @@ class Game{
       const authSnapshot = getAuthStateSnapshot();
       console.info(`[progress] play clicked${debugFormatContext({ screen: getActiveScreen(), auth: authSnapshot?.user ? 'authenticated' : 'guest' })}`);
       await new Promise(r=>requestAnimationFrame(r));
-      try{ const prev=ctx.imageSmoothingEnabled; ctx.imageSmoothingEnabled=false; const warmupWallet = typeof getWalletImage === 'function' ? getWalletImage() : null; const imgs=[warmupWallet, GoldImg, SilverImg, BronzeImg, DiamondImg, BombImg, Hand.open, Hand.pinch]; for (const im of imgs){ if (im && im.naturalWidth) ctx.drawImage(im,0,0,1,1); } ctx.save(); ctx.shadowColor='rgba(0,0,0,0.15)'; ctx.shadowBlur=4; ctx.shadowOffsetY=1; ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(4,4,2,0,Math.PI*2); ctx.fill(); ctx.restore(); ctx.imageSmoothingEnabled=prev; ctx.clearRect(0,0,8,8); }catch(_){ }
+      try{ const prev=ctx.imageSmoothingEnabled; ctx.imageSmoothingEnabled=false; const warmupWallet = typeof getWalletImage === 'function' ? getWalletImage() : null; const warmupItem = powerupWarmupImages?.[0] || null; const imgs=[warmupWallet, GoldImg, SilverImg, BronzeImg, DiamondImg, warmupItem, Hand.open, Hand.pinch]; for (const im of imgs){ if (im && im.naturalWidth) ctx.drawImage(im,0,0,1,1); } ctx.save(); ctx.shadowColor='rgba(0,0,0,0.15)'; ctx.shadowBlur=4; ctx.shadowOffsetY=1; ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(4,4,2,0,Math.PI*2); ctx.fill(); ctx.restore(); ctx.imageSmoothingEnabled=prev; ctx.clearRect(0,0,8,8); }catch(_){ }
       this.uiStartFromTitle();
     }, { passive:false });
   }
