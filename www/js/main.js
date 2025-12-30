@@ -1371,7 +1371,7 @@ class Spawner{
 class HUD{
   constructor(game){ this.g=game; }
   draw(g){
-    const metrics = drawCompactHUD(g, this.g, {
+    drawCompactHUD(g, this.g, {
       HUD_CONFIG,
       baseWidth: BASE_W,
       baseHeight: BASE_H,
@@ -1385,83 +1385,6 @@ class HUD{
       shieldIconImage,
       isLegendLevel,
     });
-    const barY = metrics?.y ?? 0;
-    const barH = metrics?.h ?? 0;
-
-    const bonusX = HUD_CONFIG.padX + 2;
-    let bonusY = barY + barH + HUD_CONFIG.padY;
-    const iconSize = HUD_CONFIG.bonusIconSize;
-    const iconSpacing = HUD_CONFIG.gap;
-    const timerFontSize = Math.max(HUD_CONFIG.fontMin, Math.round(hudFontSize(BASE_W) * 0.85));
-
-    const drawBonusIcon = (type, timeLeft) => {
-      const icon = BonusIcons[type];
-      if (!icon) return;
-      const timer = Math.max(0, timeLeft);
-      const scale = getHudBonusScale(type);
-      if (icon.complete) {
-        const cx = bonusX + iconSize / 2;
-        const cy = bonusY + iconSize / 2;
-        g.save();
-        g.translate(cx, cy);
-        g.scale(scale, scale);
-        g.drawImage(icon, -iconSize / 2, -iconSize / 2, iconSize, iconSize);
-        g.restore();
-      }
-      g.save();
-      g.fillStyle = '#fff';
-      g.font = `${timerFontSize}px "Roboto Mono", "Inter", monospace`;
-      g.textBaseline = 'middle';
-      g.fillText(`${Math.ceil(timer)}s`, bonusX + iconSize + 6, bonusY + iconSize / 2);
-      g.restore();
-      bonusY += iconSize + iconSpacing;
-    };
-
-    // --- HUD des bonus et malus temporaires ---
-    for (const type in activeBonuses) {
-      const bonus = activeBonuses[type];
-      if (bonus.active) {
-        drawBonusIcon(type, bonus.timeLeft);
-      }
-    }
-
-    if (controlInversionState.active && controlInversionState.timeLeft > 0) {
-      drawBonusIcon("fakeAirdrop", controlInversionState.timeLeft);
-    }
-
-    const slowTimer = Math.max(0, Number(this.g?.wallet?.slowTimer) || 0);
-    if (slowTimer > 0) {
-      drawBonusIcon("anvil", slowTimer);
-    }
-
-    const drawShieldIcon = (count) => {
-      if (!shieldIconImage.complete) return;
-      const size = iconSize;
-      const bx = bonusX;
-      const by = bonusY;
-      const scale = getHudBonusScale("shield");
-
-      const cx = bx + size / 2;
-      const cy = by + size / 2;
-
-      g.save();
-      g.translate(cx, cy);
-      g.scale(scale, scale);
-      g.drawImage(shieldIconImage, -size / 2, -size / 2, size, size);
-      g.restore();
-      g.save();
-      g.fillStyle = '#fff';
-      g.font = `${timerFontSize}px "Roboto Mono", "Inter", monospace`;
-      g.textBaseline = 'middle';
-      g.fillText(`x${count}`, bx + size + 6, by + size / 2);
-      g.restore();
-      bonusY += size + iconSpacing;
-    };
-
-    // --- HUD du bouclier cumulatif ---
-    if (shield.count > 0) {
-      drawShieldIcon(shield.count);
-    }
   }
 }
 
