@@ -1,6 +1,45 @@
 (function initLegendResult(global) {
   const SD_LEGEND_RESULT = global.SD_LEGEND_RESULT || {};
 
+  function showLegendResultScreen(reason = "time"){
+    void reason;
+    global.hideInterLevelScreen();
+
+    const screen = global.document.getElementById("legendResultScreen");
+    const title = global.document.getElementById("legendTitle");
+    const message = global.document.getElementById("legendMessage");
+    if (!screen) return;
+
+    global.clearMainOverlay(screen);
+
+    global.gotoScreen('interLevel', { via: 'showLegendResultScreen', reason });
+
+    // Les résultats du mode Légende sont enregistrés uniquement dans la table "scores".
+    // On évite ici toute sauvegarde de progression automatique afin de ne pas écrire
+    // dans la table "progress" qui est réservée aux sauvegardes manuelles.
+    global.submitLegendScoreIfNeeded(reason || 'end');
+    global.markLegendRunComplete();
+
+    if (typeof global.Game !== "undefined" && global.Game.instance) {
+      global.Game.instance.settingsReturnView = "legend";
+    }
+
+    if (title) {
+      title.textContent = "Mode Légende";
+    }
+
+    const numericScore = Number.isFinite(global.score) ? global.score : Number(global.score) || 0;
+    const formattedScore = typeof global.formatScore === "function"
+      ? global.formatScore(numericScore)
+      : String(numericScore | 0);
+
+    if (message) {
+      message.textContent = `Félicitations, votre score est de ${formattedScore}.`;
+    }
+
+    global.showExclusiveOverlay(screen);
+  }
+
   function hideLegendResultScreen(options = {}){
     const screen = global.document?.getElementById("legendResultScreen");
     if (!screen) return;
@@ -38,6 +77,7 @@
     }
   }
 
+  SD_LEGEND_RESULT.showLegendResultScreen = showLegendResultScreen;
   SD_LEGEND_RESULT.hideLegendResultScreen = hideLegendResultScreen;
   SD_LEGEND_RESULT.bindLegendResultButtons = bindLegendResultButtons;
   global.SD_LEGEND_RESULT = SD_LEGEND_RESULT;
