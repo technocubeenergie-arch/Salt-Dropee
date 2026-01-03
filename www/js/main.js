@@ -1244,9 +1244,9 @@ function showLegendResultScreen(reason = "time"){
 }
 
 function hideLegendResultScreen(options = {}){
-  const screen = document.getElementById("legendResultScreen");
-  if (!screen) return;
-  hideOverlay(screen, options);
+  if (window.SD_LEGEND_RESULT?.hideLegendResultScreen) {
+    return window.SD_LEGEND_RESULT.hideLegendResultScreen(options);
+  }
 }
 
 // --- Boutons ---

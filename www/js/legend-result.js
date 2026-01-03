@@ -1,6 +1,12 @@
 (function initLegendResult(global) {
   const SD_LEGEND_RESULT = global.SD_LEGEND_RESULT || {};
 
+  function hideLegendResultScreen(options = {}){
+    const screen = global.document?.getElementById("legendResultScreen");
+    if (!screen) return;
+    global.hideOverlay?.(screen, options);
+  }
+
   function bindLegendResultButtons() {
     const btnHome = global.document?.getElementById("legendHomeButton");
     const btnRetry = global.document?.getElementById("legendRetryButton");
@@ -8,7 +14,7 @@
     if (btnHome){
       btnHome.onclick = async () => {
         if (typeof global.playSound === "function") global.playSound("click");
-        global.hideLegendResultScreen?.();
+        hideLegendResultScreen();
         const instance = global.Game?.instance;
         global.currentLevelIndex = 0;
         if (instance && typeof instance.reset === "function") {
@@ -23,7 +29,7 @@
     if (btnRetry){
       btnRetry.onclick = async () => {
         if (typeof global.playSound === "function") global.playSound("click");
-        global.hideLegendResultScreen?.({ immediate: true });
+        hideLegendResultScreen({ immediate: true });
         global.hardResetRuntime?.();
         const legendIndex = (global.LEGEND_LEVEL_INDEX >= 0) ? global.LEGEND_LEVEL_INDEX : global.currentLevelIndex;
         await global.loadLevel?.(legendIndex, { immediateBackground: true });
@@ -32,6 +38,7 @@
     }
   }
 
+  SD_LEGEND_RESULT.hideLegendResultScreen = hideLegendResultScreen;
   SD_LEGEND_RESULT.bindLegendResultButtons = bindLegendResultButtons;
   global.SD_LEGEND_RESULT = SD_LEGEND_RESULT;
 })(typeof window !== 'undefined' ? window : globalThis);
