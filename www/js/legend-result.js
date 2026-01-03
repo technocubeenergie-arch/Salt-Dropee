@@ -12,7 +12,18 @@
 
     global.clearMainOverlay(screen);
 
-    global.gotoScreen('interLevel', { via: 'showLegendResultScreen', reason });
+    const navigateToInterLevel = (meta) => {
+      if (global.SD_NAV && typeof global.SD_NAV.goto === "function") {
+        return global.SD_NAV.goto('interLevel', meta);
+      }
+      if (global.SD_UI_PANELS && typeof global.SD_UI_PANELS.setActiveScreen === "function") {
+        return global.SD_UI_PANELS.setActiveScreen('interLevel', meta);
+      }
+      global.console?.warn?.('[legend] cannot navigate to interLevel — no navigation API available');
+      return null;
+    };
+
+    navigateToInterLevel({ via: 'showLegendResultScreen', reason });
 
     // Les résultats du mode Légende sont enregistrés uniquement dans la table "scores".
     // On évite ici toute sauvegarde de progression automatique afin de ne pas écrire
