@@ -132,7 +132,7 @@ if (!namespacesReady) {
     window.SD_BOOTSTRAP = window.SD_BOOTSTRAP || {};
     window.SD_BOOTSTRAP.boot = window.SD_BOOTSTRAP.boot || (() => {});
   }
-} else {
+}
 
 const gsap = window.gsap;
 
@@ -360,6 +360,9 @@ const positionHudSafe = typeof positionHUD === 'function' ? positionHUD : () => 
 const getCanvasPointSafe = typeof getCanvasPoint === 'function'
   ? getCanvasPoint
   : () => ({ x: 0, y: 0 });
+if (typeof window !== 'undefined' && typeof window.setupCanvasContext !== 'function') {
+  window.setupCanvasContext = setupCanvasContext;
+}
 
 // --- Musique ---
 // moved to SD_AUDIO module
@@ -1926,8 +1929,6 @@ class Game{
   }
 }
 
-if (window.SD_BOOTSTRAP?.boot) {
+if (namespacesReady && window.SD_BOOTSTRAP?.boot) {
   window.SD_BOOTSTRAP.boot();
-}
-
 }

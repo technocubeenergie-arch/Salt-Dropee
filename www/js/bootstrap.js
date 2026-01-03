@@ -2,7 +2,17 @@
   async function startGame(){
     if (window.__saltDroppeeStarted) return;
 
-    const canvasRefs = setupCanvasContext();
+    const setupFn = window.setupCanvasContext
+      || window.SD_CANVAS?.setupCanvasContext
+      || window.SD_CANVAS?.setupCanvas
+      || window.SD_CANVAS?.initCanvasContext
+      || window.initCanvasContext;
+    if (typeof setupFn !== 'function') {
+      console.error('[boot] setupCanvasContext is not available');
+      return;
+    }
+
+    const canvasRefs = setupFn();
     canvas = canvasRefs.canvas;
     ctx = canvasRefs.ctx;
     overlay = document.getElementById('overlay');
