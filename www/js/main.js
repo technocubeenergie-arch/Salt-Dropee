@@ -6,6 +6,134 @@
 // - Removed the legacy canvas background renderer path that was never executed in production.
 // - Factorized duplicated end-of-level transition handling into finalizeLevelTransition().
 
+const REQUIRED_SD_NAMESPACES = [
+  'SD_CONFIG',
+  'SD_UTILS',
+  'SD_CANVAS',
+  'SD_INPUT',
+  'SD_RENDER',
+  'SD_PROGRESS',
+  'SD_NAV',
+  'SD_LEVELS',
+  'SD_AUDIO',
+  'SD_POWERUPS',
+  'SD_ENTITIES',
+  'SD_UI_CORE',
+  'SD_UI_PANELS',
+  'SD_UI_OVERLAYS',
+  'SD_UI_ACCOUNT',
+  'SD_LEGEND_RESULT',
+];
+
+function renderNamespaceError(missingNamespaces = []) {
+  if (typeof document === 'undefined') return;
+
+  const target = document.body || document.documentElement;
+  if (!target) return;
+
+  const containerId = 'sd-boot-error';
+  const existing = document.getElementById(containerId);
+  if (existing) {
+    existing.remove();
+  }
+
+  const container = document.createElement('div');
+  container.id = containerId;
+  container.setAttribute('role', 'alert');
+  Object.assign(container.style, {
+    position: 'fixed',
+    inset: '0',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '12px',
+    padding: '24px',
+    background: 'linear-gradient(135deg, rgba(0,0,0,0.82), rgba(16,16,24,0.9))',
+    color: '#fff',
+    zIndex: '9999',
+    textAlign: 'center',
+    fontFamily: 'Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+  });
+
+  const title = document.createElement('h1');
+  title.textContent = 'Erreur de chargement';
+  Object.assign(title.style, {
+    margin: 0,
+    fontSize: '1.6rem',
+  });
+
+  const description = document.createElement('p');
+  description.textContent = 'Une ressource du jeu est manquante. Rechargez la page. Si le problème persiste, contactez le support.';
+  Object.assign(description.style, {
+    margin: 0,
+    maxWidth: '520px',
+    lineHeight: 1.5,
+  });
+
+  const missingLabel = document.createElement('p');
+  missingLabel.textContent = `Ressources manquantes : ${missingNamespaces.join(', ')}`;
+  Object.assign(missingLabel.style, {
+    margin: 0,
+    opacity: 0.9,
+    fontFamily: 'ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace',
+    fontSize: '0.95rem',
+  });
+
+  const hint = document.createElement('p');
+  hint.textContent = 'Indice : ordre des scripts ou build incomplet.';
+  Object.assign(hint.style, {
+    margin: 0,
+    fontSize: '0.95rem',
+    color: 'rgba(255,255,255,0.82)',
+  });
+
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.textContent = 'Recharger';
+  Object.assign(button.style, {
+    marginTop: '8px',
+    padding: '10px 18px',
+    borderRadius: '10px',
+    border: 'none',
+    background: '#ff7f50',
+    color: '#0b0b0b',
+    cursor: 'pointer',
+    fontWeight: '700',
+    boxShadow: '0 8px 20px rgba(0,0,0,0.35)',
+  });
+  button.addEventListener('click', () => window.location.reload());
+
+  container.append(title, description, missingLabel, hint, button);
+  target.appendChild(container);
+}
+
+function assertRequiredNamespaces() {
+  const missingNamespaces = REQUIRED_SD_NAMESPACES.filter((namespace) => typeof window?.[namespace] === 'undefined');
+  if (missingNamespaces.length === 0) {
+    return { ok: true, missingNamespaces };
+  }
+
+  console.error('[boot] ressources manquantes', {
+    missing: missingNamespaces,
+    hint: 'script order / build incomplete',
+  });
+
+  renderNamespaceError(missingNamespaces);
+
+  return { ok: false, missingNamespaces };
+}
+
+const { ok: namespacesReady, missingNamespaces } = assertRequiredNamespaces();
+
+if (!namespacesReady) {
+  if (typeof window !== 'undefined') {
+    window.SD_BOOT_ABORTED = true;
+    window.SD_BOOTSTRAP = window.SD_BOOTSTRAP || {};
+    window.SD_BOOTSTRAP.boot = window.SD_BOOTSTRAP.boot || (() => {});
+  }
+}
+
 const gsap = window.gsap;
 
 const {
@@ -232,6 +360,9 @@ const positionHudSafe = typeof positionHUD === 'function' ? positionHUD : () => 
 const getCanvasPointSafe = typeof getCanvasPoint === 'function'
   ? getCanvasPoint
   : () => ({ x: 0, y: 0 });
+if (typeof window !== 'undefined' && typeof window.setupCanvasContext !== 'function') {
+  window.setupCanvasContext = setupCanvasContext;
+}
 
 // --- Musique ---
 // moved to SD_AUDIO module
@@ -1798,6 +1929,6 @@ class Game{
   }
 }
 
-if (window.SD_BOOTSTRAP?.boot) {
+if (namespacesReady && window.SD_BOOTSTRAP?.boot) {
   window.SD_BOOTSTRAP.boot();
 }
