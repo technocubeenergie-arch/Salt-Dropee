@@ -1387,6 +1387,7 @@ setProgressHostContext({
   disablePlayerInput,
   isActiveGameplayInProgress,
   getAuthStateSnapshot,
+  getLastInterLevelResult,
 });
 
 // =====================

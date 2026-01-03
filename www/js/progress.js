@@ -87,6 +87,10 @@
     const getter = getHostFn('getGameState');
     return getter ? getter() : null;
   };
+  const getLastInterLevelResult = () => {
+    const getter = getHostFn('getLastInterLevelResult');
+    return getter ? getter() : null;
+  };
   const setLevelEnded = (value) => {
     const setter = getHostFn('setLevelEnded');
     if (setter) {
@@ -149,6 +153,26 @@
     if (!snapshot || !game) return;
 
     const levelNumber = normalizeProgressLevel(snapshot.level || 1);
+    const snapshotState = snapshot.state || {};
+    const storedResult = typeof snapshotState.lastResult === 'string'
+      ? snapshotState.lastResult
+      : typeof snapshotState.result === 'string'
+        ? snapshotState.result
+        : null;
+    const canAdvanceFlag = typeof snapshotState.canAdvance === 'boolean' ? snapshotState.canAdvance : null;
+    const derivedInterLevelResult = storedResult === 'lose' || canAdvanceFlag === false
+      ? 'lose'
+      : 'win';
+    const canAdvance = canAdvanceFlag === false
+      ? false
+      : canAdvanceFlag === true
+        ? true
+        : derivedInterLevelResult === 'win';
+    const lastClearedLevel = Number.isFinite(snapshotState.lastClearedLevel)
+      ? Math.max(1, Math.floor(snapshotState.lastClearedLevel))
+      : canAdvance
+        ? levelNumber
+        : Math.max(1, levelNumber - 1);
     const currentLevelNumber = Math.max(1, Math.floor(getCurrentLevelIndex()) + 1);
     if (currentLevelNumber > levelNumber) {
       console.info('[progress] ignoring older snapshot', debugFormatContext({ levelNumber, currentLevelNumber }));
@@ -174,7 +198,7 @@
 
     if (game) {
       game.score = restoredScore;
-      game.levelReached = Math.max(game.levelReached || 1, levelNumber);
+      game.levelReached = Math.max(game.levelReached || 1, lastClearedLevel);
       game.state = 'inter';
       if (typeof game.render === 'function') {
         game.render();
@@ -194,11 +218,19 @@
     progressRuntime.lastAppliedPlayerId = playerId || getActivePlayerId();
 
     const showInterLevelScreen = getHostFn('showInterLevelScreen');
-    showInterLevelScreen?.('win', { replaySound: false });
+    showInterLevelScreen?.(derivedInterLevelResult, { replaySound: false });
 
     console.info('[progress] applied saved snapshot', debugFormatContext({
       levelNumber,
       restoredScore,
+      source: meta.source || 'unknown',
+      reason: meta.reason || 'unspecified',
+    }));
+    console.info('[progress] restore decision', debugFormatContext({
+      snapshotLevel: levelNumber,
+      derivedInterLevelResult,
+      canAdvance,
+      lastClearedLevel,
       source: meta.source || 'unknown',
       reason: meta.reason || 'unspecified',
     }));
@@ -378,6 +410,10 @@
 
     const levelNumber = Math.max(1, Math.floor(getCurrentLevelIndex()) + 1);
     const rawScore = getScoreValue();
+    const lastResultRaw = getLastInterLevelResult();
+    const lastResult = lastResultRaw === 'lose' ? 'lose' : 'win';
+    const canAdvance = lastResult === 'win';
+    const lastClearedLevel = canAdvance ? levelNumber : Math.max(1, levelNumber - 1);
     const snapshot = {
       level: levelNumber,
       score: Number.isFinite(rawScore) ? rawScore : Number(rawScore) || 0,
@@ -385,12 +421,22 @@
         reason,
         level: levelNumber,
         gameState: getGameState(),
+        lastResult,
+        lastClearedLevel,
+        canAdvance,
         updatedAt: new Date().toISOString(),
       },
     };
 
     try {
-      console.info(`[progress] save requested${debugFormatContext({ reason, level: levelNumber })}`);
+      console.info(`[progress] save requested${debugFormatContext({
+        reason,
+        level: levelNumber,
+        score: snapshot.score,
+        result: lastResult,
+        lastClearedLevel,
+        canAdvance,
+      })}`);
       await service.saveProgress(snapshot);
       console.info(`[progress] save completed${debugFormatContext({ reason, level: levelNumber })}`);
     } catch (error) {
