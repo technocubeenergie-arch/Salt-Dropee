@@ -508,28 +508,59 @@ function setTitlePlayButtonBusyState(isBusy) {
   btn.dataset.busy = busy ? 'yes' : 'no';
 }
 
-function updateTitleBusyUi() {
+function showProgressLoadingUI(reason = 'unspecified') {
+  if (typeof document === 'undefined') return;
+  const overlayEl = document.getElementById('overlay');
+  const busyEl = overlayEl?.querySelector?.('[data-progress-busy]');
+  if (!busyEl) return;
+
+  busyEl.hidden = false;
+  busyEl.setAttribute('aria-hidden', 'false');
+  busyEl.dataset.phase = progressUiBusyPhase || 'idle';
+  busyEl.dataset.reason = reason || 'unspecified';
+
+  setTitlePlayButtonBusyState(true);
+  console.info('[progress] loading ui state', { visible: true, reason });
+}
+
+function hideProgressLoadingUI(reason = 'unspecified') {
+  if (typeof document === 'undefined') return;
+  const overlayEl = document.getElementById('overlay');
+  const busyEl = overlayEl?.querySelector?.('[data-progress-busy]');
+  if (busyEl) {
+    busyEl.hidden = true;
+    busyEl.setAttribute('aria-hidden', 'true');
+    busyEl.dataset.reason = reason || 'unspecified';
+  }
+
+  setTitlePlayButtonBusyState(false);
+  console.info('[progress] loading ui state', { visible: false, reason });
+}
+
+function updateTitleBusyUi(reason = 'unspecified') {
   if (typeof document === 'undefined') return;
   const overlayEl = document.getElementById('overlay');
   const busyEl = overlayEl?.querySelector?.('[data-progress-busy]');
   const isTitle = getActiveScreen() === 'title';
   const showBusy = Boolean(progressUiBusy && isTitle);
 
-  if (busyEl) {
-    busyEl.hidden = !showBusy;
-    busyEl.setAttribute('aria-hidden', showBusy ? 'false' : 'true');
-    busyEl.dataset.phase = progressUiBusyPhase || 'idle';
+  if (showBusy) {
+    showProgressLoadingUI(reason);
+    if (busyEl) {
+      busyEl.dataset.phase = progressUiBusyPhase || 'idle';
+    }
+  } else {
+    hideProgressLoadingUI(reason);
+    if (busyEl) {
+      busyEl.dataset.phase = progressUiBusyPhase || 'idle';
+    }
   }
-
-  setTitlePlayButtonBusyState(showBusy);
 }
 
 function handleProgressUiBusyChange(isBusy, payload = {}) {
   progressUiBusy = !!isBusy;
   progressUiBusyPhase = payload?.phase || (typeof getProgressPhase === 'function' ? getProgressPhase() : 'idle') || 'idle';
-  if (getActiveScreen() === 'title') {
-    updateTitleBusyUi();
-  }
+  updateTitleBusyUi('busy-change');
 }
 
 function enterTitleScreen() {
