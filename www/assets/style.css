@@ -527,12 +527,16 @@ body.is-inter-level #hud {
 .progress-busy-overlay {
   position: absolute;
   inset: 0;
-  display: flex;
+  display: none;
   align-items: center;
   justify-content: center;
   gap: 8px;
   background: rgba(0, 0, 0, 0.45);
   pointer-events: none;
+}
+
+.progress-busy-overlay[aria-hidden="false"] {
+  display: flex;
 }
 
 .progress-busy-card {
