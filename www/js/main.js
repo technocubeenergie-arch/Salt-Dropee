@@ -1251,33 +1251,8 @@ function hideLegendResultScreen(options = {}){
 
 // --- Boutons ---
 function bindLegendResultButtons(){
-  const btnHome = document.getElementById("legendHomeButton");
-  const btnRetry = document.getElementById("legendRetryButton");
-
-  if (btnHome){
-    btnHome.onclick = async () => {
-      if (typeof playSound === "function") playSound("click");
-      hideLegendResultScreen();
-      const instance = Game.instance;
-      currentLevelIndex = 0;
-      if (instance) {
-        instance.reset({ showTitle: true });
-      } else {
-        hardResetRuntime();
-        await loadLevel(0, { applyBackground: false, playMusic: false });
-      }
-    };
-  }
-
-  if (btnRetry){
-    btnRetry.onclick = async () => {
-      if (typeof playSound === "function") playSound("click");
-      hideLegendResultScreen({ immediate: true });
-      hardResetRuntime();
-      const legendIndex = LEGEND_LEVEL_INDEX >= 0 ? LEGEND_LEVEL_INDEX : currentLevelIndex;
-      await loadLevel(legendIndex, { immediateBackground: true });
-      resumeGameplay();
-    };
+  if (window.SD_LEGEND_RESULT?.bindLegendResultButtons) {
+    return window.SD_LEGEND_RESULT.bindLegendResultButtons();
   }
 }
 
