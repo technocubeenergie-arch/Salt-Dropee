@@ -139,12 +139,12 @@
   function selectNewestSnapshot(existingMeta, nextMeta) {
     if (!nextMeta?.snapshot) return existingMeta || null;
     if (!existingMeta?.snapshot) return nextMeta;
-    const existingTs = Date.parse(existingMeta.snapshot.updatedAt || '') || 0;
-    const nextTs = Date.parse(nextMeta.snapshot.updatedAt || '') || 0;
+    const existingTs = Date.parse(existingMeta.updatedAt || existingMeta.snapshot.updatedAt || '') || 0;
+    const nextTs = Date.parse(nextMeta.updatedAt || nextMeta.snapshot.updatedAt || '') || 0;
     return nextTs >= existingTs ? nextMeta : existingMeta;
   }
 
-  async function applyProgressSnapshot(snapshot, playerId) {
+  async function applyProgressSnapshot(snapshot, playerId, meta = {}) {
     const game = getGame();
     if (!snapshot || !game) return;
 
@@ -196,7 +196,12 @@
     const showInterLevelScreen = getHostFn('showInterLevelScreen');
     showInterLevelScreen?.('win', { replaySound: false });
 
-    console.info('[progress] applied saved snapshot', debugFormatContext({ levelNumber, restoredScore }));
+    console.info('[progress] applied saved snapshot', debugFormatContext({
+      levelNumber,
+      restoredScore,
+      source: meta.source || 'unknown',
+      reason: meta.reason || 'unspecified',
+    }));
   }
 
   async function applyPendingProgressIfPossible() {
@@ -204,6 +209,10 @@
     if (!pending || !getGame()) return;
     if (!isProgressApplicationEnabled) return;
     if (isActiveGameplayInProgress()) {
+      console.info('[progress] deferring snapshot application during active gameplay', debugFormatContext({
+        reason: pending.reason || 'active-gameplay',
+        source: pending.source || 'unknown',
+      }));
       return;
     }
 
@@ -211,7 +220,7 @@
     progressRuntime.phase = 'applying';
 
     try {
-      await applyProgressSnapshot(pending.snapshot, pending.playerId);
+      await applyProgressSnapshot(pending.snapshot, pending.playerId, pending);
     } catch (error) {
       console.warn('[progress] hydration failed', error);
     } finally {
@@ -223,7 +232,7 @@
     return progressRuntime.requestId === requestId && playerId === getActivePlayerId();
   }
 
-  function queueProgressSnapshot(snapshot, playerId, reason = 'unspecified') {
+  function queueProgressSnapshot(snapshot, playerId, reason = 'unspecified', meta = {}) {
     const activePlayerId = getActivePlayerId();
     if (!playerId || playerId !== activePlayerId) {
       if (snapshot) {
@@ -239,7 +248,13 @@
       return;
     }
 
-    const nextMeta = { snapshot, playerId, reason };
+    const nextMeta = {
+      snapshot,
+      playerId,
+      reason,
+      source: meta.source || 'unknown',
+      updatedAt: snapshot?.updatedAt || snapshot?.state?.updatedAt || null,
+    };
 
     progressRuntime.pending = selectNewestSnapshot(progressRuntime.pending, nextMeta);
 
@@ -257,6 +272,13 @@
     progressRuntime.requestId = requestId;
     progressRuntime.phase = 'loading';
 
+    console.info('[progress] fetch requested', debugFormatContext({
+      source: 'supabase',
+      requestId,
+      playerId,
+      reason,
+    }));
+
     const promise = Promise.resolve()
       .then(() => service.loadProgress())
       .catch((error) => {
@@ -266,12 +288,30 @@
     progressRuntime.inFlight = { requestId, promise, label: reason };
 
     promise
-      .then((snapshot) => {
+      .then((result) => {
         if (!isProgressRequestCurrent(requestId, playerId)) {
           console.info('[progress] late snapshot ignored', debugFormatContext({ reason, playerId }));
           return;
         }
-        queueProgressSnapshot(snapshot, playerId, reason);
+        const snapshot = result?.snapshot || null;
+        const source = result?.source || 'unknown';
+        const fallbackReason = result?.reason || reason;
+        if (!snapshot) {
+          console.info('[progress] no snapshot available', debugFormatContext({
+            reason: fallbackReason,
+            source,
+            playerId,
+          }));
+        } else {
+          console.info('[progress] snapshot received', debugFormatContext({
+            reason: fallbackReason,
+            source,
+            playerId,
+            levelNumber: snapshot?.level,
+            restoredScore: snapshot?.score,
+          }));
+        }
+        queueProgressSnapshot(snapshot, playerId, fallbackReason, { source });
       })
       .catch((error) => {
         if (isProgressRequestCurrent(requestId, playerId)) {
@@ -297,6 +337,11 @@
     const playerId = state?.profile?.id || null;
 
     if (!service || !playerId || !state?.user) {
+      console.info('[progress] auth evaluated', debugFormatContext({
+        authState: state?.user ? 'authenticated' : 'guest',
+        playerId,
+        reason: !service ? 'no-service' : !playerId ? 'no-player' : 'no-user',
+      }));
       resetProgressRuntime('auth-missing');
       return;
     }
@@ -304,6 +349,12 @@
     if (progressRuntime.inFlight && progressRuntime.inFlight.requestId && isProgressRequestCurrent(progressRuntime.inFlight.requestId, playerId)) {
       return;
     }
+
+    console.info('[progress] auth evaluated', debugFormatContext({
+      authState: state?.user ? 'authenticated' : 'guest',
+      playerId,
+      requestId: progressRuntime.requestId,
+    }));
 
     startProgressLoadForPlayer(playerId, 'auth-sync');
   }
@@ -355,6 +406,11 @@
     const effectiveTimeout = Math.min(PROGRESS_LOAD_TIMEOUT_MS, eagerWaitMs);
 
     if (!playerId || !auth?.user) {
+      console.info('[progress] skip title refresh', debugFormatContext({
+        reason: 'auth-missing',
+        authState: auth?.user ? 'authenticated' : 'guest',
+        playerId,
+      }));
       return;
     }
 
