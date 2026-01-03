@@ -138,10 +138,13 @@
     const authState = options && typeof options === 'object' && options.authState
       ? options.authState
       : getAuthStateSnapshot?.();
+    const screenGetter = getHostFn('getActiveScreen');
+    const screen = typeof screenGetter === 'function' ? screenGetter() : null;
     const authBusy = !!(authState?.enabled && !authState?.ready);
     const phaseBusy = progressRuntime.phase === 'loading' || progressRuntime.phase === 'applying';
     const inFlightBusy = !!progressRuntime.inFlight;
-    const pendingBusy = !!progressRuntime.pending;
+    const pendingBusy = !!progressRuntime.pending
+      && !(screen === 'title' || screen === 'boot'); // Ne pas bloquer l'écran titre indéfiniment.
     return authBusy || phaseBusy || inFlightBusy || pendingBusy;
   }
 
@@ -171,6 +174,7 @@
   }
 
   function resetProgressRuntime(reason = 'reset') {
+    const prevPhase = progressRuntime.phase;
     progressRuntime.pending = null;
     progressRuntime.inFlight = null;
     progressRuntime.phase = 'idle';
@@ -178,6 +182,13 @@
     progressRuntime.lastAppliedPlayerId = null;
     if (reason) {
       console.info(`[progress] runtime reset${debugFormatContext({ reason })}`);
+    }
+    if (prevPhase !== progressRuntime.phase) {
+      console.info('[progress] phase transition', {
+        from: prevPhase,
+        to: progressRuntime.phase,
+        reason,
+      });
     }
     updateProgressUiBusyState({ reason: `${reason}-runtime-reset` });
   }
@@ -290,8 +301,16 @@
       return;
     }
 
+    const prevPhase = progressRuntime.phase;
     progressRuntime.pending = null;
     progressRuntime.phase = 'applying';
+    if (prevPhase !== progressRuntime.phase) {
+      console.info('[progress] phase transition', {
+        from: prevPhase,
+        to: progressRuntime.phase,
+        reason: pending.reason || 'apply-pending-start',
+      });
+    }
     updateProgressUiBusyState({ reason: 'apply-pending-start' });
 
     try {
@@ -299,7 +318,15 @@
     } catch (error) {
       console.warn('[progress] hydration failed', error);
     } finally {
+      const finalPrevPhase = progressRuntime.phase;
       progressRuntime.phase = 'idle';
+      if (finalPrevPhase !== progressRuntime.phase) {
+        console.info('[progress] phase transition', {
+          from: finalPrevPhase,
+          to: progressRuntime.phase,
+          reason: pending.reason || 'apply-pending-complete',
+        });
+      }
       updateProgressUiBusyState({ reason: 'apply-pending-complete' });
     }
   }
@@ -333,6 +360,11 @@
     };
 
     progressRuntime.pending = selectNewestSnapshot(progressRuntime.pending, nextMeta);
+    console.info('[progress] snapshot queued', debugFormatContext({
+      reason,
+      source: nextMeta.source,
+      updatedAt: nextMeta.updatedAt,
+    }));
     updateProgressUiBusyState({ reason: 'queue-snapshot' });
 
     // Do not disrupt a running game; application is attempted when safe.
@@ -347,7 +379,15 @@
 
     const requestId = progressRuntime.requestId + 1;
     progressRuntime.requestId = requestId;
+    const prevPhase = progressRuntime.phase;
     progressRuntime.phase = 'loading';
+    if (prevPhase !== progressRuntime.phase) {
+      console.info('[progress] phase transition', {
+        from: prevPhase,
+        to: progressRuntime.phase,
+        reason,
+      });
+    }
     updateProgressUiBusyState({ reason: 'start-load' });
 
     console.info('[progress] fetch requested', debugFormatContext({
@@ -389,6 +429,13 @@
             restoredScore: snapshot?.score,
           }));
         }
+        console.info('[progress] load finished', debugFormatContext({
+          outcome: snapshot ? 'snapshot' : 'none',
+          source,
+          reason: fallbackReason,
+          playerId,
+          requestId,
+        }));
         queueProgressSnapshot(snapshot, playerId, fallbackReason, { source });
       })
       .catch((error) => {
@@ -397,13 +444,28 @@
         } else {
           console.info('[progress] late progression load ignored', debugFormatContext({ reason, playerId }));
         }
+        console.info('[progress] load finished', debugFormatContext({
+          outcome: 'error',
+          source: 'supabase',
+          reason,
+          playerId,
+          requestId,
+        }));
       })
       .finally(() => {
         if (progressRuntime.inFlight?.requestId === requestId) {
           progressRuntime.inFlight = null;
         }
         if (progressRuntime.phase === 'loading' && progressRuntime.requestId === requestId) {
+          const prevPhaseAfterLoad = progressRuntime.phase;
           progressRuntime.phase = 'idle';
+          if (prevPhaseAfterLoad !== progressRuntime.phase) {
+            console.info('[progress] phase transition', {
+              from: prevPhaseAfterLoad,
+              to: progressRuntime.phase,
+              reason: 'load-finished',
+            });
+          }
         }
         updateProgressUiBusyState({ reason: 'load-finished' });
       });
@@ -449,7 +511,15 @@
     });
 
     if (!hydrationOutcome.completed && progressRuntime.phase === 'loading') {
+      const prevPhase = progressRuntime.phase;
       progressRuntime.phase = 'idle';
+      if (prevPhase !== progressRuntime.phase) {
+        console.info('[progress] phase transition', {
+          from: prevPhase,
+          to: progressRuntime.phase,
+          reason: 'initial-hydration-timeout',
+        });
+      }
     }
 
     await applyPendingProgressIfPossible();
