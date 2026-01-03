@@ -751,7 +751,8 @@ function isLegendLevel(index = currentLevelIndex) {
 }
 
 function endLegendRun(reason = "time") {
-  finalizeLevelTransition(() => showLegendResultScreen(reason));
+  const legendScoreAtEnd = score;
+  finalizeLevelTransition(() => showLegendResultScreen(reason, { score: legendScoreAtEnd }));
 }
 
 window.loadLevel = loadLevel;
@@ -1204,9 +1205,9 @@ function prepareLegendLevelWarmup(index) {
   loadLegendBoostsForSession().catch(() => {});
 }
 
-function showLegendResultScreen(reason = "time"){
+function showLegendResultScreen(reason = "time", data = {}){
   if (window.SD_LEGEND_RESULT?.showLegendResultScreen) {
-    return window.SD_LEGEND_RESULT.showLegendResultScreen(reason);
+    return window.SD_LEGEND_RESULT.showLegendResultScreen(reason, data);
   }
 }
 

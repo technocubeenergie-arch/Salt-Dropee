@@ -1,7 +1,9 @@
 (function initLegendResult(global) {
   const SD_LEGEND_RESULT = global.SD_LEGEND_RESULT || {};
 
-  function showLegendResultScreen(reason = "time"){
+  let lastLegendScore = 0;
+
+  function showLegendResultScreen(reason = "time", data = {}){
     void reason;
     global.hideInterLevelScreen();
 
@@ -39,7 +41,10 @@
       title.textContent = "Mode Légende";
     }
 
-    const numericScore = Number.isFinite(global.score) ? global.score : Number(global.score) || 0;
+    const numericScore = Number.isFinite(data?.score)
+      ? data.score
+      : Number(global.score) || 0;
+    lastLegendScore = numericScore;
     const formattedScore = typeof global.formatScore === "function"
       ? global.formatScore(numericScore)
       : String(numericScore | 0);
