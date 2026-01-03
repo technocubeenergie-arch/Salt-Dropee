@@ -38,15 +38,39 @@
   } = global.SD_UTILS || {};
 
   const NAV_SCREEN_LOG_TARGETS = new Set(['title', 'running', 'paused', 'interLevel', 'settings', 'gameover', 'leaderboard']);
-  let activeScreen = 'boot';
-  global.activeScreen = activeScreen;
-  let lastNonSettingsScreen = 'boot';
 
   function normalizeScreenName(name) {
     if (typeof name !== 'string' || name.trim() === '') return 'unknown';
     const key = name.trim();
     const lower = key.toLowerCase();
     return SCREEN_NAME_ALIASES[lower] || key;
+  }
+
+  function getNavStateRef() {
+    if (typeof global.SD_NAV_STATE === 'object' && global.SD_NAV_STATE !== null) {
+      return global.SD_NAV_STATE;
+    }
+    return null;
+  }
+
+  const initialActiveScreen = normalizeScreenName(
+    (getNavStateRef()?.activeScreen) || global.activeScreen || 'boot'
+  );
+  let activeScreen = initialActiveScreen;
+  global.activeScreen = activeScreen;
+  let lastNonSettingsScreen = (initialActiveScreen !== 'settings' && initialActiveScreen !== 'unknown')
+    ? initialActiveScreen
+    : 'boot';
+
+  const navState = getNavStateRef();
+  if (navState) {
+    navState.activeScreen = activeScreen;
+    if (typeof navState.previousScreen === 'undefined') {
+      navState.previousScreen = null;
+    }
+    if (typeof navState.returnTo === 'undefined') {
+      navState.returnTo = null;
+    }
   }
 
   function logNavigation(target, context = {}) {
@@ -81,6 +105,16 @@
     }
     activeScreen = normalized;
     global.activeScreen = normalized;
+    const navStateRef = getNavStateRef();
+    if (navStateRef) {
+      navStateRef.activeScreen = normalized;
+      if (!sameScreen) {
+        navStateRef.previousScreen = prev;
+      }
+      if (context && Object.prototype.hasOwnProperty.call(context, 'returnTo')) {
+        navStateRef.returnTo = context.returnTo;
+      }
+    }
     if (normalized !== 'settings' && normalized !== 'unknown') {
       lastNonSettingsScreen = normalized;
     }
@@ -93,6 +127,10 @@
   }
 
   function getActiveScreen() {
+    const navStateRef = getNavStateRef();
+    if (navStateRef && navStateRef.activeScreen !== activeScreen) {
+      navStateRef.activeScreen = activeScreen;
+    }
     return activeScreen;
   }
 
@@ -153,6 +191,8 @@
   SD_UI_PANELS.logLogoutClickIgnored = logLogoutClickIgnored;
   SD_UI_PANELS.setActiveScreen = setActiveScreen;
   SD_UI_PANELS.getActiveScreen = getActiveScreen;
+  SD_UI_PANELS.getActiveScreenState = getActiveScreen;
+  SD_UI_PANELS.setActiveScreenState = setActiveScreen;
   SD_UI_PANELS.getLastNonSettingsScreen = getLastNonSettingsScreen;
   SD_UI_PANELS.isFormFieldElement = isFormFieldElement;
   SD_UI_PANELS.getFocusedElementForShortcuts = getFocusedElementForShortcuts;

@@ -459,6 +459,10 @@ const navState = {
   returnTo: null,
 };
 
+if (typeof window !== 'undefined') {
+  window.SD_NAV_STATE = navState;
+}
+
 initNav({
   getState: () => navState,
   setState: (value = {}) => Object.assign(navState, value),
