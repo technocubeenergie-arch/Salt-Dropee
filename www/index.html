@@ -122,6 +122,12 @@
   <!-- Cordova.js - auto-injected by Cordova CLI during build -->
   <script src="cordova.js"></script>
 
+  <!--
+    Ordre de chargement important :
+    - Certains modules doivent être présents avant main.js (config, utils, rendu, navigation…).
+    - L’ordre ci-dessous est volontaire pour respecter ces dépendances.
+    - main.js doit rester en dernier pour démarrer uniquement après tous les namespaces SD_*.
+  -->
   <!-- JS du jeu en chemin relatif -->
   <script src="lib/gsap/gsap.min.js"></script>
   <script src="js/soundManager.js"></script>
