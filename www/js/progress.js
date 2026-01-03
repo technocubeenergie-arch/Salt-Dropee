@@ -13,6 +13,7 @@
     LEVELS = [],
     PROGRESS_LOAD_TIMEOUT_MS = 3500,
     TITLE_START_PROGRESS_EAGER_WAIT_MS = 1200,
+    PROGRESS_TITLE_REFRESH_APPLY_COOLDOWN_MS = 2000,
   } = config;
 
   const waitForPromiseWithTimeout = typeof utils.waitForPromiseWithTimeout === 'function'
@@ -37,6 +38,10 @@
     inFlight: null,
     requestId: 0,
     lastAppliedPlayerId: null,
+    lastRemoteFetchAt: null,
+    lastFetchedRequestId: null,
+    lastApplyAt: null,
+    lastAppliedRequestId: null,
   };
   let isProgressApplicationEnabled = false;
   let hasAppliedProgressSnapshot = false;
@@ -269,6 +274,10 @@
 
     hasAppliedProgressSnapshot = true;
     progressRuntime.lastAppliedPlayerId = playerId || getActivePlayerId();
+    progressRuntime.lastApplyAt = Date.now();
+    if (meta?.requestId) {
+      progressRuntime.lastAppliedRequestId = meta.requestId;
+    }
 
     const showInterLevelScreen = getHostFn('showInterLevelScreen');
     showInterLevelScreen?.(derivedInterLevelResult, { replaySound: false });
@@ -377,6 +386,21 @@
       return null;
     }
 
+    if (reason === 'title-refresh' && progressRuntime.lastApplyAt) {
+      const now = Date.now();
+      const msSinceApply = now - progressRuntime.lastApplyAt;
+      if (msSinceApply >= 0 && msSinceApply < PROGRESS_TITLE_REFRESH_APPLY_COOLDOWN_MS) {
+        console.info('[progress] fetch skipped', debugFormatContext({
+          reason,
+          because: 'recent-apply',
+          msSinceApply,
+          cooldownMs: PROGRESS_TITLE_REFRESH_APPLY_COOLDOWN_MS,
+        }));
+        updateProgressUiBusyState({ reason: 'fetch-skip-recent-apply' });
+        return null;
+      }
+    }
+
     const requestId = progressRuntime.requestId + 1;
     progressRuntime.requestId = requestId;
     const prevPhase = progressRuntime.phase;
@@ -411,6 +435,8 @@
           console.info('[progress] late snapshot ignored', debugFormatContext({ reason, playerId }));
           return;
         }
+        progressRuntime.lastRemoteFetchAt = Date.now();
+        progressRuntime.lastFetchedRequestId = requestId;
         const snapshot = result?.snapshot || null;
         const source = result?.source || 'unknown';
         const fallbackReason = result?.reason || reason;
@@ -436,7 +462,7 @@
           playerId,
           requestId,
         }));
-        queueProgressSnapshot(snapshot, playerId, fallbackReason, { source });
+        queueProgressSnapshot(snapshot, playerId, fallbackReason, { source, requestId });
       })
       .catch((error) => {
         if (isProgressRequestCurrent(requestId, playerId)) {
