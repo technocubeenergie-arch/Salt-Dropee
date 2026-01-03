@@ -41,6 +41,7 @@
   let activeScreen = 'boot';
   global.activeScreen = activeScreen;
   let lastNonSettingsScreen = 'boot';
+  let navStateAccessors = { getState: null, setState: null };
 
   function normalizeScreenName(name) {
     if (typeof name !== 'string' || name.trim() === '') return 'unknown';
@@ -52,6 +53,36 @@
   function logNavigation(target, context = {}) {
     const navContext = debugFormatContext(context);
     console.info(`[nav] goto(${target})${navContext}`);
+  }
+
+  function registerNavStateAccessors(options = {}) {
+    if (typeof options.getState === 'function') {
+      navStateAccessors.getState = options.getState;
+    }
+    if (typeof options.setState === 'function') {
+      navStateAccessors.setState = options.setState;
+    }
+  }
+
+  function syncNavStateActiveScreen(next, prev) {
+    if (typeof navStateAccessors.setState !== 'function') return;
+
+    const currentState = typeof navStateAccessors.getState === 'function'
+      ? navStateAccessors.getState() || {}
+      : {};
+
+    const nextState = {
+      ...currentState,
+      activeScreen: next,
+    };
+
+    if (typeof prev === 'string' && prev && prev !== currentState.previousScreen) {
+      nextState.previousScreen = prev;
+    } else if (!Object.prototype.hasOwnProperty.call(nextState, 'previousScreen')) {
+      nextState.previousScreen = null;
+    }
+
+    navStateAccessors.setState(nextState);
   }
 
   function logPlayClickIgnored(reason, extra = {}) {
@@ -74,7 +105,18 @@
     const normalized = normalizeScreenName(next);
     const prev = activeScreen;
     const sameScreen = normalized === prev;
-    const info = { from: prev, ...(context && typeof context === 'object' ? context : {}) };
+    const via = (context && typeof context === 'object' && typeof context.via === 'string' && context.via.trim())
+      ? context.via
+      : 'direct';
+    const info = {
+      ...(context && typeof context === 'object' ? context : {}),
+      from: prev,
+      to: normalized,
+      via,
+    };
+
+    syncNavStateActiveScreen(normalized, prev);
+
     if (sameScreen) {
       console.info(`[state] setActiveScreen: ${prev} (unchanged)${debugFormatContext(info)}`);
       return normalized;
@@ -143,6 +185,7 @@
   global.logPlayClickIgnored = logPlayClickIgnored;
   global.logLogoutClickIgnored = logLogoutClickIgnored;
   global.setActiveScreen = setActiveScreen;
+  global.registerNavStateAccessors = registerNavStateAccessors;
   global.isFormFieldElement = isFormFieldElement;
   global.getFocusedElementForShortcuts = getFocusedElementForShortcuts;
   global.shouldBlockGameplayShortcuts = shouldBlockGameplayShortcuts;
@@ -152,6 +195,7 @@
   SD_UI_PANELS.logPlayClickIgnored = logPlayClickIgnored;
   SD_UI_PANELS.logLogoutClickIgnored = logLogoutClickIgnored;
   SD_UI_PANELS.setActiveScreen = setActiveScreen;
+  SD_UI_PANELS.registerNavStateAccessors = registerNavStateAccessors;
   SD_UI_PANELS.getActiveScreen = getActiveScreen;
   SD_UI_PANELS.getLastNonSettingsScreen = getLastNonSettingsScreen;
   SD_UI_PANELS.isFormFieldElement = isFormFieldElement;

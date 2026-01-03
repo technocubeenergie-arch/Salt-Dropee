@@ -459,6 +459,13 @@ const navState = {
   returnTo: null,
 };
 
+if (window.SD_UI_PANELS?.registerNavStateAccessors) {
+  window.SD_UI_PANELS.registerNavStateAccessors({
+    getState: () => navState,
+    setState: (value = {}) => Object.assign(navState, value),
+  });
+}
+
 initNav({
   getState: () => navState,
   setState: (value = {}) => Object.assign(navState, value),
