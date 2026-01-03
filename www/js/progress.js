@@ -40,6 +40,7 @@
   };
   let isProgressApplicationEnabled = false;
   let hasAppliedProgressSnapshot = false;
+  let lastProgressUiBusy = false;
 
   let host = {};
 
@@ -129,6 +130,46 @@
     return auth?.profile?.id || null;
   }
 
+  function getProgressPhase() {
+    return progressRuntime.phase;
+  }
+
+  function isProgressBusy(options = {}) {
+    const authState = options && typeof options === 'object' && options.authState
+      ? options.authState
+      : getAuthStateSnapshot?.();
+    const authBusy = !!(authState?.enabled && !authState?.ready);
+    const phaseBusy = progressRuntime.phase === 'loading' || progressRuntime.phase === 'applying';
+    const inFlightBusy = !!progressRuntime.inFlight;
+    const pendingBusy = !!progressRuntime.pending;
+    return authBusy || phaseBusy || inFlightBusy || pendingBusy;
+  }
+
+  function emitProgressUiBusyChange(isBusy, context = {}) {
+    const screenGetter = getHostFn('getActiveScreen');
+    const payload = {
+      phase: getProgressPhase(),
+      screen: typeof screenGetter === 'function' ? screenGetter() : undefined,
+      ...context,
+    };
+
+    const handler = getHostFn('onProgressBusyChange');
+    if (typeof handler === 'function') {
+      handler(isBusy, payload);
+    }
+
+    const direction = isBusy ? 'ON' : 'OFF';
+    console.info(`[progress] ui busy ${direction}`, payload);
+  }
+
+  function updateProgressUiBusyState(context = {}) {
+    const authState = getAuthStateSnapshot?.();
+    const nextBusy = isProgressBusy({ authState });
+    if (nextBusy === lastProgressUiBusy) return;
+    lastProgressUiBusy = nextBusy;
+    emitProgressUiBusyChange(nextBusy, context);
+  }
+
   function resetProgressRuntime(reason = 'reset') {
     progressRuntime.pending = null;
     progressRuntime.inFlight = null;
@@ -138,6 +179,7 @@
     if (reason) {
       console.info(`[progress] runtime reset${debugFormatContext({ reason })}`);
     }
+    updateProgressUiBusyState({ reason: `${reason}-runtime-reset` });
   }
 
   function selectNewestSnapshot(existingMeta, nextMeta) {
@@ -250,6 +292,7 @@
 
     progressRuntime.pending = null;
     progressRuntime.phase = 'applying';
+    updateProgressUiBusyState({ reason: 'apply-pending-start' });
 
     try {
       await applyProgressSnapshot(pending.snapshot, pending.playerId, pending);
@@ -257,6 +300,7 @@
       console.warn('[progress] hydration failed', error);
     } finally {
       progressRuntime.phase = 'idle';
+      updateProgressUiBusyState({ reason: 'apply-pending-complete' });
     }
   }
 
@@ -289,6 +333,7 @@
     };
 
     progressRuntime.pending = selectNewestSnapshot(progressRuntime.pending, nextMeta);
+    updateProgressUiBusyState({ reason: 'queue-snapshot' });
 
     // Do not disrupt a running game; application is attempted when safe.
     applyPendingProgressIfPossible();
@@ -303,6 +348,7 @@
     const requestId = progressRuntime.requestId + 1;
     progressRuntime.requestId = requestId;
     progressRuntime.phase = 'loading';
+    updateProgressUiBusyState({ reason: 'start-load' });
 
     console.info('[progress] fetch requested', debugFormatContext({
       source: 'supabase',
@@ -359,6 +405,7 @@
         if (progressRuntime.phase === 'loading' && progressRuntime.requestId === requestId) {
           progressRuntime.phase = 'idle';
         }
+        updateProgressUiBusyState({ reason: 'load-finished' });
       });
 
     return promise;
@@ -375,10 +422,12 @@
         reason: !service ? 'no-service' : !playerId ? 'no-player' : 'no-user',
       }));
       resetProgressRuntime('auth-missing');
+      updateProgressUiBusyState({ reason: 'auth-missing' });
       return;
     }
 
     if (progressRuntime.inFlight && progressRuntime.inFlight.requestId && isProgressRequestCurrent(progressRuntime.inFlight.requestId, playerId)) {
+      updateProgressUiBusyState({ reason: 'auth-inflight' });
       return;
     }
 
@@ -387,6 +436,8 @@
       playerId,
       requestId: progressRuntime.requestId,
     }));
+
+    updateProgressUiBusyState({ reason: 'auth-evaluated' });
 
     startProgressLoadForPlayer(playerId, 'auth-sync');
   }
@@ -402,6 +453,7 @@
     }
 
     await applyPendingProgressIfPossible();
+    updateProgressUiBusyState({ reason: 'initial-hydration-complete' });
   }
 
   async function persistProgressSnapshot(reason = 'unspecified') {
@@ -465,6 +517,7 @@
     });
 
     await applyPendingProgressIfPossible();
+    updateProgressUiBusyState({ reason: 'title-start-pre-refresh' });
 
     const loadPromise = startProgressLoadForPlayer(playerId, 'title-refresh');
     if (!loadPromise) {
@@ -495,6 +548,8 @@
       await applyPendingProgressIfPossible();
     } catch (error) {
       console.warn('[progress] failed to apply refreshed progression', error);
+    } finally {
+      updateProgressUiBusyState({ reason: 'title-start-apply-complete' });
     }
   }
 
@@ -510,6 +565,8 @@
     getHasAppliedProgressSnapshot() {
       return hasAppliedProgressSnapshot;
     },
+    getProgressPhase,
+    isProgressBusy,
     setHostContext,
   };
 

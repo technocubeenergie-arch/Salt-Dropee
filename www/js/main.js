@@ -244,6 +244,8 @@ const {
   setProgressApplicationEnabled = () => {},
   getHasAppliedProgressSnapshot = () => false,
   setHostContext: setProgressHostContext = () => {},
+  getProgressPhase = () => 'idle',
+  isProgressBusy = () => false,
 } = window.SD_PROGRESS || {};
 
 const {
@@ -436,6 +438,8 @@ let ctx;
 let overlay;
 let game;
 let runtime = null;
+let progressUiBusy = false;
+let progressUiBusyPhase = 'idle';
 
 function isActiveGameplayInProgress(){
   return Boolean(game && game.state === 'playing' && getActiveScreen() === 'running');
@@ -451,6 +455,8 @@ function getScoreService(){
 setProgressHostContext({
   getAuthStateSnapshot,
   isActiveGameplayInProgress,
+  getActiveScreen: () => getActiveScreen(),
+  onProgressBusyChange: (isBusy, payload = {}) => handleProgressUiBusyChange(isBusy, payload),
 });
 
 const navState = {
@@ -490,6 +496,41 @@ if (window.SD_UI_PANELS?.initSettingsOpener) {
 captureReferralCodeFromUrl();
 
 tryConnectAuthFacade();
+
+function setTitlePlayButtonBusyState(isBusy) {
+  if (typeof document === 'undefined') return;
+  const btn = document.getElementById('btnPlay');
+  const busy = !!isBusy;
+  if (!btn) return;
+  btn.disabled = busy;
+  btn.classList.toggle('is-disabled', busy);
+  btn.setAttribute('aria-disabled', busy ? 'true' : 'false');
+  btn.dataset.busy = busy ? 'yes' : 'no';
+}
+
+function updateTitleBusyUi() {
+  if (typeof document === 'undefined') return;
+  const overlayEl = document.getElementById('overlay');
+  const busyEl = overlayEl?.querySelector?.('[data-progress-busy]');
+  const isTitle = getActiveScreen() === 'title';
+  const showBusy = Boolean(progressUiBusy && isTitle);
+
+  if (busyEl) {
+    busyEl.hidden = !showBusy;
+    busyEl.setAttribute('aria-hidden', showBusy ? 'false' : 'true');
+    busyEl.dataset.phase = progressUiBusyPhase || 'idle';
+  }
+
+  setTitlePlayButtonBusyState(showBusy);
+}
+
+function handleProgressUiBusyChange(isBusy, payload = {}) {
+  progressUiBusy = !!isBusy;
+  progressUiBusyPhase = payload?.phase || (typeof getProgressPhase === 'function' ? getProgressPhase() : 'idle') || 'idle';
+  if (getActiveScreen() === 'title') {
+    updateTitleBusyUi();
+  }
+}
 
 function enterTitleScreen() {
   gotoScreen('title', { via: 'enterTitleScreen' });
@@ -1719,7 +1760,13 @@ class Game{
           <button id="btnPlay" type="button">Jouer</button>
           <button id="btnRulesTitle" type="button">Règle du jeu</button>
           <button type="button" class="btn-settings" data-action="open-settings">Paramètres</button>
-      <button id="btnLB" type="button">Leaderboard</button>
+          <button id="btnLB" type="button">Leaderboard</button>
+        </div>
+        <div class="progress-busy-overlay" data-progress-busy hidden aria-live="assertive" aria-label="Chargement en cours">
+          <div class="progress-busy-card">
+            <div class="progress-spinner" aria-hidden="true"></div>
+            <div class="progress-busy-text">Chargement…</div>
+          </div>
         </div>
       </div>`;
     showExclusiveOverlay(overlay);
@@ -1736,8 +1783,14 @@ class Game{
         onShowLeaderboard: () => this.renderLeaderboard(),
       });
     }
+    updateTitleBusyUi();
     addEvent(document.getElementById('btnPlay'), INPUT.tap, async (e)=>{
       e.preventDefault(); e.stopPropagation();
+      const phase = typeof getProgressPhase === 'function' ? getProgressPhase() : undefined;
+      if (typeof isProgressBusy === 'function' && isProgressBusy()) {
+        console.info('[progress] play blocked', { reason: 'progress-busy', phase });
+        return;
+      }
       playSound("click");
       const authSnapshot = getAuthStateSnapshot();
       console.info(`[progress] play clicked${debugFormatContext({ screen: getActiveScreen(), auth: authSnapshot?.user ? 'authenticated' : 'guest' })}`);
