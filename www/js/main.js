@@ -751,7 +751,8 @@ function isLegendLevel(index = currentLevelIndex) {
 }
 
 function endLegendRun(reason = "time") {
-  finalizeLevelTransition(() => showLegendResultScreen(reason));
+  const legendScoreAtEnd = score;
+  finalizeLevelTransition(() => showLegendResultScreen(reason, { score: legendScoreAtEnd }));
 }
 
 window.loadLevel = loadLevel;
@@ -1204,80 +1205,22 @@ function prepareLegendLevelWarmup(index) {
   loadLegendBoostsForSession().catch(() => {});
 }
 
-function showLegendResultScreen(reason = "time"){
-  void reason;
-  hideInterLevelScreen();
-
-  const screen = document.getElementById("legendResultScreen");
-  const title = document.getElementById("legendTitle");
-  const message = document.getElementById("legendMessage");
-  if (!screen) return;
-
-  clearMainOverlay(screen);
-
-  gotoScreen('interLevel', { via: 'showLegendResultScreen', reason });
-
-  // Les résultats du mode Légende sont enregistrés uniquement dans la table "scores".
-  // On évite ici toute sauvegarde de progression automatique afin de ne pas écrire
-  // dans la table "progress" qui est réservée aux sauvegardes manuelles.
-  submitLegendScoreIfNeeded(reason || 'end');
-  markLegendRunComplete();
-
-  if (typeof Game !== "undefined" && Game.instance) {
-    Game.instance.settingsReturnView = "legend";
+function showLegendResultScreen(reason = "time", data = {}){
+  if (window.SD_LEGEND_RESULT?.showLegendResultScreen) {
+    return window.SD_LEGEND_RESULT.showLegendResultScreen(reason, data);
   }
-
-  if (title) {
-    title.textContent = "Mode Légende";
-  }
-
-  const numericScore = Number.isFinite(score) ? score : Number(window.score) || 0;
-  const formattedScore = typeof formatScore === "function"
-    ? formatScore(numericScore)
-    : String(numericScore | 0);
-
-  if (message) {
-    message.textContent = `Félicitations, votre score est de ${formattedScore}.`;
-  }
-
-  showExclusiveOverlay(screen);
 }
 
 function hideLegendResultScreen(options = {}){
-  const screen = document.getElementById("legendResultScreen");
-  if (!screen) return;
-  hideOverlay(screen, options);
+  if (window.SD_LEGEND_RESULT?.hideLegendResultScreen) {
+    return window.SD_LEGEND_RESULT.hideLegendResultScreen(options);
+  }
 }
 
 // --- Boutons ---
 function bindLegendResultButtons(){
-  const btnHome = document.getElementById("legendHomeButton");
-  const btnRetry = document.getElementById("legendRetryButton");
-
-  if (btnHome){
-    btnHome.onclick = async () => {
-      if (typeof playSound === "function") playSound("click");
-      hideLegendResultScreen();
-      const instance = Game.instance;
-      currentLevelIndex = 0;
-      if (instance) {
-        instance.reset({ showTitle: true });
-      } else {
-        hardResetRuntime();
-        await loadLevel(0, { applyBackground: false, playMusic: false });
-      }
-    };
-  }
-
-  if (btnRetry){
-    btnRetry.onclick = async () => {
-      if (typeof playSound === "function") playSound("click");
-      hideLegendResultScreen({ immediate: true });
-      hardResetRuntime();
-      const legendIndex = LEGEND_LEVEL_INDEX >= 0 ? LEGEND_LEVEL_INDEX : currentLevelIndex;
-      await loadLevel(legendIndex, { immediateBackground: true });
-      resumeGameplay();
-    };
+  if (window.SD_LEGEND_RESULT?.bindLegendResultButtons) {
+    return window.SD_LEGEND_RESULT.bindLegendResultButtons();
   }
 }
 
