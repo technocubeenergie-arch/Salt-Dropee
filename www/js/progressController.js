@@ -6,6 +6,14 @@ import {
 import authFacade, { saltAuth } from './authController.js';
 
 const LOCAL_STORAGE_KEY = 'sd_progress_snapshot';
+const progressLogger = (window.SD_LOG?.createLogger
+  ? window.SD_LOG.createLogger('progress')
+  : null) || null;
+const logInfo = (...args) => (progressLogger?.info ? progressLogger.info(...args) : undefined);
+const logWarn = (...args) => (progressLogger?.warn ? progressLogger.warn(...args) : console.warn?.(...args));
+const logError = (...args) => (progressLogger?.error ? progressLogger.error(...args) : console.error?.(...args));
+
+const RETRY_DELAYS_MS = [500, 1000, 2000];
 
 // Le tableau "progress" de Supabase est sécurisé par RLS :
 // l'accès passe uniquement via player_id et Supabase vérifie que
@@ -67,6 +75,88 @@ function writeLocalSnapshot(snapshot) {
   }
 }
 
+function getErrorDescription(error) {
+  if (!error) return 'unknown';
+  if (error.message) return error.message;
+  if (typeof error === 'string') return error;
+  try {
+    return JSON.stringify(error);
+  } catch (_) {
+    return String(error);
+  }
+}
+
+function normalizeStatus(value) {
+  if (value === 0) return 0;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function isTransientSupabaseError(error) {
+  if (!error) return false;
+  const status = normalizeStatus(error.status || error.code);
+  if (status !== null) {
+    if (status === 408) return true; // request timeout
+    if (status === 0) return true; // network failure
+    if (status >= 500) return true; // server side/transient
+    if (status >= 400 && status < 500) return false; // logical/auth/permission issues
+  }
+
+  const code = typeof error.code === 'string' ? error.code : null;
+  if (code === 'PGRST116') {
+    return false; // aucune ligne, pas une erreur réseau
+  }
+
+  const message = getErrorDescription(error).toLowerCase();
+  if (
+    message.includes('network') ||
+    message.includes('fetch') ||
+    message.includes('timeout') ||
+    message.includes('timed out') ||
+    message.includes('abort') ||
+    message.includes('connection')
+  ) {
+    return true;
+  }
+
+  if (error.name === 'TypeError') {
+    return true; // souvent "Failed to fetch"
+  }
+
+  return false;
+}
+
+async function withSupabaseRetry(operationName, operation) {
+  let attempt = 0;
+  let lastError = null;
+
+  while (attempt < RETRY_DELAYS_MS.length) {
+    attempt += 1;
+    try {
+      return await operation();
+    } catch (error) {
+      if (!isTransientSupabaseError(error)) {
+        throw error;
+      }
+      lastError = error;
+      const nextDelay = attempt < RETRY_DELAYS_MS.length
+        ? RETRY_DELAYS_MS[attempt - 1]
+        : null;
+      logInfo?.(`[progress] ${operationName} attempt ${attempt} failed`, {
+        reason: getErrorDescription(error),
+        nextDelayMs: attempt >= RETRY_DELAYS_MS.length ? null : nextDelay,
+      });
+      if (!nextDelay) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, nextDelay));
+    }
+  }
+
+  throw lastError;
+}
+
 async function getSupabaseContext() {
   if (!isSupabaseEnabledInConfig()) {
     return { enabled: false, reason: 'config-disabled' };
@@ -112,28 +202,22 @@ async function loadProgress() {
     }
 
     const { supabase, playerId } = context;
-    const { data, error } = await supabase
-      .from('progress')
-      .select('level, score, state, updated_at')
-      .eq('player_id', playerId)
-      // on lit toujours la ligne la plus récente
-      .order('updated_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    const { data } = await withSupabaseRetry('load', async () => {
+      const result = await supabase
+        .from('progress')
+        .select('level, score, state, updated_at')
+        .eq('player_id', playerId)
+        // on lit toujours la ligne la plus récente
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-    if (error && error.code !== 'PGRST116') {
-      console.warn('[progress] load failed', {
-        source: 'supabase',
-        code: error.code,
-        message: error.message,
-      });
-      const fallback = readLocalSnapshot();
-      return {
-        snapshot: fallback,
-        source: fallback ? 'local' : 'none',
-        reason: 'supabase-error',
-      };
-    }
+      if (result.error && result.error.code !== 'PGRST116') {
+        throw result.error;
+      }
+
+      return result;
+    });
 
     if (!data) {
       return {
@@ -158,12 +242,13 @@ async function loadProgress() {
       reason: 'ok',
     };
   } catch (error) {
-    console.warn('[progress] unexpected load error', error);
+    logWarn?.('[progress] unexpected load error', error);
     const fallback = readLocalSnapshot();
+    const fallbackReason = isTransientSupabaseError(error) ? 'supabase-transient-error' : 'supabase-error';
     return {
       snapshot: fallback,
       source: fallback ? 'local' : 'none',
-      reason: 'unexpected-error',
+      reason: fallbackReason,
     };
   }
 }
@@ -174,7 +259,11 @@ async function saveProgress(snapshot = {}) {
     writeLocalSnapshot(snapshot);
 
     if (!context.enabled) {
-      return { source: 'local', snapshot };
+      return {
+        source: 'local',
+        snapshot,
+        reason: context.reason || 'supabase-unavailable',
+      };
     }
 
     const { supabase, playerId } = context;
@@ -185,22 +274,28 @@ async function saveProgress(snapshot = {}) {
       state: snapshot.state ?? null,
     };
 
-    const { error } = await supabase
-      .from('progress')
-      .upsert(payload, { onConflict: 'player_id' });
+    await withSupabaseRetry('save', async () => {
+      const { error } = await supabase
+        .from('progress')
+        .upsert(payload, { onConflict: 'player_id' });
 
-    if (error) {
-      console.warn('[progress] save failed', {
-        error: { message: error.message, code: error.code, details: error.details },
-        payload,
-      });
-      return { source: 'local', snapshot };
-    }
+      if (error) {
+        throw error;
+      }
+    });
 
-    return { source: 'supabase', snapshot: payload };
+    return { source: 'supabase', snapshot: payload, reason: 'ok' };
   } catch (error) {
-    console.warn('[progress] unexpected save error', error);
-    return { source: 'local', snapshot };
+    const reason = isTransientSupabaseError(error) ? 'offline' : 'supabase-error';
+    logWarn?.('[progress] save failed, using local fallback', {
+      reason,
+      error: {
+        message: error?.message,
+        code: error?.code,
+        status: error?.status,
+      },
+    });
+    return { source: 'local', snapshot, reason };
   }
 }
 

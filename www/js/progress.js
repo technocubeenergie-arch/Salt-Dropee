@@ -590,8 +590,21 @@
         lastClearedLevel,
         canAdvance,
       })}`);
-      await service.saveProgress(snapshot);
-      logInfo?.(`save completed${debugFormatContext({ reason, level: levelNumber })}`);
+      const saveResult = await service.saveProgress(snapshot);
+      const saveOutcomeReason = saveResult?.reason || reason;
+      const saveOutcomeSource = saveResult?.source || 'unknown';
+      if (saveOutcomeSource === 'supabase') {
+        logInfo?.(`save completed${debugFormatContext({
+          reason: saveOutcomeReason,
+          level: levelNumber,
+        })}`);
+      } else if (saveOutcomeReason === 'supabase-unavailable') {
+        logInfo?.('[progress] save stored locally (supabase unavailable)');
+      } else {
+        logWarn?.('[progress] save stored locally (fallback)', {
+          reason: saveOutcomeReason || 'fallback',
+        });
+      }
     } catch (error) {
       logWarn?.('failed to save progression', error);
     }
