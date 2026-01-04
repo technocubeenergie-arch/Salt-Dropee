@@ -12,6 +12,10 @@
     : (value, min, max) => Math.min(Math.max(value, min), max);
 
   const canvasAPI = global.SD_CANVAS || {};
+  const inputLogger = global.SD_LOG?.createLogger
+    ? global.SD_LOG.createLogger('input')
+    : null;
+  const logDebug = (...args) => inputLogger?.debug?.(...args);
 
   const DEBUG_INPUT_EVENT_TYPES = new Set([
     'pointerdown', 'pointermove', 'pointerup', 'pointercancel',
@@ -99,7 +103,7 @@
       if (typeof opts.capture === 'boolean') base.capture = opts.capture;
     }
     const context = debugFormatContext(base);
-    console.info(`[input] ${action} ${type} -> ${debugDescribeElement(target)}${context}`);
+    logDebug?.(`${action} ${type} -> ${debugDescribeElement(target)}${context}`);
   }
 
   function addEvent(el, type, handler, opts) {
@@ -320,7 +324,7 @@
       info.x = Math.round(point.x);
       info.y = Math.round(point.y);
     }
-    console.info(`[input] ${eventName} target=${logicalTarget}${debugFormatContext(info)}`);
+    logDebug?.(`${eventName} target=${logicalTarget}${debugFormatContext(info)}`);
   }
 
   function projectClientToCanvas(clientX, clientY) {
@@ -561,7 +565,7 @@
 
   function disablePlayerInput(reason = 'unspecified'){
     inputEnabled = false;
-    console.info(`[input] disable player input${debugFormatContext({ reason, screen: global.activeScreen })}`);
+    logDebug?.(`disable player input${debugFormatContext({ reason, screen: global.activeScreen })}`);
     resetPointerDragState({ releaseCapture: true });
     input.dash = false;
     resetDirectionalInputs();
@@ -569,7 +573,7 @@
 
   function enablePlayerInput(reason = 'unspecified'){
     inputEnabled = true;
-    console.info(`[input] enable player input${debugFormatContext({ reason, screen: global.activeScreen })}`);
+    logDebug?.(`enable player input${debugFormatContext({ reason, screen: global.activeScreen })}`);
     resetPointerDragState({ releaseCapture: true });
     input.dash = false;
   }

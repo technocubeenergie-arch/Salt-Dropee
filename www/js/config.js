@@ -4,6 +4,7 @@
 
 (function initSaltDroppeeConfig(){
   const VERSION = '1.1.0';
+  const DEBUG_LOGS = false;
 
   // ---- Configuration jeu et équilibrage ----
   const CONFIG = {
@@ -250,6 +251,7 @@
 
   const exported = {
     VERSION,
+    DEBUG_LOGS,
     CONFIG,
     LEVELS,
     INTER_LEVEL_BACKGROUNDS,
