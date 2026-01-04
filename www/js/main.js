@@ -25,6 +25,10 @@ const REQUIRED_SD_NAMESPACES = [
   'SD_LEGEND_RESULT',
 ];
 
+const mainLogger = window.SD_LOG?.createLogger
+  ? window.SD_LOG.createLogger('main')
+  : null;
+const logInfo = (...args) => mainLogger?.info?.(...args);
 function renderNamespaceError(missingNamespaces = []) {
   if (typeof document === 'undefined') return;
 
@@ -382,7 +386,7 @@ async function submitLegendScoreIfNeeded(reason = 'end'){
   const numericScore = Number.isFinite(score) ? score : Number(score) || 0;
   const durationSeconds = computeLegendDurationSeconds();
 
-  console.info('[score] legend run end', {
+  logInfo?.('[score] legend run end', {
     level: levelNumber,
     finalScore: numericScore,
     durationSeconds,
@@ -520,7 +524,7 @@ function showProgressLoadingUI(reason = 'unspecified') {
   busyEl.dataset.reason = reason || 'unspecified';
 
   setTitlePlayButtonBusyState(true);
-  console.info('[progress] loading ui state', { visible: true, reason });
+  logInfo?.('[progress] loading ui state', { visible: true, reason });
 }
 
 function hideProgressLoadingUI(reason = 'unspecified') {
@@ -534,7 +538,7 @@ function hideProgressLoadingUI(reason = 'unspecified') {
   }
 
   setTitlePlayButtonBusyState(false);
-  console.info('[progress] loading ui state', { visible: false, reason });
+  logInfo?.('[progress] loading ui state', { visible: false, reason });
 }
 
 function updateTitleBusyUi(reason = 'unspecified') {
@@ -578,7 +582,7 @@ function enterTitleScreen() {
     ? Game.instance
     : (game || null);
   if (runtimeInstance && runtimeInstance.state !== 'title') {
-    console.info(
+    logInfo?.(
       `[nav] syncing runtime state to title${debugFormatContext({
         previous: runtimeInstance.state,
       })}`
@@ -676,7 +680,7 @@ async function loadLegendBoostsForSession() {
       const result = await referralService.fetchLegendBoostsForCurrentPlayer();
       if (result?.ok && result.boosts) {
         const normalized = { ...DEFAULT_LEGEND_BOOSTS, ...result.boosts };
-        console.info('[referral] legend boosts applied', {
+        logInfo?.('[referral] legend boosts applied', {
           referralCount: typeof result.referralCount === 'number' ? result.referralCount : undefined,
           boosts: normalized,
         });
@@ -1745,7 +1749,7 @@ class Game{
 
     try {
       setProgressApplicationEnabled(true);
-      console.info(`[progress] start requested${debugFormatContext({ via: 'uiStartFromTitle', screen: getActiveScreen() })}`);
+      logInfo?.(`[progress] start requested${debugFormatContext({ via: 'uiStartFromTitle', screen: getActiveScreen() })}`);
       await refreshProgressSnapshotForTitleStart({ eagerWaitMs: TITLE_START_PROGRESS_EAGER_WAIT_MS });
 
       const resumedFromSnapshot = getHasAppliedProgressSnapshot() && getActiveScreen() === 'interLevel';
@@ -1819,12 +1823,12 @@ class Game{
       e.preventDefault(); e.stopPropagation();
       const phase = typeof getProgressPhase === 'function' ? getProgressPhase() : undefined;
       if (typeof isProgressBusy === 'function' && isProgressBusy()) {
-        console.info('[progress] play blocked', { reason: 'progress-busy', phase });
+        logInfo?.('[progress] play blocked', { reason: 'progress-busy', phase });
         return;
       }
       playSound("click");
       const authSnapshot = getAuthStateSnapshot();
-      console.info(`[progress] play clicked${debugFormatContext({ screen: getActiveScreen(), auth: authSnapshot?.user ? 'authenticated' : 'guest' })}`);
+      logInfo?.(`[progress] play clicked${debugFormatContext({ screen: getActiveScreen(), auth: authSnapshot?.user ? 'authenticated' : 'guest' })}`);
       await new Promise(r=>requestAnimationFrame(r));
       try{ const prev=ctx.imageSmoothingEnabled; ctx.imageSmoothingEnabled=false; const warmupWallet = typeof getWalletImage === 'function' ? getWalletImage() : null; const warmupItem = powerupWarmupImages?.[0] || null; const imgs=[warmupWallet, GoldImg, SilverImg, BronzeImg, DiamondImg, warmupItem, Hand.open, Hand.pinch]; for (const im of imgs){ if (im && im.naturalWidth) ctx.drawImage(im,0,0,1,1); } ctx.save(); ctx.shadowColor='rgba(0,0,0,0.15)'; ctx.shadowBlur=4; ctx.shadowOffsetY=1; ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(4,4,2,0,Math.PI*2); ctx.fill(); ctx.restore(); ctx.imageSmoothingEnabled=prev; ctx.clearRect(0,0,8,8); }catch(_){ }
       this.uiStartFromTitle();

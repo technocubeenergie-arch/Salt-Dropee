@@ -11,17 +11,9 @@ const STORAGE_KEYS = {
   scores: 'sd_scores',
 };
 
-function logInfo(message, ...args) {
-  console.info(`[data] ${message}`, ...args);
-}
-
-function logError(message, error) {
-  if (error) {
-    console.error(`[data] ${message}`, error);
-  } else {
-    console.error(`[data] ${message}`);
-  }
-}
+const dataLogger = (window.SD_LOG?.createLogger ? window.SD_LOG.createLogger('data') : null) || null;
+const logInfo = (...args) => (dataLogger?.info ? dataLogger.info(...args) : undefined);
+const logError = (...args) => (dataLogger?.error ? dataLogger.error(...args) : console.error?.(...args));
 
 function hasLocalStorage() {
   try {

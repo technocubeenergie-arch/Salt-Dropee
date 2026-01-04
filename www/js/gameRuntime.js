@@ -2,6 +2,11 @@
   if (!global) return;
 
   const createRuntime = (host = {}) => {
+    const runtimeLogger = global.SD_LOG?.createLogger
+      ? global.SD_LOG.createLogger('runtime')
+      : null;
+    const logDebug = (...args) => runtimeLogger?.debug?.(...args);
+
     let rafId = null;
     let lastTime = null;
     let running = false;
@@ -10,7 +15,7 @@
 
     const logState = (label) => {
       try {
-        console.debug(`[runtime] ${label} ${JSON.stringify({ running, paused, rafId })}`);
+        logDebug?.(`${label} ${JSON.stringify({ running, paused, rafId })}`);
       } catch (_) {}
     };
 
@@ -19,7 +24,7 @@
       if (nowTs - lastTickLogTime < 1000) return;
       lastTickLogTime = nowTs;
       try {
-        console.debug(`[runtime] tick ${JSON.stringify({ running, paused })}`);
+        logDebug?.(`tick ${JSON.stringify({ running, paused })}`);
       } catch (_) {}
     };
 
