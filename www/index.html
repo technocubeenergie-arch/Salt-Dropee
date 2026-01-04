@@ -120,7 +120,27 @@
   </div>
 
   <!-- Cordova.js - auto-injected by Cordova CLI during build -->
-  <script src="cordova.js"></script>
+  <script>
+    (function () {
+      // Charge cordova.js uniquement lorsqu’on est dans une WebView native (Cordova/Capacitor)
+      var hasWindow = typeof window !== "undefined";
+      if (!hasWindow) return;
+
+      var protocol = window.location && window.location.protocol;
+      var href = window.location && window.location.href;
+      var userAgent = (typeof navigator !== "undefined" && navigator.userAgent) || "";
+      var isCapacitor = !!(window.Capacitor || (protocol && protocol.indexOf("capacitor") === 0));
+      var isCordovaUA = /cordova/i.test(userAgent);
+      var isCordovaScheme = protocol === "file:" && href && href.indexOf("android_asset") !== -1;
+
+      if (window.cordova || isCapacitor || isCordovaUA || isCordovaScheme) {
+        var cordovaScript = document.createElement("script");
+        cordovaScript.async = false; // conserver l’ordre de chargement
+        cordovaScript.src = "cordova.js";
+        document.head.appendChild(cordovaScript);
+      }
+    })();
+  </script>
 
   <!--
     Ordre de chargement important :
