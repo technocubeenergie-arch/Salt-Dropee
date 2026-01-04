@@ -29,6 +29,7 @@ const mainLogger = window.SD_LOG?.createLogger
   ? window.SD_LOG.createLogger('main')
   : null;
 const logInfo = (...args) => mainLogger?.info?.(...args);
+const logWarn = (...args) => (mainLogger?.warn?.(...args) ?? console.warn?.(...args));
 function renderNamespaceError(missingNamespaces = []) {
   if (typeof document === 'undefined') return;
 
@@ -444,6 +445,10 @@ let game;
 let runtime = null;
 let progressUiBusy = false;
 let progressUiBusyPhase = 'idle';
+const busyOverlayState = {
+  busy: null,
+  phase: null,
+};
 
 function isActiveGameplayInProgress(){
   return Boolean(game && game.state === 'playing' && getActiveScreen() === 'running');
@@ -491,6 +496,16 @@ const getCurrentScreen = () => (typeof getCurrentScreenBase === 'function'
   ? getCurrentScreenBase()
   : getActiveScreen());
 
+function getBusyOverlayElement() {
+  if (typeof document === 'undefined') return null;
+  const overlayEl = document.getElementById('overlay');
+  return overlayEl?.querySelector?.('[data-progress-busy]') || null;
+}
+
+function getProgressPhaseSafe() {
+  return (typeof getProgressPhase === 'function' ? getProgressPhase() : progressUiBusyPhase || 'idle') || 'idle';
+}
+
 if (window.SD_UI_PANELS?.initSettingsOpener) {
   window.SD_UI_PANELS.initSettingsOpener({
     getInstance: () => (typeof Game !== "undefined" && Game.instance) ? Game.instance : null,
@@ -512,58 +527,78 @@ function setTitlePlayButtonBusyState(isBusy) {
   btn.dataset.busy = busy ? 'yes' : 'no';
 }
 
-function showProgressLoadingUI(reason = 'unspecified') {
-  if (typeof document === 'undefined') return;
-  const overlayEl = document.getElementById('overlay');
-  const busyEl = overlayEl?.querySelector?.('[data-progress-busy]');
+function setBusyOverlay(isBusy, meta = {}) {
+  const busyEl = getBusyOverlayElement();
   if (!busyEl) return;
 
-  busyEl.hidden = false;
-  busyEl.setAttribute('aria-hidden', 'false');
-  busyEl.dataset.phase = progressUiBusyPhase || 'idle';
-  busyEl.dataset.reason = reason || 'unspecified';
+  const progressBusy = typeof isProgressBusy === 'function' ? isProgressBusy() : progressUiBusy;
+  const progressPhase = getProgressPhaseSafe();
+  const nextBusy = !!isBusy;
+  const screen = meta.screen || (typeof getActiveScreen === 'function' ? getActiveScreen() : undefined);
+  const phase = nextBusy ? (meta.phase || progressUiBusyPhase || 'idle') : 'idle';
+  const reason = meta.reason || 'unspecified';
+  const hasChanged = busyOverlayState.busy !== nextBusy || busyOverlayState.phase !== phase;
 
-  setTitlePlayButtonBusyState(true);
-  logInfo?.('[progress] loading ui state', { visible: true, reason });
+  if (nextBusy && (!progressBusy || progressPhase === 'idle')) {
+    logWarn?.('[progress-ui] busyOverlay show ignored: progress idle', { phase, screen, reason, progressPhase, progressBusy });
+    setTitlePlayButtonBusyState(false);
+    busyOverlayState.busy = false;
+    busyOverlayState.phase = 'idle';
+    busyEl.dataset.busy = 'false';
+    busyEl.hidden = true;
+    busyEl.setAttribute('aria-hidden', 'true');
+    busyEl.dataset.phase = 'idle';
+    busyEl.dataset.reason = reason;
+    return;
+  }
+
+  busyEl.dataset.busy = nextBusy ? 'true' : 'false';
+  busyEl.hidden = !nextBusy;
+  busyEl.setAttribute('aria-hidden', nextBusy ? 'false' : 'true');
+  busyEl.dataset.phase = phase;
+  busyEl.dataset.reason = reason;
+
+  setTitlePlayButtonBusyState(nextBusy && screen === 'title');
+
+  if (hasChanged) {
+    logInfo?.(`[progress-ui] busyOverlay ${nextBusy ? 'SHOW' : 'HIDE'}`, { phase, screen, reason, progressPhase });
+  }
+
+  busyOverlayState.busy = nextBusy;
+  busyOverlayState.phase = phase;
+}
+
+function showProgressLoadingUI(reason = 'unspecified') {
+  setBusyOverlay(true, {
+    reason,
+    phase: progressUiBusyPhase || 'idle',
+    screen: typeof getActiveScreen === 'function' ? getActiveScreen() : undefined,
+  });
 }
 
 function hideProgressLoadingUI(reason = 'unspecified') {
-  if (typeof document === 'undefined') return;
-  const overlayEl = document.getElementById('overlay');
-  const busyEl = overlayEl?.querySelector?.('[data-progress-busy]');
-  if (busyEl) {
-    busyEl.hidden = true;
-    busyEl.setAttribute('aria-hidden', 'true');
-    busyEl.dataset.reason = reason || 'unspecified';
-  }
-
-  setTitlePlayButtonBusyState(false);
-  logInfo?.('[progress] loading ui state', { visible: false, reason });
+  setBusyOverlay(false, {
+    reason,
+    phase: 'idle',
+    screen: typeof getActiveScreen === 'function' ? getActiveScreen() : undefined,
+  });
 }
 
 function updateTitleBusyUi(reason = 'unspecified') {
   if (typeof document === 'undefined') return;
-  const overlayEl = document.getElementById('overlay');
-  const busyEl = overlayEl?.querySelector?.('[data-progress-busy]');
-  const isTitle = getActiveScreen() === 'title';
-  const showBusy = Boolean(progressUiBusy && isTitle);
+  const screen = typeof getActiveScreen === 'function' ? getActiveScreen() : undefined;
+  const isTitle = screen === 'title';
+  const progressBusy = typeof isProgressBusy === 'function' ? isProgressBusy() : progressUiBusy;
+  const progressPhase = getProgressPhaseSafe();
+  const showBusy = Boolean(progressBusy && isTitle);
+  const nextPhase = showBusy ? progressPhase || 'idle' : 'idle';
 
-  if (showBusy) {
-    showProgressLoadingUI(reason);
-    if (busyEl) {
-      busyEl.dataset.phase = progressUiBusyPhase || 'idle';
-    }
-  } else {
-    hideProgressLoadingUI(reason);
-    if (busyEl) {
-      busyEl.dataset.phase = progressUiBusyPhase || 'idle';
-    }
-  }
+  setBusyOverlay(showBusy, { reason, phase: nextPhase, screen, progressPhase, progressBusy });
 }
 
 function handleProgressUiBusyChange(isBusy, payload = {}) {
   progressUiBusy = !!isBusy;
-  progressUiBusyPhase = payload?.phase || (typeof getProgressPhase === 'function' ? getProgressPhase() : 'idle') || 'idle';
+  progressUiBusyPhase = payload?.phase || getProgressPhaseSafe() || 'idle';
   updateTitleBusyUi('busy-change');
 }
 
@@ -1797,7 +1832,7 @@ class Game{
           <button type="button" class="btn-settings" data-action="open-settings">Paramètres</button>
           <button id="btnLB" type="button">Leaderboard</button>
         </div>
-        <div class="progress-busy-overlay" data-progress-busy hidden aria-live="assertive" aria-label="Chargement en cours">
+        <div class="progress-busy-overlay" data-progress-busy data-busy="false" hidden aria-live="assertive" aria-label="Chargement en cours" aria-hidden="true">
           <div class="progress-busy-card">
             <div class="progress-spinner" aria-hidden="true"></div>
             <div class="progress-busy-text">Chargement…</div>
@@ -1818,7 +1853,7 @@ class Game{
         onShowLeaderboard: () => this.renderLeaderboard(),
       });
     }
-    updateTitleBusyUi();
+    updateTitleBusyUi('render-title');
     addEvent(document.getElementById('btnPlay'), INPUT.tap, async (e)=>{
       e.preventDefault(); e.stopPropagation();
       const phase = typeof getProgressPhase === 'function' ? getProgressPhase() : undefined;
