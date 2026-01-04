@@ -205,7 +205,7 @@ async function submitLegendScore({ playerId, score, durationSeconds, level } = {
       durationSeconds: durationPayload,
     });
 
-    const { data: existingBest, error: selectError } = await supabase
+    const { data: existingBestData, error: selectError } = await supabase
       .from('scores')
       .select('id, score')
       .eq('player_id', resolvedPlayerId)
@@ -213,10 +213,14 @@ async function submitLegendScore({ playerId, score, durationSeconds, level } = {
       .order('score', { ascending: false })
       .limit(1)
       .maybeSingle();
+    let existingBest = existingBestData;
 
     if (selectError && selectError.code !== 'PGRST116') {
-      logWarn?.('[score] read best legend score failed', describeError(selectError));
-      // continue and try insert anyway
+      const selectIsTransient = isTransientSupabaseError(selectError);
+      const selectLog = selectIsTransient ? logDebug : logWarn;
+      selectLog?.('[score] read best legend score failed', describeError(selectError));
+      // treat as no existing best to continue gracefully
+      existingBest = null;
     } else if (!existingBest) {
       logInfo?.('[score] no existing legend score found for player');
     } else {
