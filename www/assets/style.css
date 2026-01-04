@@ -535,7 +535,7 @@ body.is-inter-level #hud {
   pointer-events: none;
 }
 
-.progress-busy-overlay[aria-hidden="false"] {
+.progress-busy-overlay[data-busy="true"] {
   display: flex;
 }
 
