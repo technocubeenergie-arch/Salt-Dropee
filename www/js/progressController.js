@@ -259,7 +259,11 @@ async function saveProgress(snapshot = {}) {
     writeLocalSnapshot(snapshot);
 
     if (!context.enabled) {
-      return { source: 'local', snapshot };
+      return {
+        source: 'local',
+        snapshot,
+        reason: context.reason || 'supabase-unavailable',
+      };
     }
 
     const { supabase, playerId } = context;
@@ -280,10 +284,18 @@ async function saveProgress(snapshot = {}) {
       }
     });
 
-    return { source: 'supabase', snapshot: payload };
+    return { source: 'supabase', snapshot: payload, reason: 'ok' };
   } catch (error) {
-    logWarn?.('[progress] unexpected save error', error);
-    return { source: 'local', snapshot };
+    const reason = isTransientSupabaseError(error) ? 'offline' : 'supabase-error';
+    logWarn?.('[progress] save failed, using local fallback', {
+      reason,
+      error: {
+        message: error?.message,
+        code: error?.code,
+        status: error?.status,
+      },
+    });
+    return { source: 'local', snapshot, reason };
   }
 }
 
