@@ -32,8 +32,6 @@ const EMAIL_CONFIRMATION_MESSAGE = 'Vérifiez votre boîte mail pour confirmer v
 const USERNAME_CONFLICT_MESSAGE = 'Ce pseudo est déjà utilisé. Merci d’en choisir un autre.';
 const OFFLINE_BACKOFF_MS = 15000;
 const OFFLINE_LOG_DEBOUNCE_MS = 5000;
-const REACHABILITY_CACHE_MS = 10000;
-const REACHABILITY_TIMEOUT_MS = 4000;
 
 function isNavigatorOffline() {
   try {
@@ -167,7 +165,6 @@ class AuthController {
     this.offlineBackoffUntil = 0;
     this.lastOfflineLogAt = 0;
     this.offlineReason = null;
-    this.lastReachabilityCheck = 0;
     this.init();
   }
 
@@ -245,55 +242,6 @@ class AuthController {
       return true;
     }
     return false;
-  }
-
-  async confirmSupabaseReachable(context) {
-    if (!this.supabase) {
-      return false;
-    }
-
-    if (isNavigatorOffline()) {
-      this.markOffline('navigator-offline');
-      this.logOfflineSkip(context);
-      return false;
-    }
-    this.maybeResetOfflineFlag();
-    if (this.offlineBackoffUntil && Date.now() < this.offlineBackoffUntil) {
-      this.logOfflineSkip(context);
-      return false;
-    }
-
-    const now = Date.now();
-    if (this.lastReachabilityCheck && now - this.lastReachabilityCheck < REACHABILITY_CACHE_MS) {
-      return this.offlineBackoffUntil === 0;
-    }
-
-    this.lastReachabilityCheck = now;
-    if (typeof fetch !== 'function') {
-      return true;
-    }
-
-    try {
-      const targetUrl = this.supabase?.rest?.url;
-      if (!targetUrl) {
-        return true;
-      }
-      const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-      const timeoutId = controller ? setTimeout(() => controller.abort(), REACHABILITY_TIMEOUT_MS) : null;
-      await fetch(`${targetUrl}/auth/v1/health`, {
-        method: 'GET',
-        mode: 'no-cors',
-        cache: 'no-store',
-        signal: controller?.signal,
-      });
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
-      return true;
-    } catch (error) {
-      this.handleNetworkFailure(error, context);
-      return false;
-    }
   }
 
   async loadProfileForUser(userId) {
@@ -463,9 +411,10 @@ class AuthController {
     if (this.shouldSkipRemoteSync('hydrate user')) {
       return;
     }
-    if (!(await this.confirmSupabaseReachable('hydrate user'))) {
-      return;
-    }
+    // Pas de ping préalable /auth/v1/health : on laisse les vrais appels Supabase
+    // signaler une indisponibilité. Validation manuelle : au boot (ex. GitHub Pages),
+    // plus de requête /auth/v1/health ni de 401 « No API key found » ; l'auth reste
+    // fonctionnelle quand l'utilisateur se connecte.
     try {
       const { data, error } = await this.supabase.auth.getUser();
       if (error) {
@@ -488,7 +437,7 @@ class AuthController {
       this.state.profile = profile;
     } catch (error) {
       if (!this.handleNetworkFailure(error, 'hydrate user')) {
-        authLogger.error('[auth] hydrate user failed', error);
+        authLogger.warn('[auth] hydrate user failed; staying guest', error);
       }
     }
   }
