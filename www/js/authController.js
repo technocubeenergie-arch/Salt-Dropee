@@ -5,6 +5,20 @@ import {
   isSupabaseReady,
 } from './supabaseClient.js';
 
+const authLogger = (() => {
+  const globalRef = typeof window !== 'undefined' ? window : globalThis;
+  const logger = globalRef?.SD_LOG?.createLogger
+    ? globalRef.SD_LOG.createLogger('auth')
+    : null;
+  const fallback = typeof console !== 'undefined' ? console : {};
+  return logger || {
+    debug: (...args) => fallback.debug?.(...args),
+    info: (...args) => fallback.info?.(...args),
+    warn: (...args) => fallback.warn?.(...args),
+    error: (...args) => fallback.error?.(...args),
+  };
+})();
+
 const DEFAULT_STATE = Object.freeze({
   enabled: isSupabaseEnabledInConfig(),
   ready: false,
@@ -16,6 +30,16 @@ const DEFAULT_STATE = Object.freeze({
 
 const EMAIL_CONFIRMATION_MESSAGE = 'Vérifiez votre boîte mail pour confirmer votre inscription.';
 const USERNAME_CONFLICT_MESSAGE = 'Ce pseudo est déjà utilisé. Merci d’en choisir un autre.';
+const OFFLINE_BACKOFF_MS = 15000;
+const OFFLINE_LOG_DEBOUNCE_MS = 5000;
+
+function isNavigatorOffline() {
+  try {
+    return typeof navigator !== 'undefined' && navigator.onLine === false;
+  } catch (_) {
+    return false;
+  }
+}
 
 function normalizeUsername(candidate) {
   if (typeof candidate !== 'string') {
@@ -117,11 +141,30 @@ function describeSupabaseError(error) {
   return message || texts.find(Boolean) || 'Opération impossible pour le moment.';
 }
 
+function isOfflineError(error) {
+  if (isNavigatorOffline()) {
+    return true;
+  }
+
+  const lowerTexts = collectErrorTexts(error).map((text) => text.toLowerCase());
+  const candidates = [
+    'failed to fetch',
+    'networkerror when attempting to fetch resource',
+    'net::err_internet_disconnected',
+    'err_internet_disconnected',
+  ];
+
+  return lowerTexts.some((text) => candidates.some((needle) => text.includes(needle)));
+}
+
 class AuthController {
   constructor() {
     this.supabase = null;
     this.listeners = new Set();
     this.state = { ...DEFAULT_STATE };
+    this.offlineBackoffUntil = 0;
+    this.lastOfflineLogAt = 0;
+    this.offlineReason = null;
     this.init();
   }
 
@@ -137,7 +180,7 @@ class AuthController {
     try {
       listener(this.getState());
     } catch (error) {
-      console.error('[auth] listener execution failed', error);
+      authLogger.warn('[auth] listener execution failed', error);
     }
     return () => {
       this.listeners.delete(listener);
@@ -150,15 +193,66 @@ class AuthController {
       try {
         listener(this.getState());
       } catch (error) {
-        console.error('[auth] listener error', error);
+        authLogger.warn('[auth] listener error', error);
       }
     }
+  }
+
+  markOffline(reason) {
+    this.offlineBackoffUntil = Date.now() + OFFLINE_BACKOFF_MS;
+    this.offlineReason = reason || this.offlineReason || 'offline';
+  }
+
+  maybeResetOfflineFlag() {
+    if (this.offlineBackoffUntil && Date.now() > this.offlineBackoffUntil && !isNavigatorOffline()) {
+      this.offlineBackoffUntil = 0;
+      this.offlineReason = null;
+    }
+  }
+
+  logOfflineSkip(context) {
+    const now = Date.now();
+    if (now - this.lastOfflineLogAt < OFFLINE_LOG_DEBOUNCE_MS) {
+      return;
+    }
+    const label = context || 'remote call';
+    authLogger.info(`[auth] offline; skipping ${label}; staying guest`);
+    this.lastOfflineLogAt = now;
+  }
+
+  shouldSkipRemoteSync(context) {
+    if (isNavigatorOffline()) {
+      this.markOffline('navigator-offline');
+    } else {
+      this.maybeResetOfflineFlag();
+    }
+
+    if (this.offlineBackoffUntil && Date.now() < this.offlineBackoffUntil) {
+      this.logOfflineSkip(context);
+      return true;
+    }
+
+    return false;
+  }
+
+  handleNetworkFailure(error, context) {
+    if (isOfflineError(error)) {
+      this.markOffline('network-failure');
+      this.logOfflineSkip(context);
+      return true;
+    }
+    return false;
   }
 
   async loadProfileForUser(userId) {
     if (!this.supabase || !userId) {
       return null;
     }
+
+    if (this.shouldSkipRemoteSync('profile sync')) {
+      return null;
+    }
+
     try {
       const { data, error } = await this.supabase
         .from('players')
@@ -170,13 +264,20 @@ class AuthController {
       }
       return mapProfileRow(data, userId);
     } catch (error) {
-      console.error('[auth] loadProfile failed', error);
+      if (this.handleNetworkFailure(error, 'profile sync')) {
+        return null;
+      }
+      authLogger.error('[auth] loadProfile failed', error);
       return null;
     }
   }
 
   async ensureProfileForUser(user, options = {}) {
     if (!this.supabase || !user?.id) {
+      return { profile: null, error: null };
+    }
+
+    if (this.shouldSkipRemoteSync('profile sync')) {
       return { profile: null, error: null };
     }
 
@@ -206,7 +307,10 @@ class AuthController {
 
       return { profile: mapProfileRow(data, user.id), error: null };
     } catch (error) {
-      console.error('[auth] ensureProfileForUser failed', {
+      if (this.handleNetworkFailure(error, 'profile sync')) {
+        return { profile: existingProfile, error: null };
+      }
+      authLogger.error('[auth] ensureProfileForUser failed', {
         error,
         userId: user.id,
         usernameAttempt: payload.username,
@@ -270,16 +374,27 @@ class AuthController {
       this.notify({ ready: true, loading: false, lastError: null });
 
       this.supabase.auth.onAuthStateChange(async (_event, session) => {
+        if (this.shouldSkipRemoteSync('auth state change')) {
+          return;
+        }
         const user = session?.user || null;
         const { profile, error } = user ? await this.ensureProfileForUser(user) : { profile: null, error: null };
         if (error) {
-          console.warn('[auth] profile sync during auth state change failed', error);
+          authLogger.warn('[auth] profile sync during auth state change failed', error);
         }
         const enrichedUser = await this.enrichUserWithProfile(user, { profile });
         this.notify({ user: enrichedUser, profile, ready: true, loading: false, lastError: null });
       });
     } catch (error) {
-      console.error('[auth] init failed', error);
+      if (this.handleNetworkFailure(error, 'init')) {
+        this.notify({
+          loading: false,
+          ready: false,
+          lastError: null,
+        });
+        return;
+      }
+      authLogger.error('[auth] init failed', error);
       this.notify({
         loading: false,
         ready: false,
@@ -292,23 +407,34 @@ class AuthController {
     if (!this.supabase) {
       return;
     }
+
+    if (this.shouldSkipRemoteSync('hydrate user')) {
+      return;
+    }
     try {
       const { data, error } = await this.supabase.auth.getUser();
       if (error) {
-        console.warn('[auth] getUser error', error);
+        if (this.handleNetworkFailure(error, 'hydrate user')) {
+          return;
+        }
+        authLogger.warn('[auth] getUser error', error);
         this.notify({ lastError: error.message });
         return;
       }
       const user = data?.user || null;
       const { profile, error: profileError } = user ? await this.ensureProfileForUser(user) : { profile: null, error: null };
       if (profileError) {
-        console.warn('[auth] profile hydration failed', profileError);
+        if (!this.handleNetworkFailure(profileError, 'profile hydration')) {
+          authLogger.warn('[auth] profile hydration failed', profileError);
+        }
       }
       const enrichedUser = await this.enrichUserWithProfile(user, { profile });
       this.state.user = enrichedUser;
       this.state.profile = profile;
     } catch (error) {
-      console.error('[auth] hydrate user failed', error);
+      if (!this.handleNetworkFailure(error, 'hydrate user')) {
+        authLogger.error('[auth] hydrate user failed', error);
+      }
     }
   }
 
@@ -320,6 +446,10 @@ class AuthController {
     if (!userId) {
       return { success: false, reason: 'NO_USER' };
     }
+
+    if (this.shouldSkipRemoteSync('profile refresh')) {
+      return { success: false, reason: 'OFFLINE' };
+    }
     try {
       const profile = await this.loadProfileForUser(userId);
       if (profile) {
@@ -328,7 +458,9 @@ class AuthController {
       }
       return { success: false, reason: 'NOT_FOUND' };
     } catch (error) {
-      console.warn('[auth] refreshProfile failed', error);
+      if (!this.handleNetworkFailure(error, 'profile refresh')) {
+        authLogger.warn('[auth] refreshProfile failed', error);
+      }
       return { success: false, reason: 'ERROR', message: error?.message || 'refresh_failed' };
     }
   }
@@ -348,6 +480,10 @@ class AuthController {
     if (!availability.available) {
       return { success: false, message: availability.message };
     }
+
+    if (this.shouldSkipRemoteSync('sign-in')) {
+      return { success: false, message: 'Connexion impossible en mode hors ligne.' };
+    }
     try {
       const { data, error } = await this.supabase.auth.signInWithPassword({ email, password });
       if (error) {
@@ -356,7 +492,9 @@ class AuthController {
       const user = data?.user || null;
       const { profile, error: profileError } = user ? await this.ensureProfileForUser(user) : { profile: null, error: null };
       if (profileError) {
-        console.warn('[auth] profile sync after signIn failed', profileError);
+        if (!this.handleNetworkFailure(profileError, 'profile sync after sign-in')) {
+          authLogger.warn('[auth] profile sync after signIn failed', profileError);
+        }
       }
       const enrichedUser = await this.enrichUserWithProfile(user, { profile });
       if (enrichedUser) {
@@ -364,7 +502,9 @@ class AuthController {
       }
       return { success: true, user: enrichedUser };
     } catch (error) {
-      console.error('[auth] signIn failed', error);
+      if (!this.handleNetworkFailure(error, 'sign-in')) {
+        authLogger.error('[auth] signIn failed', error);
+      }
       return { success: false, message: 'Connexion impossible pour le moment.' };
     }
   }
@@ -372,6 +512,10 @@ class AuthController {
   async checkUsernameAvailability(username) {
     if (!this.supabase || !username) {
       return { available: true };
+    }
+
+    if (this.shouldSkipRemoteSync('username availability')) {
+      return { available: true, skipped: true };
     }
     try {
       const { data, error } = await this.supabase
@@ -385,7 +529,9 @@ class AuthController {
       const taken = Array.isArray(data) && data.length > 0;
       return { available: !taken };
     } catch (error) {
-      console.warn('[auth] username availability check failed', { error, username });
+      if (!this.handleNetworkFailure(error, 'username availability')) {
+        authLogger.warn('[auth] username availability check failed', { error, username });
+      }
       return { available: true, skipped: true };
     }
   }
@@ -402,6 +548,10 @@ class AuthController {
     const usernameAvailability = await this.checkUsernameAvailability(trimmedUsername);
     if (!usernameAvailability.available) {
       return { success: false, message: USERNAME_CONFLICT_MESSAGE, reason: 'USERNAME_TAKEN' };
+    }
+
+    if (this.shouldSkipRemoteSync('sign-up')) {
+      return { success: false, message: 'Création de compte impossible en mode hors ligne.' };
     }
     try {
       const redirectTo = (() => {
@@ -423,9 +573,9 @@ class AuthController {
         },
       });
       if (error) {
-        console.error('[auth] signUp failed (supabase.auth.signUp)', error);
+        authLogger.error('[auth] signUp failed (supabase.auth.signUp)', error);
         if (error?.cause) {
-          console.error('[auth] signUp error cause (supabase.auth.signUp)', error.cause);
+          authLogger.error('[auth] signUp error cause (supabase.auth.signUp)', error.cause);
         }
         const usernameTaken = isUsernameConflictError(error);
         return {
@@ -459,7 +609,9 @@ class AuthController {
         message: requiresEmailConfirmation ? EMAIL_CONFIRMATION_MESSAGE : null,
       };
     } catch (error) {
-      console.error('[auth] signUp unexpected failure', error);
+      if (!this.handleNetworkFailure(error, 'sign-up')) {
+        authLogger.error('[auth] signUp unexpected failure', error);
+      }
       return { success: false, message: 'Création de compte impossible pour le moment.' };
     }
   }
@@ -469,6 +621,10 @@ class AuthController {
     if (!availability.available) {
       return { success: false, message: availability.message };
     }
+
+    if (this.shouldSkipRemoteSync('sign-out')) {
+      return { success: false, message: 'Déconnexion indisponible en mode hors ligne.' };
+    }
     try {
       const { error } = await this.supabase.auth.signOut();
       if (error) {
@@ -477,7 +633,9 @@ class AuthController {
       this.notify({ user: null, profile: null, lastError: null });
       return { success: true };
     } catch (error) {
-      console.error('[auth] signOut failed', error);
+      if (!this.handleNetworkFailure(error, 'sign-out')) {
+        authLogger.error('[auth] signOut failed', error);
+      }
       return { success: false, message: 'Déconnexion impossible pour le moment.' };
     }
   }
@@ -491,7 +649,7 @@ class AuthController {
         await this.supabase.auth.signOut({ scope: 'local' });
       }
     } catch (error) {
-      console.warn('[auth] local-only signOut cleanup failed', error);
+      authLogger.warn('[auth] local-only signOut cleanup failed', error);
     }
     this.notify({ user: null, profile: null, lastError: null });
     return { success: true, forced: true, reason };
