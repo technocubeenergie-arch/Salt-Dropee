@@ -30,6 +30,7 @@ const mainLogger = window.SD_LOG?.createLogger
   : null;
 const logInfo = (...args) => mainLogger?.info?.(...args);
 const logWarn = (...args) => (mainLogger?.warn?.(...args) ?? console.warn?.(...args));
+const logDebug = (...args) => mainLogger?.debug?.(...args);
 function renderNamespaceError(missingNamespaces = []) {
   if (typeof document === 'undefined') return;
 
@@ -538,34 +539,41 @@ function setBusyOverlay(isBusy, meta = {}) {
   const phase = nextBusy ? (meta.phase || progressUiBusyPhase || 'idle') : 'idle';
   const reason = meta.reason || 'unspecified';
   const hasChanged = busyOverlayState.busy !== nextBusy || busyOverlayState.phase !== phase;
+  const isProgressIdle = !progressBusy || progressPhase === 'idle';
+  const isDuplicateState = busyOverlayState.busy === nextBusy && busyOverlayState.phase === phase;
 
-  if (nextBusy && (!progressBusy || progressPhase === 'idle')) {
-    logWarn?.('[progress-ui] busyOverlay show ignored: progress idle', { phase, screen, reason, progressPhase, progressBusy });
-    setTitlePlayButtonBusyState(false);
-    busyOverlayState.busy = false;
-    busyOverlayState.phase = 'idle';
-    busyEl.dataset.busy = 'false';
-    busyEl.hidden = true;
-    busyEl.setAttribute('aria-hidden', 'true');
-    busyEl.dataset.phase = 'idle';
+  const applyOverlayState = (busyValue, phaseValue) => {
+    const normalizedPhase = busyValue ? (phaseValue || 'idle') : 'idle';
+    busyEl.dataset.busy = busyValue ? 'true' : 'false';
+    busyEl.hidden = !busyValue;
+    busyEl.setAttribute('aria-hidden', busyValue ? 'false' : 'true');
+    busyEl.dataset.phase = normalizedPhase;
     busyEl.dataset.reason = reason;
+    setTitlePlayButtonBusyState(busyValue && screen === 'title');
+    busyOverlayState.busy = busyValue;
+    busyOverlayState.phase = normalizedPhase;
+  };
+
+  if (nextBusy && isProgressIdle) {
+    // Ignore redundant "show" requests when progress reports an idle state.
+    if (busyOverlayState.busy || busyOverlayState.phase !== 'idle') {
+      applyOverlayState(false, 'idle');
+    }
+    logDebug?.('[progress-ui] busyOverlay request ignored: progress idle', { phase, screen, reason, progressPhase, progressBusy });
     return;
   }
 
-  busyEl.dataset.busy = nextBusy ? 'true' : 'false';
-  busyEl.hidden = !nextBusy;
-  busyEl.setAttribute('aria-hidden', nextBusy ? 'false' : 'true');
-  busyEl.dataset.phase = phase;
-  busyEl.dataset.reason = reason;
+  if (isDuplicateState) {
+    // Avoid re-applying the same busy state; helps prevent console noise while the UI is stable.
+    logDebug?.('[progress-ui] busyOverlay unchanged; skipping DOM update', { phase, screen, reason, progressPhase, progressBusy });
+    return;
+  }
 
-  setTitlePlayButtonBusyState(nextBusy && screen === 'title');
+  applyOverlayState(nextBusy, phase);
 
   if (hasChanged) {
     logInfo?.(`[progress-ui] busyOverlay ${nextBusy ? 'SHOW' : 'HIDE'}`, { phase, screen, reason, progressPhase });
   }
-
-  busyOverlayState.busy = nextBusy;
-  busyOverlayState.phase = phase;
 }
 
 function showProgressLoadingUI(reason = 'unspecified') {

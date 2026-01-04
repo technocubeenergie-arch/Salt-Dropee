@@ -244,6 +244,70 @@ class AuthController {
     return false;
   }
 
+  async safeGetUser(context = 'hydrate user') {
+    if (!this.supabase?.auth) {
+      return { user: null, reason: 'UNAVAILABLE' };
+    }
+
+    // Prévenir les warnings "Auth session missing" en vérifiant la session en amont.
+    try {
+      const { data: sessionData, error: sessionError } = await this.supabase.auth.getSession();
+      if (sessionError) {
+        if (this.handleNetworkFailure(sessionError, `${context} (session)`)) {
+          return { user: null, reason: 'OFFLINE' };
+        }
+        authLogger.warn('[auth] getSession error', sessionError);
+        return { user: null, reason: 'SESSION_ERROR', error: sessionError };
+      }
+      const session = sessionData?.session || null;
+      if (!session) {
+        // Aucun utilisateur connecté : cas attendu en mode invité, silence console.
+        return { user: null, reason: 'NO_SESSION' };
+      }
+    } catch (error) {
+      // supabase-js peut lever AuthSessionMissingError : on l'ignore silencieusement pour les invités.
+      const name = typeof error?.name === 'string' ? error.name.toLowerCase() : '';
+      if (name.includes('authsessionmissing')) {
+        authLogger.debug?.('[auth] getSession missing session; staying guest');
+        return { user: null, reason: 'NO_SESSION' };
+      }
+      if (this.handleNetworkFailure(error, `${context} (session-catch)`)) {
+        return { user: null, reason: 'OFFLINE' };
+      }
+      authLogger.warn('[auth] unexpected session fetch error', error);
+      return { user: null, reason: 'SESSION_ERROR', error };
+    }
+
+    try {
+      const { data, error } = await this.supabase.auth.getUser();
+      if (error) {
+        if (this.handleNetworkFailure(error, context)) {
+          return { user: null, reason: 'OFFLINE' };
+        }
+        const name = typeof error?.name === 'string' ? error.name.toLowerCase() : '';
+        if (name.includes('authsessionmissing')) {
+          // Pas de session : ne pas polluer la console ni le Sentry.
+          authLogger.debug?.('[auth] getUser missing session; staying guest');
+          return { user: null, reason: 'NO_SESSION' };
+        }
+        authLogger.warn('[auth] getUser error', error);
+        return { user: null, reason: 'USER_ERROR', error };
+      }
+      return { user: data?.user || null, reason: data?.user ? 'OK' : 'NO_SESSION' };
+    } catch (error) {
+      const name = typeof error?.name === 'string' ? error.name.toLowerCase() : '';
+      if (name.includes('authsessionmissing')) {
+        authLogger.debug?.('[auth] getUser missing session; staying guest');
+        return { user: null, reason: 'NO_SESSION' };
+      }
+      if (this.handleNetworkFailure(error, context)) {
+        return { user: null, reason: 'OFFLINE' };
+      }
+      authLogger.warn('[auth] hydrate user failed; staying guest', error);
+      return { user: null, reason: 'USER_ERROR', error };
+    }
+  }
+
   async loadProfileForUser(userId) {
     if (!this.supabase || !userId) {
       return null;
@@ -415,31 +479,23 @@ class AuthController {
     // signaler une indisponibilité. Validation manuelle : au boot (ex. GitHub Pages),
     // plus de requête /auth/v1/health ni de 401 « No API key found » ; l'auth reste
     // fonctionnelle quand l'utilisateur se connecte.
-    try {
-      const { data, error } = await this.supabase.auth.getUser();
-      if (error) {
-        if (this.handleNetworkFailure(error, 'hydrate user')) {
-          return;
-        }
-        authLogger.warn('[auth] getUser error', error);
-        this.notify({ lastError: error.message });
-        return;
-      }
-      const user = data?.user || null;
-      const { profile, error: profileError } = user ? await this.ensureProfileForUser(user) : { profile: null, error: null };
-      if (profileError) {
-        if (!this.handleNetworkFailure(profileError, 'profile hydration')) {
-          authLogger.warn('[auth] profile hydration failed', profileError);
-        }
-      }
-      const enrichedUser = await this.enrichUserWithProfile(user, { profile });
-      this.state.user = enrichedUser;
-      this.state.profile = profile;
-    } catch (error) {
-      if (!this.handleNetworkFailure(error, 'hydrate user')) {
-        authLogger.warn('[auth] hydrate user failed; staying guest', error);
+    const { user, reason, error } = await this.safeGetUser('hydrate user');
+    if (reason === 'OFFLINE') {
+      return;
+    }
+    if (error && reason !== 'NO_SESSION') {
+      this.notify({ lastError: error?.message || 'hydrate_failed' });
+      return;
+    }
+    const { profile, error: profileError } = user ? await this.ensureProfileForUser(user) : { profile: null, error: null };
+    if (profileError) {
+      if (!this.handleNetworkFailure(profileError, 'profile hydration')) {
+        authLogger.warn('[auth] profile hydration failed', profileError);
       }
     }
+    const enrichedUser = await this.enrichUserWithProfile(user, { profile });
+    this.state.user = enrichedUser;
+    this.state.profile = profile;
   }
 
   async refreshProfile() {
