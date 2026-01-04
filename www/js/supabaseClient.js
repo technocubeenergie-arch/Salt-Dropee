@@ -4,6 +4,9 @@ import {
   SUPABASE_URL,
 } from './config.remote.js';
 
+const log = (window.SD_LOG?.createLogger ? window.SD_LOG.createLogger('data') : null) || null;
+const logInfo = (...args) => (log?.info ? log.info(...args) : undefined);
+const logError = (...args) => (log?.error ? log.error(...args) : console.error?.(...args));
 const SUPABASE_MODULE_SOURCES = [
   { url: 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm', label: 'jsdelivr-+esm' },
   { url: 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/esm/index.js', label: 'jsdelivr-esm' },
@@ -20,7 +23,7 @@ async function loadSupabaseModule() {
   for (const source of SUPABASE_MODULE_SOURCES) {
     try {
       const module = await import(/* webpackIgnore: true */ source.url);
-      console.info(`[data] Supabase module loaded from ${source.label}.`);
+      logInfo?.(`Supabase module loaded from ${source.label}.`);
       return { module, source };
     } catch (error) {
       lastError = error;
@@ -35,7 +38,7 @@ async function loadSupabaseModule() {
 
 const initializationPromise = (async () => {
   if (!SUPABASE_ENABLED) {
-    console.info('[data] Supabase disabled via configuration. Falling back to local storage.');
+    logInfo?.('Supabase disabled via configuration. Falling back to local storage.');
     return;
   }
 
@@ -53,10 +56,10 @@ const initializationPromise = (async () => {
         detectSessionInUrl: false,
       },
     });
-    console.info(`[data] Supabase client initialised via ${source?.label || 'unknown source'}.`);
+    logInfo?.(`Supabase client initialised via ${source?.label || 'unknown source'}.`);
   } catch (error) {
     initializationError = error;
-    console.error('[data] Failed to initialise Supabase client:', error);
+    logError?.('Failed to initialise Supabase client:', error);
   }
 })();
 

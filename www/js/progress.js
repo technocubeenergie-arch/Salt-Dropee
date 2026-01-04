@@ -31,6 +31,11 @@
   const debugFormatContext = typeof inputApi.debugFormatContext === 'function'
     ? inputApi.debugFormatContext
     : () => '';
+  const progressLogger = global.SD_LOG?.createLogger
+    ? global.SD_LOG.createLogger('progress')
+    : null;
+  const logInfo = (...args) => (progressLogger?.info ? progressLogger.info(...args) : undefined);
+  const logWarn = (...args) => (progressLogger?.warn ? progressLogger.warn(...args) : console.warn?.(...args));
 
   const progressRuntime = {
     phase: 'idle', // idle | loading | applying
@@ -167,7 +172,7 @@
     }
 
     const direction = isBusy ? 'ON' : 'OFF';
-    console.info(`[progress] ui busy ${direction}`, payload);
+    logInfo?.(`ui busy ${direction}`, payload);
   }
 
   function updateProgressUiBusyState(context = {}) {
@@ -186,10 +191,10 @@
     progressRuntime.requestId += 1; // invalidate late promises
     progressRuntime.lastAppliedPlayerId = null;
     if (reason) {
-      console.info(`[progress] runtime reset${debugFormatContext({ reason })}`);
+      logInfo?.(`runtime reset${debugFormatContext({ reason })}`);
     }
     if (prevPhase !== progressRuntime.phase) {
-      console.info('[progress] phase transition', {
+      logInfo?.('phase transition', {
         from: prevPhase,
         to: progressRuntime.phase,
         reason,
@@ -233,7 +238,7 @@
         : Math.max(1, levelNumber - 1);
     const currentLevelNumber = Math.max(1, Math.floor(getCurrentLevelIndex()) + 1);
     if (currentLevelNumber > levelNumber) {
-      console.info('[progress] ignoring older snapshot', debugFormatContext({ levelNumber, currentLevelNumber }));
+      logInfo?.('ignoring older snapshot', debugFormatContext({ levelNumber, currentLevelNumber }));
       return;
     }
 
@@ -243,7 +248,7 @@
       try {
         await loadLevel(levelIndex, { applyBackground: false, playMusic: false });
       } catch (error) {
-        console.warn('[progress] unable to preload level for hydration', { error, levelIndex });
+        logWarn?.('unable to preload level for hydration', { error, levelIndex });
       }
     }
 
@@ -282,13 +287,13 @@
     const showInterLevelScreen = getHostFn('showInterLevelScreen');
     showInterLevelScreen?.(derivedInterLevelResult, { replaySound: false });
 
-    console.info('[progress] applied saved snapshot', debugFormatContext({
+    logInfo?.('applied saved snapshot', debugFormatContext({
       levelNumber,
       restoredScore,
       source: meta.source || 'unknown',
       reason: meta.reason || 'unspecified',
     }));
-    console.info('[progress] restore decision', debugFormatContext({
+    logInfo?.('restore decision', debugFormatContext({
       snapshotLevel: levelNumber,
       derivedInterLevelResult,
       canAdvance,
@@ -303,7 +308,7 @@
     if (!pending || !getGame()) return;
     if (!isProgressApplicationEnabled) return;
     if (isActiveGameplayInProgress()) {
-      console.info('[progress] deferring snapshot application during active gameplay', debugFormatContext({
+      logInfo?.('deferring snapshot application during active gameplay', debugFormatContext({
         reason: pending.reason || 'active-gameplay',
         source: pending.source || 'unknown',
       }));
@@ -314,7 +319,7 @@
     progressRuntime.pending = null;
     progressRuntime.phase = 'applying';
     if (prevPhase !== progressRuntime.phase) {
-      console.info('[progress] phase transition', {
+      logInfo?.('phase transition', {
         from: prevPhase,
         to: progressRuntime.phase,
         reason: pending.reason || 'apply-pending-start',
@@ -325,12 +330,12 @@
     try {
       await applyProgressSnapshot(pending.snapshot, pending.playerId, pending);
     } catch (error) {
-      console.warn('[progress] hydration failed', error);
+      logWarn?.('hydration failed', error);
     } finally {
       const finalPrevPhase = progressRuntime.phase;
       progressRuntime.phase = 'idle';
       if (finalPrevPhase !== progressRuntime.phase) {
-        console.info('[progress] phase transition', {
+        logInfo?.('phase transition', {
           from: finalPrevPhase,
           to: progressRuntime.phase,
           reason: pending.reason || 'apply-pending-complete',
@@ -348,7 +353,7 @@
     const activePlayerId = getActivePlayerId();
     if (!playerId || playerId !== activePlayerId) {
       if (snapshot) {
-        console.info(
+        logInfo?.(
           `[progress] ignoring snapshot${debugFormatContext({ reason, playerId, activePlayerId })}`
         );
       }
@@ -369,7 +374,7 @@
     };
 
     progressRuntime.pending = selectNewestSnapshot(progressRuntime.pending, nextMeta);
-    console.info('[progress] snapshot queued', debugFormatContext({
+    logInfo?.('snapshot queued', debugFormatContext({
       reason,
       source: nextMeta.source,
       updatedAt: nextMeta.updatedAt,
@@ -390,7 +395,7 @@
       const now = Date.now();
       const msSinceApply = now - progressRuntime.lastApplyAt;
       if (msSinceApply >= 0 && msSinceApply < PROGRESS_TITLE_REFRESH_APPLY_COOLDOWN_MS) {
-        console.info('[progress] fetch skipped', debugFormatContext({
+        logInfo?.('fetch skipped', debugFormatContext({
           reason,
           because: 'recent-apply',
           msSinceApply,
@@ -406,7 +411,7 @@
     const prevPhase = progressRuntime.phase;
     progressRuntime.phase = 'loading';
     if (prevPhase !== progressRuntime.phase) {
-      console.info('[progress] phase transition', {
+      logInfo?.('phase transition', {
         from: prevPhase,
         to: progressRuntime.phase,
         reason,
@@ -414,7 +419,7 @@
     }
     updateProgressUiBusyState({ reason: 'start-load' });
 
-    console.info('[progress] fetch requested', debugFormatContext({
+    logInfo?.('fetch requested', debugFormatContext({
       source: 'supabase',
       requestId,
       playerId,
@@ -432,7 +437,7 @@
     promise
       .then((result) => {
         if (!isProgressRequestCurrent(requestId, playerId)) {
-          console.info('[progress] late snapshot ignored', debugFormatContext({ reason, playerId }));
+          logInfo?.('late snapshot ignored', debugFormatContext({ reason, playerId }));
           return;
         }
         progressRuntime.lastRemoteFetchAt = Date.now();
@@ -441,13 +446,13 @@
         const source = result?.source || 'unknown';
         const fallbackReason = result?.reason || reason;
         if (!snapshot) {
-          console.info('[progress] no snapshot available', debugFormatContext({
+          logInfo?.('no snapshot available', debugFormatContext({
             reason: fallbackReason,
             source,
             playerId,
           }));
         } else {
-          console.info('[progress] snapshot received', debugFormatContext({
+          logInfo?.('snapshot received', debugFormatContext({
             reason: fallbackReason,
             source,
             playerId,
@@ -455,7 +460,7 @@
             restoredScore: snapshot?.score,
           }));
         }
-        console.info('[progress] load finished', debugFormatContext({
+        logInfo?.('load finished', debugFormatContext({
           outcome: snapshot ? 'snapshot' : 'none',
           source,
           reason: fallbackReason,
@@ -466,11 +471,11 @@
       })
       .catch((error) => {
         if (isProgressRequestCurrent(requestId, playerId)) {
-          console.warn('[progress] failed to load progression', error);
+          logWarn?.('failed to load progression', error);
         } else {
-          console.info('[progress] late progression load ignored', debugFormatContext({ reason, playerId }));
+          logInfo?.('late progression load ignored', debugFormatContext({ reason, playerId }));
         }
-        console.info('[progress] load finished', debugFormatContext({
+        logInfo?.('load finished', debugFormatContext({
           outcome: 'error',
           source: 'supabase',
           reason,
@@ -486,7 +491,7 @@
           const prevPhaseAfterLoad = progressRuntime.phase;
           progressRuntime.phase = 'idle';
           if (prevPhaseAfterLoad !== progressRuntime.phase) {
-            console.info('[progress] phase transition', {
+            logInfo?.('phase transition', {
               from: prevPhaseAfterLoad,
               to: progressRuntime.phase,
               reason: 'load-finished',
@@ -504,7 +509,7 @@
     const playerId = state?.profile?.id || null;
 
     if (!service || !playerId || !state?.user) {
-      console.info('[progress] auth evaluated', debugFormatContext({
+      logInfo?.('auth evaluated', debugFormatContext({
         authState: state?.user ? 'authenticated' : 'guest',
         playerId,
         reason: !service ? 'no-service' : !playerId ? 'no-player' : 'no-user',
@@ -519,7 +524,7 @@
       return;
     }
 
-    console.info('[progress] auth evaluated', debugFormatContext({
+    logInfo?.('auth evaluated', debugFormatContext({
       authState: state?.user ? 'authenticated' : 'guest',
       playerId,
       requestId: progressRuntime.requestId,
@@ -540,7 +545,7 @@
       const prevPhase = progressRuntime.phase;
       progressRuntime.phase = 'idle';
       if (prevPhase !== progressRuntime.phase) {
-        console.info('[progress] phase transition', {
+        logInfo?.('phase transition', {
           from: prevPhase,
           to: progressRuntime.phase,
           reason: 'initial-hydration-timeout',
@@ -577,7 +582,7 @@
     };
 
     try {
-      console.info(`[progress] save requested${debugFormatContext({
+      logInfo?.(`save requested${debugFormatContext({
         reason,
         level: levelNumber,
         score: snapshot.score,
@@ -586,9 +591,9 @@
         canAdvance,
       })}`);
       await service.saveProgress(snapshot);
-      console.info(`[progress] save completed${debugFormatContext({ reason, level: levelNumber })}`);
+      logInfo?.(`save completed${debugFormatContext({ reason, level: levelNumber })}`);
     } catch (error) {
-      console.warn('[progress] failed to save progression', error);
+      logWarn?.('failed to save progression', error);
     }
   }
 
@@ -600,7 +605,7 @@
     const effectiveTimeout = Math.min(PROGRESS_LOAD_TIMEOUT_MS, eagerWaitMs);
 
     if (!playerId || !auth?.user) {
-      console.info('[progress] skip title refresh', debugFormatContext({
+      logInfo?.('skip title refresh', debugFormatContext({
         reason: 'auth-missing',
         authState: auth?.user ? 'authenticated' : 'guest',
         playerId,
@@ -626,7 +631,7 @@
     });
 
     if (!loadOutcome.completed) {
-      console.info(
+      logInfo?.(
         `[progress] continuing title start without snapshot${debugFormatContext({ playerId, waitedMs: effectiveTimeout })}`
       );
       loadPromise

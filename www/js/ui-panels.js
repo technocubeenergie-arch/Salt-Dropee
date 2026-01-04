@@ -27,6 +27,10 @@
     debugFormatContext = () => '',
   } = global.SD_INPUT || {};
 
+  const uiLogger = global.SD_LOG?.createLogger
+    ? global.SD_LOG.createLogger('ui')
+    : null;
+  const logInfo = (...args) => uiLogger?.info?.(...args);
   const {
     showInterLevelScreen = () => {},
     hideInterLevelScreen = () => {},
@@ -52,7 +56,7 @@
 
   function logNavigation(target, context = {}) {
     const navContext = debugFormatContext(context);
-    console.info(`[nav] goto(${target})${navContext}`);
+    logInfo?.(`[nav] goto(${target})${navContext}`);
   }
 
   function registerNavStateAccessors(options = {}) {
@@ -90,7 +94,7 @@
       reason,
       ...extra,
     });
-    console.info(`[nav] play click ignored because ${reason}${details}`);
+    logInfo?.(`[nav] play click ignored because ${reason}${details}`);
   }
 
   function logLogoutClickIgnored(reason, extra = {}) {
@@ -98,7 +102,7 @@
       reason,
       ...extra,
     });
-    console.info(`[auth] logout click ignored because ${reason}${details}`);
+    logInfo?.(`[auth] logout click ignored because ${reason}${details}`);
   }
 
   function setActiveScreen(next, context = {}) {
@@ -118,7 +122,7 @@
     syncNavStateActiveScreen(normalized, prev);
 
     if (sameScreen) {
-      console.info(`[state] setActiveScreen: ${prev} (unchanged)${debugFormatContext(info)}`);
+      logInfo?.(`[state] setActiveScreen: ${prev} (unchanged)${debugFormatContext(info)}`);
       return normalized;
     }
     activeScreen = normalized;
@@ -126,7 +130,7 @@
     if (normalized !== 'settings' && normalized !== 'unknown') {
       lastNonSettingsScreen = normalized;
     }
-    console.info(`[state] setActiveScreen: ${prev} -> ${normalized}${debugFormatContext(info)}`);
+    logInfo?.(`[state] setActiveScreen: ${prev} -> ${normalized}${debugFormatContext(info)}`);
     if (NAV_SCREEN_LOG_TARGETS.has(normalized)) {
       logNavigation(normalized, info);
     }
@@ -166,7 +170,7 @@
     const blockedByFocus = isFormFieldElement(focusEl);
     const blockedByScreen = activeScreen === 'account';
     if (blockedByFocus || blockedByScreen) {
-      console.info(
+      logInfo?.(
         `[input] ignore global key${debugFormatContext({
           reason: blockedByScreen ? 'account' : 'form-focus',
           key: evt?.key,
@@ -240,7 +244,7 @@
       };
     }
 
-    console.info("[settings] listener initialized");
+    logInfo?.("[settings] listener initialized");
     addEvent(global.document, 'click', (event) => {
       const btn = event.target.closest('[data-action="open-settings"]');
       if (!btn) return;
@@ -311,7 +315,7 @@
     if (overlay) overlay.classList.remove('overlay-title');
     const fromViewRaw = settingsReturnView || state || activeScreen;
     const fromView = normalize(fromViewRaw);
-    console.info(`[overlay] open settings (from ${fromView})${formatContext({ raw: fromViewRaw, screen: activeScreen })}`);
+    logInfo?.(`[overlay] open settings (from ${fromView})${formatContext({ raw: fromViewRaw, screen: activeScreen })}`);
     setActiveScreenFn('settings', { via: 'renderSettings', from: fromView, raw: fromViewRaw });
     const controlMode = (settings.controlMode === 'zones') ? 'zones' : 'swipe';
     settings.controlMode = controlMode;
@@ -406,7 +410,7 @@
       const targetScreen = normalize(fromViewRaw);
       const nextScreen = targetScreen === 'unknown' ? lastNonSettingsScreen : targetScreen;
       const isInterLevelTarget = nextScreen === 'interLevel';
-      console.info(`[overlay] close settings (to ${nextScreen})${formatContext({ raw: fromViewRaw })}`);
+      logInfo?.(`[overlay] close settings (to ${nextScreen})${formatContext({ raw: fromViewRaw })}`);
       setActiveScreenFn(nextScreen, { via: 'settings-back', raw: fromViewRaw });
       onSettingsReturnViewChange("title");
       if (!isInterLevelTarget) {
