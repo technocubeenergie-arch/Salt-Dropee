@@ -861,6 +861,13 @@ body.is-inter-level #hud {
   padding: 30px 10px;
 }
 
+.inter-level-screen.gameover-mode {
+  background-image: url("./fondgameover.webp");
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
 .inter-level-screen.legend-mode {
   background-image: url("./interlevel5.webp");
   background-size: cover;

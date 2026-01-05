@@ -185,9 +185,11 @@
 
     const backgroundSrc = INTER_LEVEL_BACKGROUNDS[levelIndex];
     const shouldUseInterVisuals = result === "win" && backgroundSrc && !isLegend;
+    const isGameOver = result !== "win";
 
     screen.classList.toggle("inter-win", !!shouldUseInterVisuals);
     screen.classList.toggle("legend-mode", !!isLegend);
+    screen.classList.toggle("gameover-mode", !!isGameOver);
 
     if (shouldUseInterVisuals) {
       applyLevelBackground(backgroundSrc, { immediate: true });
@@ -209,6 +211,7 @@
     stopInterLevelAudio();
     setInterLevelUiState(false);
     if (!screen) return;
+    screen.classList.remove("gameover-mode");
     hideOverlay(screen, options);
   }
 
