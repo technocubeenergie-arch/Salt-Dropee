@@ -8,10 +8,23 @@ import authFacade, { saltAuth } from './authController.js';
 const scoreLogger = (typeof window !== 'undefined' && window.SD_LOG?.createLogger)
   ? window.SD_LOG.createLogger('score')
   : null;
-const logDebug = (...args) => (scoreLogger?.debug ? scoreLogger.debug(...args) : console.debug?.(...args));
-const logInfo = (...args) => (scoreLogger?.info ? scoreLogger.info(...args) : console.info?.(...args));
-const logWarn = (...args) => (scoreLogger?.warn ? scoreLogger.warn(...args) : console.warn?.(...args));
-const logError = (...args) => (scoreLogger?.error ? scoreLogger.error(...args) : console.error?.(...args));
+const logDebug = (...args) => (scoreLogger?.debug ? scoreLogger.debug(...args) : undefined);
+const logInfo = (...args) => (scoreLogger?.info ? scoreLogger.info(...args) : undefined);
+const logWarn = (...args) => (scoreLogger?.warn ? scoreLogger.warn(...args) : undefined);
+const logError = (...args) => (scoreLogger?.error ? scoreLogger.error(...args) : undefined);
+
+const globalRef = typeof window !== 'undefined' ? window : globalThis;
+
+const PENDING_STORAGE_KEY = 'pendingLegendScores';
+const MAX_PENDING_SCORES = 20;
+
+function isNavigatorOffline() {
+  try {
+    return typeof navigator !== 'undefined' && navigator.onLine === false;
+  } catch (_) {
+    return false;
+  }
+}
 
 function getAuthSnapshot() {
   if (saltAuth && typeof saltAuth.getState === 'function') {
@@ -24,7 +37,7 @@ function getAuthSnapshot() {
     try {
       return window.SaltAuth.getState();
     } catch (error) {
-      logWarn?.('[score] failed to read auth state from window', error);
+      logDebug?.('[score] failed to read auth state from window', error);
     }
   }
   return null;
@@ -60,18 +73,29 @@ function coerceScore(value) {
   return Number.isFinite(parsed) ? Math.floor(parsed) : 0;
 }
 
-function isTransientSupabaseError(error) {
+function isTransientError(error) {
   if (!error) {
     return false;
   }
 
+  if (isNavigatorOffline()) {
+    return true;
+  }
+
   const status = Number(error.status ?? error.statusCode);
-  if (Number.isFinite(status) && (status === 408 || status === 429 || status >= 500)) {
+  if (Number.isFinite(status) && (status === 0 || status === 408 || status === 425 || status === 429 || status >= 500)) {
     return true;
   }
 
   const code = typeof error.code === 'string' ? error.code.toUpperCase() : '';
-  const transientCodes = new Set(['ETIMEDOUT', 'ECONNABORTED', 'FETCH_ERROR', 'NETWORK_ERROR']);
+  const transientCodes = new Set([
+    'ETIMEDOUT',
+    'ECONNABORTED',
+    'FETCH_ERROR',
+    'NETWORK_ERROR',
+    'TIMEOUT',
+    'ABORT_ERR',
+  ]);
   if (transientCodes.has(code)) {
     return true;
   }
@@ -91,10 +115,151 @@ function isTransientSupabaseError(error) {
   return false;
 }
 
+function isPermanentAuthOrConfigError(error) {
+  if (!error) {
+    return false;
+  }
+  const status = Number(error.status ?? error.statusCode);
+  if (Number.isFinite(status) && (status === 401 || status === 403 || status === 404)) {
+    return true;
+  }
+  const code = typeof error.code === 'string' ? error.code.toUpperCase() : '';
+  return code === '401' || code === '403' || code === '404';
+}
+
+function getLegendSeedFromLocation() {
+  try {
+    const search = globalRef.location?.search || '';
+    if (!search) return null;
+    const params = new URLSearchParams(search);
+    const seed = params.get('seed');
+    return seed || null;
+  } catch (_) {
+    return null;
+  }
+}
+
 function wait(delayMs) {
   return new Promise((resolve) => {
     setTimeout(resolve, Math.max(0, delayMs));
   });
+}
+
+function loadPendingLegendScoresFromStorage() {
+  if (typeof localStorage === 'undefined') {
+    return [];
+  }
+  try {
+    const raw = localStorage.getItem(PENDING_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((item) => ({
+        id: item.id || null,
+        createdAt: Number(item.createdAt) || Date.now(),
+        score: coerceScore(item.score),
+        durationSeconds: Number.isFinite(item.durationSeconds) ? Number(item.durationSeconds) : null,
+        level: Number.isFinite(item.level) ? Math.max(0, Math.floor(item.level)) : 6,
+        mode: item.mode || 'legend',
+        seed: item.seed || null,
+        userId: item.userId || null,
+        payload: item.payload || null,
+      }))
+      .filter((item) => Number.isFinite(item.score) && item.score > 0 && item.id);
+  } catch (error) {
+    logDebug?.('[score] failed to read pending legend scores', error);
+    return [];
+  }
+}
+
+let pendingLegendScoresCache = loadPendingLegendScoresFromStorage();
+
+function persistPendingLegendScores(list = []) {
+  pendingLegendScoresCache = Array.isArray(list) ? [...list] : [];
+  if (typeof localStorage === 'undefined') {
+    return;
+  }
+  try {
+    localStorage.setItem(PENDING_STORAGE_KEY, JSON.stringify(pendingLegendScoresCache));
+  } catch (error) {
+    logDebug?.('[score] failed to persist pending legend scores', error);
+  }
+}
+
+function notifyPendingLegendScoresChange() {
+  const count = pendingLegendScoresCache.length;
+  if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+    try {
+      window.dispatchEvent(
+        new CustomEvent('sd:pending-legend-scores-changed', { detail: { count } })
+      );
+    } catch (error) {
+      logDebug?.('[score] failed to dispatch pending scores change', error);
+    }
+  }
+}
+
+function setPendingLegendScores(list = []) {
+  const sorted = [...(list || [])].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+  const limited = sorted.slice(-MAX_PENDING_SCORES);
+  persistPendingLegendScores(limited);
+  notifyPendingLegendScoresChange();
+  return limited;
+}
+
+function getPendingLegendScores() {
+  return [...pendingLegendScoresCache].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+}
+
+function getPendingLegendScoreCount() {
+  return pendingLegendScoresCache.length;
+}
+
+function addPendingLegendScore(entry = {}) {
+  const id = entry.id || `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const createdAt = Number(entry.createdAt) || Date.now();
+  const normalized = {
+    id,
+    createdAt,
+    score: coerceScore(entry.score),
+    durationSeconds: Number.isFinite(entry.durationSeconds) ? Number(entry.durationSeconds) : null,
+    level: Number.isFinite(entry.level) ? Math.max(0, Math.floor(entry.level)) : 6,
+    mode: entry.mode || 'legend',
+    seed: entry.seed || null,
+    userId: entry.userId || null,
+    payload: entry.payload || null,
+  };
+
+  if (!Number.isFinite(normalized.score) || normalized.score <= 0) {
+    return null;
+  }
+
+  const pending = getPendingLegendScores();
+  pending.push(normalized);
+  setPendingLegendScores(pending);
+  logDebug?.('[score] stored pending legend score', { id: normalized.id, count: pending.length });
+  return normalized;
+}
+
+function removePendingLegendScore(id) {
+  if (!id) return getPendingLegendScores();
+  const next = getPendingLegendScores().filter((item) => item.id !== id);
+  setPendingLegendScores(next);
+  return next;
+}
+
+function showPendingScoreNotice() {
+  const uiCore = globalRef?.SD_UI_CORE || {};
+  const showNotice = typeof uiCore.showTransientNotice === 'function'
+    ? uiCore.showTransientNotice
+    : null;
+  if (showNotice) {
+    showNotice('Score enregistré localement. Il sera envoyé automatiquement quand la connexion reviendra.', {
+      variant: 'info',
+      durationMs: 4200,
+    });
+  }
 }
 
 async function executeLegendScoreRequest(label, operationFn, { maxAttempts = 3, baseDelayMs = 500 } = {}) {
@@ -122,8 +287,11 @@ async function executeLegendScoreRequest(label, operationFn, { maxAttempts = 3, 
     }
 
     lastError = opError;
-    const transient = isTransientSupabaseError(opError);
-    const retryDelay = transient && attempt < maxAttempts ? baseDelayMs * 2 ** (attempt - 1) : null;
+    const transient = isTransientError(opError);
+    const jitter = Math.floor(Math.random() * 120);
+    const retryDelay = transient && attempt < maxAttempts
+      ? baseDelayMs * 2 ** (attempt - 1) + jitter
+      : null;
 
     logDebug?.('[score] legend score request attempt failed', {
       label,
@@ -156,6 +324,95 @@ async function executeLegendScoreRequest(label, operationFn, { maxAttempts = 3, 
   };
 }
 
+async function upsertLegendScore({ supabase, resolvedPlayerId, numericScore, durationPayload }) {
+  const { data: existingBestData, error: selectError } = await supabase
+    .from('scores')
+    .select('id, score')
+    .eq('player_id', resolvedPlayerId)
+    .eq('level', 6)
+    .order('score', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  let existingBest = existingBestData;
+
+  if (selectError && selectError.code !== 'PGRST116') {
+    const selectIsTransient = isTransientError(selectError);
+    const selectLog = selectIsTransient ? logDebug : logDebug;
+    selectLog?.('[score] read best legend score failed', describeError(selectError));
+    existingBest = null;
+  }
+
+  const bestScore = coerceScore(existingBest?.score);
+  const hasExistingBest = Number.isFinite(bestScore);
+
+  if (existingBest && hasExistingBest) {
+    if (numericScore <= bestScore) {
+      logInfo?.('[score] new legend score <= existing, keeping existing', {
+        score: numericScore,
+        existing: bestScore,
+      });
+      return { success: true, skipped: true, payload: { score: numericScore, bestScore } };
+    }
+
+    const payload = {
+      score: numericScore,
+      duration_seconds: durationPayload,
+    };
+
+    const updateResult = await executeLegendScoreRequest(
+      'update-legend-score',
+      () =>
+        supabase
+          .from('scores')
+          .update(payload)
+          .eq('id', existingBest.id)
+          .eq('player_id', resolvedPlayerId)
+          .eq('level', 6)
+    );
+
+    if (updateResult?.error) {
+      return {
+        success: false,
+        reason: updateResult.error.code || 'UPDATE_FAILED',
+        error: updateResult.error,
+      };
+    }
+
+    logInfo?.('[score] legend best score updated', {
+      score: numericScore,
+      attempts: updateResult?.attempts || 1,
+    });
+
+    return { success: true, payload: { ...existingBest, score: numericScore, duration_seconds: durationPayload } };
+  }
+
+  const payload = {
+    player_id: resolvedPlayerId,
+    level: 6,
+    score: numericScore,
+    duration_seconds: durationPayload,
+  };
+
+  const insertResult = await executeLegendScoreRequest('insert-legend-score', () =>
+    supabase.from('scores').insert(payload)
+  );
+
+  if (insertResult?.error) {
+    return {
+      success: false,
+      reason: insertResult.error.code || 'INSERT_FAILED',
+      error: insertResult.error,
+    };
+  }
+
+  logInfo?.('[score] legend best score inserted', {
+    score: numericScore,
+    attempts: insertResult?.attempts || 1,
+  });
+
+  return { success: true, payload };
+}
+
 async function submitLegendScore({ playerId, score, durationSeconds, level } = {}) {
   try {
     logInfo?.('[score] submitLegendScore called', { playerId, score, durationSeconds, level });
@@ -170,24 +427,9 @@ async function submitLegendScore({ playerId, score, durationSeconds, level } = {
       return { success: false, reason: 'DISABLED' };
     }
 
-    const supabase = await getSupabase();
-    if (!supabase) {
-      logInfo?.('[score] submitLegendScore skipped', { reason: 'notReady' });
-      return { success: false, reason: 'NOT_READY' };
-    }
-
     const authState = getAuthSnapshot();
     const user = authState?.user || null;
     const resolvedPlayerId = playerId || authState?.profile?.id || null;
-
-    if (!user || !user.id || !resolvedPlayerId) {
-      logInfo?.('[score] submitLegendScore skipped', {
-        reason: 'missingAuth',
-        hasUser: Boolean(user?.id),
-        playerId: resolvedPlayerId,
-      });
-      return { success: false, reason: 'MISSING_AUTH' };
-    }
 
     const numericScore = coerceScore(score);
 
@@ -199,109 +441,58 @@ async function submitLegendScore({ playerId, score, durationSeconds, level } = {
       ? Math.max(0, Math.floor(durationSeconds))
       : null;
 
+    const seed = getLegendSeedFromLocation();
+    const pendingMetadata = {
+      score: numericScore,
+      durationSeconds: durationPayload,
+      level: 6,
+      mode: 'legend',
+      seed,
+      userId: resolvedPlayerId || user?.id || null,
+    };
+
+    const supabase = await getSupabase();
+    if (!supabase) {
+      logDebug?.('[score] submitLegendScore deferred (supabase not ready)', { reason: 'notReady' });
+      addPendingLegendScore(pendingMetadata);
+      showPendingScoreNotice();
+      return { success: false, reason: 'NOT_READY', queued: true };
+    }
+
+    if (!user || !user.id || !resolvedPlayerId) {
+      logDebug?.('[score] submitLegendScore queued due to missing auth', {
+        hasUser: Boolean(user?.id),
+        playerId: resolvedPlayerId,
+      });
+      addPendingLegendScore(pendingMetadata);
+      showPendingScoreNotice();
+      return { success: false, reason: 'MISSING_AUTH', queued: true };
+    }
+
     logInfo?.('[score] legend score write starting', {
       playerId: resolvedPlayerId,
       score: numericScore,
       durationSeconds: durationPayload,
     });
 
-    const { data: existingBestData, error: selectError } = await supabase
-      .from('scores')
-      .select('id, score')
-      .eq('player_id', resolvedPlayerId)
-      .eq('level', 6)
-      .order('score', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    let existingBest = existingBestData;
-
-    if (selectError && selectError.code !== 'PGRST116') {
-      const selectIsTransient = isTransientSupabaseError(selectError);
-      const selectLog = selectIsTransient ? logDebug : logWarn;
-      selectLog?.('[score] read best legend score failed', describeError(selectError));
-      // treat as no existing best to continue gracefully
-      existingBest = null;
-    } else if (!existingBest) {
-      logInfo?.('[score] no existing legend score found for player');
-    } else {
-      logInfo?.('[score] existing legend score for player', {
-        id: existingBest?.id || null,
-        bestScore: coerceScore(existingBest.score),
-      });
-    }
-
-    const bestScore = coerceScore(existingBest?.score);
-    const hasExistingBest = Number.isFinite(bestScore);
-
-    if (existingBest && hasExistingBest) {
-      if (numericScore <= bestScore) {
-        logInfo?.('[score] new legend score <= existing, keeping existing', {
-          score: numericScore,
-          existing: bestScore,
-        });
-        return { success: true, skipped: true, payload: { score: numericScore, bestScore } };
-      }
-
-      logInfo?.('[score] new legend score > existing, updating', {
-        score: numericScore,
-        existing: bestScore,
-      });
-
-      const updateResult = await executeLegendScoreRequest(
-        'update-legend-score',
-        () =>
-          supabase
-            .from('scores')
-            .update({
-              score: numericScore,
-              duration_seconds: durationPayload,
-            })
-            .eq('id', existingBest.id)
-            .eq('player_id', resolvedPlayerId)
-            .eq('level', 6)
-      );
-
-      if (updateResult?.error) {
-        logWarn?.(
-          '[score] submit score failed after retries',
-          describeError(updateResult.finalError || updateResult.error)
-        );
-        return { success: false, reason: updateResult.error.code || 'UPDATE_FAILED' };
-      }
-
-      logInfo?.('[score] legend best score updated', {
-        score: numericScore,
-        attempts: updateResult?.attempts || 1,
-      });
-
-      return { success: true, payload: { ...existingBest, score: numericScore, duration_seconds: durationPayload } };
-    }
-
-    const payload = {
-      player_id: resolvedPlayerId,
-      level: 6,
-      score: numericScore,
-      duration_seconds: durationPayload,
-    };
-
-    const insertResult = await executeLegendScoreRequest('insert-legend-score', () =>
-      supabase.from('scores').insert(payload)
-    );
-
-    if (insertResult?.error) {
-      logWarn?.(
-        '[score] submit score failed after retries',
-        describeError(insertResult.finalError || insertResult.error)
-      );
-      return { success: false, reason: insertResult.error.code || 'INSERT_FAILED' };
-    }
-
-    logInfo?.('[score] legend best score inserted', {
-      score: numericScore,
-      attempts: insertResult?.attempts || 1,
+    const writeResult = await upsertLegendScore({
+      supabase,
+      resolvedPlayerId,
+      numericScore,
+      durationPayload,
     });
 
-    return { success: true, payload };
+    if (!writeResult?.success) {
+      const error = writeResult?.error || writeResult;
+      if (isTransientError(error) || isNavigatorOffline()) {
+        addPendingLegendScore(pendingMetadata);
+        showPendingScoreNotice();
+        return { success: false, reason: 'TRANSIENT_ERROR', queued: true };
+      }
+      return { success: false, reason: writeResult?.reason || 'UNKNOWN_ERROR', error };
+    }
+
+    return writeResult;
   } catch (error) {
     logError?.('[score] unexpected submitLegendScore error', error);
     return { success: false, reason: 'UNEXPECTED_ERROR' };
@@ -318,22 +509,33 @@ async function fetchLegendTop(limit = 20) {
 
     const finalLimit = Math.max(1, Math.min(Number(limit) || 20, 25));
 
-    const { data, error } = await supabase
-      .from('leaderboard_top')
-      .select('level, username, best_score, player_id')
-      .eq('level', 6)
-      .order('best_score', { ascending: false })
-      .limit(finalLimit);
+    const result = await executeLegendScoreRequest(
+      'fetch-legend-top',
+      () =>
+        supabase
+          .from('leaderboard_top')
+          .select('level, username, best_score, player_id')
+          .eq('level', 6)
+          .order('best_score', { ascending: false })
+          .limit(finalLimit),
+      { maxAttempts: 3, baseDelayMs: 350 }
+    );
 
-    if (error) {
-      logWarn?.('[score] fetchLegendTop failed', describeError(error));
-      return { entries: [], error };
+    if (result?.error) {
+      const error = result.finalError || result.error;
+      const reason = isPermanentAuthOrConfigError(error)
+        ? 'PERMANENT'
+        : isTransientError(error)
+          ? 'TRANSIENT'
+          : 'ERROR';
+      logDebug?.('[score] fetchLegendTop failed', { reason, error: describeError(error) });
+      return { entries: [], error: { reason, detail: describeError(error) } };
     }
 
-    return { entries: Array.isArray(data) ? data : [], error: null };
+    return { entries: Array.isArray(result?.data) ? result.data : [], error: null };
   } catch (error) {
-    logWarn?.('[score] unexpected fetchLegendTop error', error);
-    return { entries: [], error };
+    logDebug?.('[score] unexpected fetchLegendTop error', error);
+    return { entries: [], error: { reason: 'UNEXPECTED', detail: describeError(error) } };
   }
 }
 
@@ -358,7 +560,7 @@ async function fetchMyLegendRank() {
       .maybeSingle();
 
     if (bestError && bestError.code !== 'PGRST116') {
-      logWarn?.('[score] fetchMyLegendRank best score failed', describeError(bestError));
+      logDebug?.('[score] fetchMyLegendRank best score failed', describeError(bestError));
       return { available: false, reason: 'BEST_SCORE_ERROR' };
     }
 
@@ -374,7 +576,7 @@ async function fetchMyLegendRank() {
       .gt('score', myBestScore);
 
     if (rankError) {
-      logWarn?.('[score] fetchMyLegendRank rank query failed', describeError(rankError));
+      logDebug?.('[score] fetchMyLegendRank rank query failed', describeError(rankError));
       return { available: false, reason: 'RANK_ERROR' };
     }
 
@@ -390,7 +592,7 @@ async function fetchMyLegendRank() {
       },
     };
   } catch (error) {
-    logWarn?.('[score] unexpected fetchMyLegendRank error', error);
+    logDebug?.('[score] unexpected fetchMyLegendRank error', error);
     return { available: false, reason: 'UNEXPECTED_ERROR' };
   }
 }
@@ -413,22 +615,131 @@ async function fetchLegendReferralCounts(playerIds = []) {
       .in('player_id', uniqueIds);
 
     if (error) {
-      logWarn?.('[score] fetchLegendReferralCounts failed', describeError(error));
+      logDebug?.('[score] fetchLegendReferralCounts failed', describeError(error));
       return { rows: [], error };
     }
 
     return { rows: Array.isArray(data) ? data : [], error: null };
   } catch (error) {
-    logWarn?.('[score] unexpected fetchLegendReferralCounts error', error);
+    logDebug?.('[score] unexpected fetchLegendReferralCounts error', error);
     return { rows: [], error };
   }
 }
+
+async function flushPendingLegendScores(options = {}) {
+  const reason = typeof options.reason === 'string' && options.reason.trim()
+    ? options.reason
+    : 'flush';
+
+  const pending = getPendingLegendScores();
+  if (pending.length === 0) {
+    return { flushed: 0, remaining: 0, reason };
+  }
+
+  const authState = getAuthSnapshot();
+  const authPlayerId = authState?.profile?.id || authState?.user?.id || null;
+  const supabase = await getSupabase();
+  if (!supabase) {
+    logDebug?.('[score] skip flush (no supabase)', { reason });
+    return { flushed: 0, remaining: pending.length, reason };
+  }
+
+  let flushed = 0;
+
+  for (const item of pending) {
+    const targetPlayerId = item.userId || authPlayerId;
+    if (!targetPlayerId) {
+      logDebug?.('[score] pending score missing user, waiting for auth', { id: item.id });
+      break;
+    }
+
+    if (!item.userId && targetPlayerId) {
+      const updated = getPendingLegendScores().map((entry) => (
+        entry.id === item.id ? { ...entry, userId: targetPlayerId } : entry
+      ));
+      setPendingLegendScores(updated);
+    }
+
+    const writeResult = await upsertLegendScore({
+      supabase,
+      resolvedPlayerId: targetPlayerId,
+      numericScore: coerceScore(item.score),
+      durationPayload: Number.isFinite(item.durationSeconds) ? item.durationSeconds : null,
+    });
+
+    if (writeResult?.success) {
+      flushed += 1;
+      removePendingLegendScore(item.id);
+      continue;
+    }
+
+    const error = writeResult?.error || writeResult;
+    if (isPermanentAuthOrConfigError(error)) {
+      logDebug?.('[score] stopping flush on permanent error', { error: describeError(error) });
+      break;
+    }
+
+    if (isTransientError(error)) {
+      logDebug?.('[score] stopping flush on transient error', { error: describeError(error) });
+      break;
+    }
+  }
+
+  return { flushed, remaining: getPendingLegendScoreCount(), reason };
+}
+
+function onPendingLegendScoresChange(listener) {
+  if (typeof listener !== 'function') return () => {};
+  const handler = (event) => {
+    const count = Number(event?.detail?.count ?? getPendingLegendScoreCount()) || 0;
+    listener(count);
+  };
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener('sd:pending-legend-scores-changed', handler);
+  }
+  try {
+    listener(getPendingLegendScoreCount());
+  } catch (error) {
+    logDebug?.('[score] pending listener init failed', error);
+  }
+  return () => {
+    if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
+      window.removeEventListener('sd:pending-legend-scores-changed', handler);
+    }
+  };
+}
+
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('online', () => {
+    flushPendingLegendScores({ reason: 'online' });
+  });
+}
+
+if (saltAuth?.onChange) {
+  saltAuth.onChange(() => {
+    flushPendingLegendScores({ reason: 'auth-change' });
+  });
+}
+
+const scheduleStartupFlush = () => {
+  const run = () => flushPendingLegendScores({ reason: 'startup' });
+  if (typeof queueMicrotask === 'function') {
+    queueMicrotask(run);
+  } else {
+    setTimeout(run, 0);
+  }
+};
+
+scheduleStartupFlush();
 
 const ScoreController = {
   submitLegendScore,
   fetchLegendTop,
   fetchMyLegendRank,
   fetchLegendReferralCounts,
+  flushPendingLegendScores,
+  getPendingLegendScoreCount,
+  onPendingLegendScoresChange,
 };
 
 if (typeof window !== 'undefined') {
@@ -440,6 +751,11 @@ export {
   fetchLegendTop,
   fetchMyLegendRank,
   fetchLegendReferralCounts,
+  flushPendingLegendScores,
+  getPendingLegendScoreCount,
+  onPendingLegendScoresChange,
+  isTransientError,
+  isPermanentAuthOrConfigError,
 };
 
 export default ScoreController;
