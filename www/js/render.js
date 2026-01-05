@@ -423,7 +423,7 @@
       if (!node || node === activeEl) return;
       hideOverlay(node);
       if (node?.classList) {
-        node.classList.remove('overlay-title', 'overlay-rules', 'overlay-gameover');
+        node.classList.remove('overlay-title', 'overlay-rules');
       }
     });
   }
@@ -440,7 +440,7 @@
 
     mainOverlay.innerHTML = "";
     hideOverlay(mainOverlay);
-    mainOverlay.classList.remove("overlay-title", "overlay-rules", "overlay-gameover");
+    mainOverlay.classList.remove("overlay-title", "overlay-rules");
     return mainOverlay;
   }
 

@@ -284,7 +284,7 @@
       mode = 'signin';
     }
     setAccountMode(mode);
-    overlay.classList.remove('overlay-title', 'overlay-rules', 'overlay-gameover');
+    overlay.classList.remove('overlay-title', 'overlay-rules');
     overlay.innerHTML = `
       <div class="panel panel-shell account-panel" role="dialog" aria-modal="true" aria-labelledby="accountTitle" data-account-panel="true">
         <div class="panel-header">

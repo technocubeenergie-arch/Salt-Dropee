@@ -185,9 +185,11 @@
 
     const backgroundSrc = INTER_LEVEL_BACKGROUNDS[levelIndex];
     const shouldUseInterVisuals = result === "win" && backgroundSrc && !isLegend;
+    const isGameOver = result !== "win";
 
     screen.classList.toggle("inter-win", !!shouldUseInterVisuals);
     screen.classList.toggle("legend-mode", !!isLegend);
+    screen.classList.toggle("gameover-mode", !!isGameOver);
 
     if (shouldUseInterVisuals) {
       applyLevelBackground(backgroundSrc, { immediate: true });
@@ -209,6 +211,7 @@
     stopInterLevelAudio();
     setInterLevelUiState(false);
     if (!screen) return;
+    screen.classList.remove("gameover-mode");
     hideOverlay(screen, options);
   }
 
@@ -281,7 +284,7 @@
     } = options;
 
     setActiveScreen('paused', { via: 'renderPause' });
-    overlayEl.classList.remove('overlay-title', 'overlay-gameover');
+    overlayEl.classList.remove('overlay-title');
     setReturnView();
     overlayEl.innerHTML = `
       <div class="panel panel-shell pause-panel" role="dialog" aria-modal="true" aria-labelledby="pauseTitle">

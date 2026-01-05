@@ -617,7 +617,7 @@ function enterTitleScreen() {
     document.body.classList.add('is-title');
   }
   if (typeof overlay !== 'undefined' && overlay) {
-    overlay.classList.remove('overlay-rules', 'overlay-gameover');
+    overlay.classList.remove('overlay-rules');
     overlay.classList.add('overlay-title');
   }
 
@@ -644,7 +644,7 @@ function leaveTitleScreen({ stopMusic = true } = {}) {
     document.body.classList.remove('is-title');
   }
   if (typeof overlay !== 'undefined' && overlay) {
-    overlay.classList.remove('overlay-title', 'overlay-gameover');
+    overlay.classList.remove('overlay-title');
   }
   setTitleAccountAnchorVisible(false);
   if (stopMusic) {
@@ -1804,7 +1804,7 @@ class Game{
           document.body.classList.remove('is-title');
         }
         if (overlay) {
-          overlay.classList.remove('overlay-title', 'overlay-gameover');
+          overlay.classList.remove('overlay-title');
         }
         stopMenuMusic();
         return;
@@ -2009,8 +2009,6 @@ class Game{
     const best=parseInt(localStorage.getItem(LS.bestScore)||'0',10);
     this.settingsReturnView = "over";
     gotoScreen('gameover', { via: 'renderGameOver' });
-    overlay.classList.remove('overlay-title', 'overlay-rules');
-    overlay.classList.add('overlay-gameover');
     overlay.innerHTML = `
     <div class="panel panel-shell gameover-panel" role="dialog" aria-modal="true" aria-labelledby="gameOverTitle">
       <div class="panel-header">
@@ -2039,13 +2037,8 @@ class Game{
       </div>
     </div>`;
     showExclusiveOverlay(overlay);
-    const clearGameOverOverlay = () => {
-      overlay.classList.remove('overlay-gameover');
-      overlay.innerHTML='';
-      hideOverlay(overlay);
-    };
-    addEvent(document.getElementById('again'), INPUT.tap, async ()=>{ playSound("click"); clearGameOverOverlay(); this.reset({showTitle:false}); await new Promise(r=>requestAnimationFrame(r)); this.start(); }, { passive:false });
-    addEvent(document.getElementById('menu'), INPUT.tap, ()=>{ playSound("click"); clearGameOverOverlay(); this.reset({showTitle:true}); });
+    addEvent(document.getElementById('again'), INPUT.tap, async ()=>{ playSound("click"); overlay.innerHTML=''; hideOverlay(overlay); this.reset({showTitle:false}); await new Promise(r=>requestAnimationFrame(r)); this.start(); }, { passive:false });
+    addEvent(document.getElementById('menu'), INPUT.tap, ()=>{ playSound("click"); overlay.innerHTML=''; hideOverlay(overlay); this.reset({showTitle:true}); });
     if (TG){ const sh=document.getElementById('share'); if (sh) addEvent(sh, INPUT.tap, ()=>{ playSound("click"); try{ TG.sendData(JSON.stringify({ score:this.score, duration:CONFIG.runSeconds, version:VERSION })); }catch(e){} }); }
   }
   render(){
