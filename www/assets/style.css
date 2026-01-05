@@ -862,7 +862,7 @@ body.is-inter-level #hud {
 }
 
 .inter-level-screen.legend-mode {
-  background-image: url("/assets/interlevel5.webp");
+  background-image: url("./interlevel5.webp");
   background-size: cover;
   background-position: center;
 }
