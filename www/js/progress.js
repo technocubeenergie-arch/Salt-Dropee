@@ -129,6 +129,13 @@
     return null;
   };
 
+  const getScoreService = () => {
+    if (typeof global !== 'undefined' && global.ScoreController) {
+      return global.ScoreController;
+    }
+    return null;
+  };
+
   function normalizeProgressLevel(level) {
     const numeric = Number.isFinite(level) ? level : Number(level) || 1;
     const clamped = Math.min(Math.max(Math.floor(numeric), 1), LEVELS.length);
@@ -303,6 +310,64 @@
     }));
   }
 
+  async function loadLegendResumeSnapshot(playerId, reason = 'resume-check') {
+    const scoreService = getScoreService();
+    if (!scoreService || typeof scoreService.fetchBestLegendScoreForPlayer !== 'function') {
+      logInfo?.('legend resume skipped', debugFormatContext({ reason: 'missing-score-service', playerId }));
+      return { snapshot: null, source: 'scores', reason: 'missing-score-service' };
+    }
+
+    const result = await scoreService.fetchBestLegendScoreForPlayer(playerId);
+    if (!result?.available || !result.row) {
+      logInfo?.('legend resume not available', debugFormatContext({
+        reason: result?.reason || 'not-found',
+        source: 'scores',
+      }));
+      return { snapshot: null, source: 'scores', reason: result?.reason || 'not-found' };
+    }
+
+    const row = result.row;
+    const levelNumber = normalizeProgressLevel(row.level || LEVELS.length || 1);
+    const snapshot = {
+      level: levelNumber,
+      score: Number(row.score) || 0,
+      state: {
+        reason: 'legend-resume',
+        mode: 'legend',
+        lastResult: 'win',
+        canAdvance: true,
+        lastClearedLevel: Math.max(1, levelNumber - 1),
+        updatedAt: row.created_at || null,
+      },
+      updatedAt: row.created_at || null,
+    };
+
+    logInfo?.('legend resume candidate found', debugFormatContext({
+      source: 'scores',
+      levelNumber,
+      score: snapshot.score,
+      createdAt: row.created_at || null,
+    }));
+
+    return { snapshot, source: 'scores', reason: 'legend-found' };
+  }
+
+  async function loadResumeCandidate(playerId, reason = 'unspecified') {
+    const legendResult = await loadLegendResumeSnapshot(playerId, reason);
+    if (legendResult?.snapshot) {
+      return legendResult;
+    }
+
+    const service = getProgressService();
+    if (!service || typeof service.loadProgress !== 'function') {
+      logWarn?.('progress resume skipped (service missing)');
+      return { snapshot: null, source: 'progress', reason: 'missing-service' };
+    }
+
+    const progressResult = await service.loadProgress();
+    return { snapshot: progressResult?.snapshot || null, source: 'progress', reason: progressResult?.reason || reason };
+  }
+
   async function applyPendingProgressIfPossible() {
     const pending = progressRuntime.pending;
     if (!pending || !getGame()) return;
@@ -386,8 +451,7 @@
   }
 
   function startProgressLoadForPlayer(playerId, reason = 'auth-sync') {
-    const service = getProgressService();
-    if (!service || !playerId) {
+    if (!playerId) {
       return null;
     }
 
@@ -427,7 +491,7 @@
     }));
 
     const promise = Promise.resolve()
-      .then(() => service.loadProgress())
+      .then(() => loadResumeCandidate(playerId, reason))
       .catch((error) => {
         throw error;
       });
@@ -445,6 +509,11 @@
         const snapshot = result?.snapshot || null;
         const source = result?.source || 'unknown';
         const fallbackReason = result?.reason || reason;
+        logInfo?.('resume source resolved', debugFormatContext({
+          source,
+          reason: fallbackReason,
+          hasSnapshot: Boolean(snapshot),
+        }));
         if (!snapshot) {
           logInfo?.('no snapshot available', debugFormatContext({
             reason: fallbackReason,
@@ -458,6 +527,11 @@
             playerId,
             levelNumber: snapshot?.level,
             restoredScore: snapshot?.score,
+          }));
+          logInfo?.('resume candidate', debugFormatContext({
+            source,
+            levelNumber: snapshot?.level,
+            score: snapshot?.score,
           }));
         }
         logInfo?.('load finished', debugFormatContext({

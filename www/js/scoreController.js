@@ -688,6 +688,48 @@ async function flushPendingLegendScores(options = {}) {
   return { flushed, remaining: getPendingLegendScoreCount(), reason };
 }
 
+async function fetchBestLegendScoreForPlayer(playerId) {
+  try {
+    const authState = getAuthSnapshot();
+    const resolvedPlayerId = playerId || authState?.profile?.id || null;
+
+    if (!resolvedPlayerId) {
+      logDebug?.('[score] fetchBestLegendScoreForPlayer skipped', { reason: 'MISSING_PLAYER' });
+      return { available: false, reason: 'MISSING_PLAYER' };
+    }
+
+    const supabase = await getSupabase();
+    if (!supabase) {
+      logDebug?.('[score] fetchBestLegendScoreForPlayer skipped', { reason: 'NOT_READY' });
+      return { available: false, reason: 'NOT_READY' };
+    }
+
+    const { data, error } = await supabase
+      .from('scores')
+      .select('player_id, level, score, duration_seconds, created_at')
+      .eq('player_id', resolvedPlayerId)
+      .order('score', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error && error.code !== 'PGRST116') {
+      const reason = isTransientError(error) ? 'TRANSIENT_ERROR' : 'ERROR';
+      logDebug?.('[score] fetchBestLegendScoreForPlayer failed', { reason, error: describeError(error) });
+      return { available: false, reason, error };
+    }
+
+    if (!data) {
+      logDebug?.('[score] fetchBestLegendScoreForPlayer empty', { reason: 'NOT_FOUND' });
+      return { available: false, reason: 'NOT_FOUND' };
+    }
+
+    return { available: true, row: data };
+  } catch (error) {
+    logDebug?.('[score] fetchBestLegendScoreForPlayer unexpected error', error);
+    return { available: false, reason: 'UNEXPECTED_ERROR', error };
+  }
+}
+
 function onPendingLegendScoresChange(listener) {
   if (typeof listener !== 'function') return () => {};
   const handler = (event) => {
@@ -740,6 +782,7 @@ const ScoreController = {
   flushPendingLegendScores,
   getPendingLegendScoreCount,
   onPendingLegendScoresChange,
+  fetchBestLegendScoreForPlayer,
 };
 
 if (typeof window !== 'undefined') {
@@ -756,6 +799,7 @@ export {
   onPendingLegendScoresChange,
   isTransientError,
   isPermanentAuthOrConfigError,
+  fetchBestLegendScoreForPlayer,
 };
 
 export default ScoreController;

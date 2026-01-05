@@ -154,7 +154,7 @@ body.is-inter-level #hud {
 }
 
 .overlay.show.inter-level-screen {
-	background: rgba(0, 0, 0, 0);
+  background-color: rgba(0, 0, 0, 0);
 }
 
 .overlay.overlay-rules,
@@ -859,6 +859,12 @@ body.is-inter-level #hud {
   justify-content: center;
   /* Padding fixe condensé pour rester dans le canvas */
   padding: 30px 10px;
+}
+
+.inter-level-screen.legend-mode {
+  background-image: url("/assets/interlevel5.webp");
+  background-size: cover;
+  background-position: center;
 }
 
 .inter-level-panel,

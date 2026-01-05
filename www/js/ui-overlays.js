@@ -187,6 +187,7 @@
     const shouldUseInterVisuals = result === "win" && backgroundSrc && !isLegend;
 
     screen.classList.toggle("inter-win", !!shouldUseInterVisuals);
+    screen.classList.toggle("legend-mode", !!isLegend);
 
     if (shouldUseInterVisuals) {
       applyLevelBackground(backgroundSrc, { immediate: true });
