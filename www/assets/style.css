@@ -162,6 +162,13 @@ body.is-inter-level #hud {
   background: #000;
 }
 
+.overlay.overlay-gameover {
+  background-image: url("./fondgameover.webp");
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
 .overlay.overlay-title {
   background: transparent;
   align-items: stretch;

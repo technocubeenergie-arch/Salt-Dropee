@@ -281,7 +281,7 @@
     } = options;
 
     setActiveScreen('paused', { via: 'renderPause' });
-    overlayEl.classList.remove('overlay-title');
+    overlayEl.classList.remove('overlay-title', 'overlay-gameover');
     setReturnView();
     overlayEl.innerHTML = `
       <div class="panel panel-shell pause-panel" role="dialog" aria-modal="true" aria-labelledby="pauseTitle">

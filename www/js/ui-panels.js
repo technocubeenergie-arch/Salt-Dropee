@@ -313,7 +313,7 @@
       ? debugFormatContext
       : (global.SD_INPUT?.debugFormatContext || (() => ''));
 
-    if (overlay) overlay.classList.remove('overlay-title');
+    if (overlay) overlay.classList.remove('overlay-title', 'overlay-gameover');
     const fromViewRaw = settingsReturnView || state || activeScreen;
     const fromView = normalize(fromViewRaw);
     logInfo?.(`[overlay] open settings (from ${fromView})${formatContext({ raw: fromViewRaw, screen: activeScreen })}`);
@@ -470,7 +470,7 @@
 
     if (!overlay) return;
 
-    overlay.classList.remove('overlay-title', 'overlay-rules');
+    overlay.classList.remove('overlay-title', 'overlay-rules', 'overlay-gameover');
     setActiveScreenFn('leaderboard', { via: 'renderLeaderboard', from: originScreen });
     setTitleAccountAnchorVisibleFn(false);
     overlay.innerHTML = `
@@ -910,7 +910,7 @@
       onReturnToTitle = () => {},
     } = options;
 
-    if (overlay) overlay.classList.remove('overlay-title');
+    if (overlay) overlay.classList.remove('overlay-title', 'overlay-gameover');
     const resolvedReturn = rulesReturnView || "title";
     onSetRulesReturnView(resolvedReturn);
     setTitleAccountAnchorVisibleFn(false);
