@@ -422,7 +422,7 @@ async function submitLegendScoreIfNeeded(reason = 'end'){
       reason,
     });
   } catch (error) {
-    console.warn('[leaderboard] unexpected legend score submission failure', error);
+    logDebug?.('[leaderboard] unexpected legend score submission failure', error);
   }
 }
 
@@ -1838,7 +1838,10 @@ class Game{
           <button id="btnPlay" type="button">Jouer</button>
           <button id="btnRulesTitle" type="button">Règle du jeu</button>
           <button type="button" class="btn-settings" data-action="open-settings">Paramètres</button>
-          <button id="btnLB" type="button">Leaderboard</button>
+          <button id="btnLB" type="button" data-pending-badge="legend">
+            <span class="btn-label">Leaderboard</span>
+            <span class="pending-badge-dot" data-pending-badge-dot aria-hidden="true"></span>
+          </button>
         </div>
         <div class="progress-busy-overlay" data-progress-busy data-busy="false" hidden aria-live="assertive" aria-label="Chargement en cours" aria-hidden="true">
           <div class="progress-busy-card">
@@ -1848,6 +1851,9 @@ class Game{
         </div>
       </div>`;
     showExclusiveOverlay(overlay);
+    if (window.SD_UI_CORE?.refreshPendingBadges) {
+      window.SD_UI_CORE.refreshPendingBadges();
+    }
     bindTitleAccountButton({
       onOpenAccount: () => this.renderAccountPanel({ keepMode: true }),
       playSound,

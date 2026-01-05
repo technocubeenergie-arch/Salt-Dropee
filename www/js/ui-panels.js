@@ -31,6 +31,7 @@
     ? global.SD_LOG.createLogger('ui')
     : null;
   const logInfo = (...args) => uiLogger?.info?.(...args);
+  const logDebug = (...args) => uiLogger?.debug?.(...args);
   const {
     showInterLevelScreen = () => {},
     hideInterLevelScreen = () => {},
@@ -486,7 +487,10 @@
           </div>
           <div class="legend-leaderboard-body">
             <div class="legend-leaderboard-scroll" aria-live="polite">
-              <div id="leaderboardStatus" class="leaderboard-status">Chargement du classement…</div>
+              <div class="leaderboard-status-row">
+                <div id="leaderboardStatus" class="leaderboard-status">Chargement du classement…</div>
+                <button id="leaderboardRetry" type="button" class="btn btn-secondary" style="display:none;">Réessayer</button>
+              </div>
               <ol id="leaderboardList" class="leaderboard-list"></ol>
               <div id="leaderboardEmpty" class="leaderboard-empty" style="display:none;">Aucun score Legend pour le moment.</div>
             </div>
@@ -543,13 +547,21 @@
 
     const listEl = overlay.querySelector('#leaderboardList');
     const statusEl = overlay.querySelector('#leaderboardStatus');
+    const retryEl = overlay.querySelector('#leaderboardRetry');
     const emptyEl = overlay.querySelector('#leaderboardEmpty');
     const stickyWrapper = overlay.querySelector('#leaderboardStickyWrapper');
     const stickyEntry = overlay.querySelector('#leaderboardStickyEntry');
     const scrollContainer = overlay.querySelector('.legend-leaderboard-scroll');
 
     const scoreService = getScoreServiceFn();
+    const teardownFns = [];
     let referralCountsByPlayer = new Map();
+
+    const registerTeardown = (fn) => {
+      if (typeof fn === 'function') {
+        teardownFns.push(fn);
+      }
+    };
 
     const buildReferralCountMap = (rows = []) => {
       const map = new Map();
@@ -641,8 +653,10 @@
     const syncStickyFloatingState = () => {
       const hasStickyEntry = Boolean(stickyData?.entry);
       if (!hasStickyEntry) {
-        stickyWrapper.style.display = 'none';
-        stickyWrapper.classList.remove('floating');
+        if (stickyWrapper) {
+          stickyWrapper.style.display = 'none';
+          stickyWrapper.classList.remove('floating');
+        }
         if (playerRowEl) {
           playerRowEl.classList.remove('is-player-row-active', 'is-player-row-hidden');
         }
@@ -653,8 +667,10 @@
       }
 
       const shouldFloat = !isPlayerRowVisible();
-      stickyWrapper.style.display = shouldFloat ? '' : 'none';
-      stickyWrapper.classList.toggle('floating', shouldFloat);
+      if (stickyWrapper) {
+        stickyWrapper.style.display = shouldFloat ? '' : 'none';
+        stickyWrapper.classList.toggle('floating', shouldFloat);
+      }
 
       if (scrollContainer) {
         scrollContainer.classList.toggle('has-sticky-overlay', shouldFloat);
@@ -663,6 +679,48 @@
       if (playerRowEl) {
         playerRowEl.classList.toggle('is-player-row-active', !shouldFloat);
         playerRowEl.classList.toggle('is-player-row-hidden', shouldFloat);
+      }
+    };
+
+    const getPendingCount = () => {
+      if (scoreService?.getPendingLegendScoreCount) {
+        return scoreService.getPendingLegendScoreCount();
+      }
+      return 0;
+    };
+
+    const isOffline = () => {
+      try {
+        return global.navigator?.onLine === false;
+      } catch (_) {
+        return false;
+      }
+    };
+
+    const updateStatus = (message, { variant = 'info', showRetry = false } = {}) => {
+      if (statusEl) {
+        statusEl.textContent = message || '';
+        statusEl.dataset.variant = variant;
+      }
+      if (retryEl) {
+        retryEl.style.display = showRetry ? '' : 'none';
+        retryEl.disabled = !showRetry;
+      }
+    };
+
+    const renderSkeletonRows = (count = 5) => {
+      if (!listEl || !emptyEl) return;
+      listEl.innerHTML = '';
+      emptyEl.style.display = 'none';
+      for (let i = 0; i < count; i += 1) {
+        const li = global.document?.createElement('li');
+        if (!li) continue;
+        li.className = 'leaderboard-row leaderboard-skeleton';
+        li.innerHTML = `
+          <span class="skeleton-block skeleton-rank"></span>
+          <span class="skeleton-block skeleton-name"></span>
+          <span class="skeleton-block skeleton-score"></span>`;
+        listEl.appendChild(li);
       }
     };
 
@@ -693,6 +751,9 @@
 
     const renderSticky = (sticky) => {
       stickyData = sticky;
+      if (!stickyWrapper || !stickyEntry) {
+        return;
+      }
       if (!sticky?.entry) {
         syncStickyFloatingState();
         return;
@@ -705,6 +766,22 @@
       syncStickyFloatingState();
     };
 
+    const renderUnavailable = (message, variant = 'error') => {
+      if (listEl) listEl.innerHTML = '';
+      if (emptyEl) emptyEl.style.display = 'none';
+      stickyData = null;
+      syncStickyFloatingState();
+      updateStatus(message || 'Leaderboard indisponible', { variant, showRetry: true });
+    };
+
+    const renderOffline = () => {
+      const pendingCount = getPendingCount();
+      const pendingLabel = pendingCount > 0
+        ? ` • ${pendingCount} score(s) en attente de synchronisation`
+        : '';
+      renderUnavailable(`Hors ligne${pendingLabel}`, 'offline');
+    };
+
     const handleScrollChange = () => {
       syncStickyFloatingState();
     };
@@ -712,33 +789,46 @@
     if (scrollContainer) {
       addEventFn(scrollContainer, 'scroll', handleScrollChange, { passive: true });
       addEventFn(scrollContainer, 'touchmove', handleScrollChange, { passive: true });
+      registerTeardown(() => removeEventFn(scrollContainer, 'scroll', handleScrollChange, { passive: true }));
+      registerTeardown(() => removeEventFn(scrollContainer, 'touchmove', handleScrollChange, { passive: true }));
     }
     addEventFn(global.window || global, 'resize', handleScrollChange, { passive: true });
+    registerTeardown(() => removeEventFn(global.window || global, 'resize', handleScrollChange, { passive: true }));
 
     teardownStickyListeners = () => {
-      if (scrollContainer) {
-        removeEventFn(scrollContainer, 'scroll', handleScrollChange, { passive: true });
-        removeEventFn(scrollContainer, 'touchmove', handleScrollChange, { passive: true });
-      }
-      removeEventFn(global.window || global, 'resize', handleScrollChange, { passive: true });
+      teardownFns.forEach((fn) => {
+        try {
+          fn();
+        } catch (_) {
+          // ignore teardown errors
+        }
+      });
+      teardownFns.length = 0;
     };
 
-    const renderError = (message) => {
-      if (statusEl) {
-        statusEl.textContent = message;
+    const loadLeaderboard = async (context = {}) => {
+      const reason = typeof context.reason === 'string' ? context.reason : 'open';
+      if (!scoreService || typeof scoreService.fetchLegendTop !== 'function') {
+        renderUnavailable('Leaderboard indisponible pour le moment.');
+        return;
       }
-    };
 
-    if (!scoreService || typeof scoreService.fetchLegendTop !== 'function') {
-      renderError('Leaderboard indisponible pour le moment.');
-      return;
-    }
+      if (scoreService?.flushPendingLegendScores) {
+        await scoreService.flushPendingLegendScores({ reason: `leaderboard-${reason}` });
+      }
 
-    (async () => {
+      if (isOffline()) {
+        renderOffline();
+        return;
+      }
+
+      renderSkeletonRows(5);
+      updateStatus('Chargement du classement…', { variant: 'loading', showRetry: false });
+
       try {
-        renderError('Chargement du classement…');
         const topResult = await scoreService.fetchLegendTop(20);
         const entries = Array.isArray(topResult?.entries) ? topResult.entries : [];
+        const errorReason = topResult?.error?.reason || topResult?.error || null;
 
         let sticky = null;
         if (typeof scoreService.fetchMyLegendRank === 'function') {
@@ -760,7 +850,7 @@
         if (playerIds.size > 0 && typeof scoreService.fetchLegendReferralCounts === 'function') {
           const referralResult = await scoreService.fetchLegendReferralCounts(Array.from(playerIds));
           if (referralResult?.error) {
-            console.warn('[leaderboard] referral counts unavailable', referralResult.error);
+            logDebug?.('[leaderboard] referral counts unavailable', referralResult.error);
           }
           if (Array.isArray(referralResult?.rows)) {
             referralCountsByPlayer = buildReferralCountMap(referralResult.rows);
@@ -768,13 +858,40 @@
         }
 
         renderTop(entries);
-        renderError(topResult?.error ? 'Classement indisponible pour le moment.' : '');
+        const hasError = Boolean(errorReason);
+        if (hasError && entries.length === 0) {
+          if (isOffline() || errorReason === 'TRANSIENT') {
+            renderOffline();
+          } else {
+            renderUnavailable('Leaderboard indisponible pour le moment.');
+          }
+          renderSticky(sticky);
+          return;
+        }
+        updateStatus(
+          hasError ? 'Leaderboard indisponible pour le moment.' : '',
+          { variant: hasError ? 'error' : 'success', showRetry: hasError }
+        );
         renderSticky(sticky);
       } catch (error) {
-        console.warn('[leaderboard] rendering failed', error);
-        renderError('Impossible de charger le leaderboard.');
+        logDebug?.('[leaderboard] rendering failed', error);
+        renderUnavailable('Impossible de charger le leaderboard.');
       }
-    })();
+    };
+
+    const onlineHandler = () => loadLeaderboard({ reason: 'online' });
+    addEventFn(global.window || global, 'online', onlineHandler, { passive: true });
+    registerTeardown(() => removeEventFn(global.window || global, 'online', onlineHandler, { passive: true }));
+
+    if (retryEl) {
+      addEventFn(retryEl, inputApi.tap, (evt) => {
+        if (evt?.preventDefault) evt.preventDefault();
+        if (evt?.stopPropagation) evt.stopPropagation();
+        loadLeaderboard({ reason: 'retry' });
+      }, { passive: false });
+    }
+
+    loadLeaderboard({ reason: 'open' });
   }
 
   function renderRulesPanel(options = {}) {
