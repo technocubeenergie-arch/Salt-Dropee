@@ -161,8 +161,8 @@ async function fetchReferralStatsForPlayer(playerId) {
     }
 
     const { data, error } = await supabase
-      .from('referral_rewards')
-      .select('credited_count')
+      .from('referral_stats_by_player')
+      .select('player_id, referrals_total, referrals_validated_legend')
       .eq('player_id', playerId)
       .maybeSingle();
 
@@ -171,17 +171,20 @@ async function fetchReferralStatsForPlayer(playerId) {
       return { ok: false, reason: 'LOAD_FAILED' };
     }
 
-    if (!data) {
-      console.info(`[referral] no referral stats yet for player ${playerId}`);
-      return { ok: true, creditedCount: 0 };
-    }
-
-    const creditedCount = Number.isInteger(data?.credited_count)
-      ? Math.max(0, data.credited_count)
+    const safeTotal = Number.isInteger(data?.referrals_total)
+      ? Math.max(0, data.referrals_total)
+      : 0;
+    const safeValidated = Number.isInteger(data?.referrals_validated_legend)
+      ? Math.max(0, data.referrals_validated_legend)
       : 0;
 
-    console.info(`[referral] loaded referral stats for player ${playerId}: ${creditedCount}`);
-    return { ok: true, creditedCount };
+    console.info('[referral] loaded referral stats for player', {
+      playerId,
+      total: safeTotal,
+      validated: safeValidated,
+    });
+
+    return { ok: true, totalCount: safeTotal, validatedCount: safeValidated };
   } catch (error) {
     console.warn('[referral] unexpected referral stats failure', error);
     return { ok: false, reason: 'LOAD_FAILED' };
@@ -193,7 +196,7 @@ async function fetchReferralStatsForCurrentPlayer() {
   const playerId = authState?.profile?.id || null;
 
   if (!authState?.user || !playerId) {
-    return { ok: true, creditedCount: 0 };
+    return { ok: true, totalCount: 0, validatedCount: 0 };
   }
 
   return fetchReferralStatsForPlayer(playerId);
