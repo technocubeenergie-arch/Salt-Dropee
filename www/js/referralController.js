@@ -160,28 +160,37 @@ async function fetchReferralStatsForPlayer(playerId) {
       return { ok: false, reason: 'LOAD_FAILED' };
     }
 
-    const { data, error } = await supabase
-      .from('referral_rewards')
-      .select('credited_count')
-      .eq('player_id', playerId)
-      .maybeSingle();
+    const { count: totalCount, error: totalError } = await supabase
+      .from('referrals')
+      .select('*', { count: 'exact', head: true })
+      .eq('referrer_id', playerId);
 
-    if (error && error.code !== 'PGRST116') {
-      console.warn('[referral] failed to load referral stats', describeError(error));
+    if (totalError) {
+      console.warn('[referral] failed to load total referral stats', describeError(totalError));
       return { ok: false, reason: 'LOAD_FAILED' };
     }
 
-    if (!data) {
-      console.info(`[referral] no referral stats yet for player ${playerId}`);
-      return { ok: true, creditedCount: 0 };
+    const { count: validatedCount, error: validatedError } = await supabase
+      .from('referrals')
+      .select('*', { count: 'exact', head: true })
+      .eq('referrer_id', playerId)
+      .not('referee_validated_at', 'is', null);
+
+    if (validatedError) {
+      console.warn('[referral] failed to load validated referral stats', describeError(validatedError));
+      return { ok: false, reason: 'LOAD_FAILED' };
     }
 
-    const creditedCount = Number.isInteger(data?.credited_count)
-      ? Math.max(0, data.credited_count)
-      : 0;
+    const safeTotal = Number.isInteger(totalCount) ? Math.max(0, totalCount) : 0;
+    const safeValidated = Number.isInteger(validatedCount) ? Math.max(0, validatedCount) : 0;
 
-    console.info(`[referral] loaded referral stats for player ${playerId}: ${creditedCount}`);
-    return { ok: true, creditedCount };
+    console.info('[referral] loaded referral stats for player', {
+      playerId,
+      total: safeTotal,
+      validated: safeValidated,
+    });
+
+    return { ok: true, totalCount: safeTotal, validatedCount: safeValidated };
   } catch (error) {
     console.warn('[referral] unexpected referral stats failure', error);
     return { ok: false, reason: 'LOAD_FAILED' };
@@ -193,7 +202,7 @@ async function fetchReferralStatsForCurrentPlayer() {
   const playerId = authState?.profile?.id || null;
 
   if (!authState?.user || !playerId) {
-    return { ok: true, creditedCount: 0 };
+    return { ok: true, totalCount: 0, validatedCount: 0 };
   }
 
   return fetchReferralStatsForPlayer(playerId);
