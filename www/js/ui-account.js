@@ -372,7 +372,7 @@
     }
 
     if (state.user) {
-      let referralStats = { ok: true, creditedCount: 0 };
+      let referralStats = { ok: true, totalCount: 0, validatedCount: 0 };
       const referralService = getReferralService();
       if (referralService && typeof referralService.fetchReferralStatsForCurrentPlayer === 'function') {
         try {
@@ -385,12 +385,12 @@
         }
       }
 
-      const creditedCount = referralStats?.ok ? Math.max(0, referralStats.creditedCount || 0) : 0;
+      const totalCount = referralStats?.ok ? Math.max(0, referralStats.totalCount || 0) : 0;
+      const validatedCount = referralStats?.ok ? Math.max(0, referralStats.validatedCount || 0) : 0;
       const referralStatsLine = referralStats?.ok
-        ? (creditedCount > 0
-          ? `<p class="account-field-note account-field-readonly">Tu as déjà parrainé ${creditedCount === 1 ? '1 joueur.' : `${creditedCount} joueurs.`}</p>`
-          : '<p class="account-field-note account-field-readonly account-referral-empty">Tu n’as pas encore parrainé de joueur.</p>')
-        : '';
+        ? `<p class="account-field-note account-field-readonly">Parrainés : ${totalCount}</p>
+              <p class="account-field-note account-field-readonly${validatedCount === 0 ? ' account-referral-empty' : ''}">Validés Legend : ${validatedCount}</p>`
+        : '<p class="account-field-note account-field-readonly account-referral-empty">Statistiques de parrainage indisponibles.</p>';
 
       const profileUsername = state.profile?.username || '';
       const safeProfileUsername = escapeHtml(profileUsername);
