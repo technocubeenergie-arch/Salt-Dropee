@@ -610,8 +610,8 @@ async function fetchLegendReferralCounts(playerIds = []) {
     }
 
     const { data, error } = await supabase
-      .from('referral_rewards')
-      .select('player_id, credited_count')
+      .from('referral_stats_by_player')
+      .select('player_id, referrals_validated_legend')
       .in('player_id', uniqueIds);
 
     if (error) {

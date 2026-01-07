@@ -13,6 +13,9 @@
   - Seuls les enregistrements avec `level = 6` attestent d’un run Legend éligible à la validation.
 - `referral_rewards` : suivi du crédit de récompenses par parrain.
   - `credited_count` : compteur de validations déjà créditées pour un parrain ; sert à calculer les gains et à éviter les doublons.
+- Vue `referral_stats_by_player` : expose les compteurs côté client.
+  - `referrals_total` : total des filleuls rattachés au parrain (tous confondus).
+  - `referrals_validated_legend` : nombre de filleuls validés Legend (`referee_validated_at` non nul).
 
 ## Fonction SQL principale : `validate_referral_on_legend_run(p_referee_id uuid)`
 - **Quand elle est appelée** : immédiatement après qu’un run Legend (niveau 6) du joueur `p_referee_id` a été enregistré dans `scores`. Le client déclenche un RPC Supabase vers cette fonction dès que le score est persistant.
@@ -37,10 +40,23 @@
 - **À faire** :
   - Enregistrer un score Legend (niveau 6) dans `scores` après un run réussi.
   - Appeler `validate_referral_on_legend_run(p_referee_id)` via Supabase juste après la persistance du score.
+  - Charger les stats via `referral_stats_by_player` et appliquer les bonus gameplay uniquement sur `referrals_validated_legend`.
 - **À ne pas faire** :
   - Comptabiliser les validations ou décrémenter/incrémenter des compteurs.
   - Implémenter une logique de validation, de filtrage ou de déduplication côté application.
   - Tenter de contourner les protections anti-doublons ou de créditer manuellement des récompenses.
+
+## Règles de calcul côté client (UI & gameplay)
+- **Parrainés total** = `referrals_total` (tous les filleuls).
+- **Validés Legend** = `referrals_validated_legend` (filleuls avec `referee_validated_at`).
+- **Récompenses gameplay** = calculées **uniquement** à partir de `referrals_validated_legend`.
+
+### Flow résumé (anti-triche)
+1. Run Legend (niveau 6) enregistré dans `scores`.
+2. RPC `validate_referral_on_legend_run` → met à jour `referrals.referee_validated_at`.
+3. Trigger côté DB → crédite `referral_rewards.credited_count`.
+4. Client lit `referral_stats_by_player.referrals_validated_legend`.
+5. Bonus in-game appliqués selon les paliers configurés.
 
 ## Philosophie générale
 - Séparation stricte client / backend : le client se limite à envoyer des faits (score Legend) et à demander la validation ; la base applique la décision.
