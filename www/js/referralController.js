@@ -160,29 +160,28 @@ async function fetchReferralStatsForPlayer(playerId) {
       return { ok: false, reason: 'LOAD_FAILED' };
     }
 
-    const { count: totalCount, error: totalError } = await supabase
-      .from('referrals')
-      .select('*', { count: 'exact', head: true })
-      .eq('referrer_id', playerId);
+    const { data, error } = await supabase
+      .from('referral_stats_by_player')
+      .select('player_id, referrals_total, referrals_validated_legend')
+      .eq('player_id', playerId)
+      .maybeSingle();
 
-    if (totalError) {
-      console.warn('[referral] failed to load total referral stats', describeError(totalError));
+    if (error) {
+      console.warn('[referral] failed to load referral stats', describeError(error));
       return { ok: false, reason: 'LOAD_FAILED' };
     }
 
-    const { count: validatedCount, error: validatedError } = await supabase
-      .from('referrals')
-      .select('*', { count: 'exact', head: true })
-      .eq('referrer_id', playerId)
-      .not('referee_validated_at', 'is', null);
 
-    if (validatedError) {
-      console.warn('[referral] failed to load validated referral stats', describeError(validatedError));
-      return { ok: false, reason: 'LOAD_FAILED' };
+    if (!data) {
+      console.info(`[referral] no referral stats yet for player ${playerId}`);
     }
 
-    const safeTotal = Number.isInteger(totalCount) ? Math.max(0, totalCount) : 0;
-    const safeValidated = Number.isInteger(validatedCount) ? Math.max(0, validatedCount) : 0;
+    const safeTotal = Number.isInteger(data?.referrals_total)
+      ? Math.max(0, data.referrals_total)
+      : 0;
+    const safeValidated = Number.isInteger(data?.referrals_validated_legend)
+      ? Math.max(0, data.referrals_validated_legend)
+      : 0;
 
     console.info('[referral] loaded referral stats for player', {
       playerId,
