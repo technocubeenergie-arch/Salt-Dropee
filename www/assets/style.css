@@ -629,6 +629,7 @@ body.is-inter-level #hud {
   max-width: 350px;         /* Largeur fixe max pour mobile */
   height: 600px;            /* Hauteur FIXE (ne change pas avec clavier) */
   max-height: 600px;        /* Hauteur FIXE max */
+  --account-footer-h: 76px;
   /* Position absolue pour éviter le recentrage flex quand le clavier s'ouvre */
   position: absolute;
   top: 50%;
@@ -645,15 +646,18 @@ body.is-inter-level #hud {
 .account-panel-body {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
   gap: 14px;
   overflow: auto;
   -webkit-overflow-scrolling: touch;
-  padding-bottom: 14px; /* Espace en bas pour que le scroll montre tout le contenu */
+  padding-bottom: calc(var(--account-footer-h) + 12px); /* Espace en bas pour que le scroll montre tout le contenu */
 }
 
 .account-panel .panel-footer {
   flex: 0 0 auto;
   margin-top: auto;
+  height: var(--account-footer-h);
 }
 .account-auth-header {
   display: flex;
