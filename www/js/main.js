@@ -912,7 +912,7 @@ async function loadLevel(index, options = {}) {
     applyLegendShieldBoost(legendBoosts.extraShields);
   }
 
-  setHUDLegendBoost(legendBoostLevel, legendRunActive);
+  setHUDLegendBoost(legendBoostLevel, true);
 
   if (applyBackground && immediateBackground) {
     const eagerBgSrc = L?.background;
