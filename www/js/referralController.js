@@ -166,8 +166,8 @@ async function fetchReferralStatsForPlayer(playerId) {
       .eq('player_id', playerId)
       .maybeSingle();
 
-    if (error && error.code !== 'PGRST116') {
-      console.warn('[referral] failed to load referral stats', describeError(error));
+    if (totalError) {
+      console.warn('[referral] failed to load total referral stats', describeError(totalError));
       return { ok: false, reason: 'LOAD_FAILED' };
     }
 
