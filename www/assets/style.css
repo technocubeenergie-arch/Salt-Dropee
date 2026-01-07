@@ -695,9 +695,13 @@ body.is-inter-level #hud {
   font-size: 0.9rem;
 }
 
-.account-panel .btnrow.account-referral-actions {
-  justify-content: flex-start !important; /* Override .btnrow center alignment */
-  margin-top: 12px; /* Espacement après le champ de saisie */
+.account-panel .account-referral-redeem .btnrow.account-referral-actions {
+  justify-content: center;
+  margin-top: 12px;
+}
+
+.account-panel .account-referral-redeem .btnrow.account-referral-actions button {
+  width: auto;
 }
 
 .account-form {
