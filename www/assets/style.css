@@ -639,15 +639,21 @@ body.is-inter-level #hud {
   /* Empêcher le flex de rétrécir le panel */
   flex-shrink: 0;
   /* Scroll interne si nécessaire (ex: clavier mobile) */
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
+  overflow: hidden;
 }
 
 .account-panel-body {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  padding-bottom: 20px; /* Espace en bas pour que le scroll montre tout le contenu */
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 14px; /* Espace en bas pour que le scroll montre tout le contenu */
+}
+
+.account-panel .panel-footer {
+  flex: 0 0 auto;
+  margin-top: auto;
 }
 .account-auth-header {
   display: flex;
