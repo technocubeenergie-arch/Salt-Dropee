@@ -292,7 +292,8 @@
           <p class="panel-subtitle">Gestion du profil et des récompenses.</p>
         </div>
         <div class="panel-grid account-panel-body" data-account-body></div>
-        <div class="panel-footer">
+        <div class="panel-footer account-panel-footer">
+          <div class="btnrow panel-actions" data-account-footer-actions></div>
           <p class="account-message" data-account-message role="status" aria-live="polite"></p>
         </div>
       </div>`;
@@ -302,6 +303,7 @@
     const body = overlay.querySelector('[data-account-body]');
     const messageEl = overlay.querySelector('[data-account-message]');
     const titleEl = overlay.querySelector('#accountTitle');
+    const footerActionsEl = overlay.querySelector('[data-account-footer-actions]');
 
     const setAccountTitle = (text = '') => {
       if (!titleEl) return;
@@ -316,6 +318,11 @@
       messageEl.classList.remove('is-error', 'is-success');
       if (variant === 'error') messageEl.classList.add('is-error');
       if (variant === 'success') messageEl.classList.add('is-success');
+    };
+
+    const setFooterActions = (html = '') => {
+      if (!footerActionsEl) return;
+      footerActionsEl.innerHTML = html;
     };
 
     if (accountFlashMessage) {
@@ -341,11 +348,9 @@
           <section class="panel-section panel-card">
             <h2 class="panel-title">Service indisponible</h2>
             <p>Le service de compte est désactivé sur cette version.</p>
-          </section>
-          <div class="panel-footer">
-            <div class="btnrow panel-actions"><button type="button" data-account-close>Retour</button></div>
-          </div>`;
+          </section>`;
       }
+      setFooterActions('<button type="button" data-account-close>Retour</button>');
       setMessage('Authentification indisponible.', 'error');
       wireCloseButtons();
       return;
@@ -357,11 +362,9 @@
           <section class="panel-section panel-card">
             <h2 class="panel-title">Connexion en cours</h2>
             <p>Connexion au service d’authentification…</p>
-          </section>
-          <div class="panel-footer">
-            <div class="btnrow panel-actions"><button type="button" data-account-close>Retour</button></div>
-          </div>`;
+          </section>`;
       }
+      setFooterActions('<button type="button" data-account-close>Retour</button>');
       if (state.lastError) {
         setMessage(state.lastError, 'error');
       } else {
@@ -434,13 +437,12 @@
       if (body) {
         body.innerHTML = `
           ${referralSection}
-          <div class="panel-footer">
-            <div class="btnrow panel-actions">
-              <button type="button" id="btnAccountSignOut">Se déconnecter</button>
-              <button type="button" data-account-close>Fermer</button>
-            </div>
-          </div>`;
+          `;
       }
+      setFooterActions(`
+        <button type="button" id="btnAccountSignOut">Se déconnecter</button>
+        <button type="button" data-account-close>Fermer</button>
+      `);
       wireCloseButtons();
       const signOutBtn = global.document?.getElementById('btnAccountSignOut');
       if (signOutBtn) {
@@ -720,6 +722,7 @@
           </form>
         </section>`;
     }
+    setFooterActions('');
     wireCloseButtons();
     const form = overlay.querySelector('[data-account-form]');
     const switchBtn = overlay.querySelector('[data-account-switch]');
