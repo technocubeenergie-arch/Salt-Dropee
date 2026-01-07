@@ -567,7 +567,7 @@
       const map = new Map();
       rows.forEach((row) => {
         if (!row?.player_id) return;
-        const numeric = Number(row.credited_count);
+        const numeric = Number(row.referrals_validated_legend);
         map.set(row.player_id, Number.isFinite(numeric) ? numeric : 0);
       });
       return map;

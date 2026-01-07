@@ -822,14 +822,11 @@ body.is-inter-level #hud {
   gap:2px;
   font-variant-numeric: tabular-nums;
 }
-.hud-legend-boost-label{
-  font-size:.8rem;
-  letter-spacing:0.06em;
-  opacity:.85;
-}
-.hud-legend-boost-value{
-  font-size:1rem;
-  font-weight:800;
+.hud-legend-boost-badge{
+  width:28px;
+  height:28px;
+  object-fit:contain;
+  display:block;
 }
 
 /* Score 2 lignes */

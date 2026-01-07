@@ -297,19 +297,28 @@ async function fetchLegendBoostsForCurrentPlayer() {
   }
 
   legendBoostsPromise = (async () => {
-    const countResult = await fetchEventReferralCountForPlayer(profile.id);
-    if (!countResult.ok) {
+    const statsResult = await fetchReferralStatsForPlayer(profile.id);
+    if (!statsResult.ok) {
       cachedLegendBoostsResult = { ok: true, boosts: { ...DEFAULT_LEGEND_BOOSTS }, referralCount: 0 };
       cachedLegendBoostsProfileId = profile.id;
       return cachedLegendBoostsResult;
     }
 
-    const boosts = mapReferralCountToLegendBoosts(countResult.count);
-    cachedLegendBoostsResult = { ok: true, boosts, referralCount: countResult.count };
+    const validatedLegendCount = Number.isFinite(statsResult.validatedCount)
+      ? Math.max(0, Math.floor(statsResult.validatedCount))
+      : 0;
+    const boosts = mapReferralCountToLegendBoosts(validatedLegendCount);
+    cachedLegendBoostsResult = {
+      ok: true,
+      boosts,
+      referralCount: validatedLegendCount,
+      validatedLegendCount,
+    };
     cachedLegendBoostsProfileId = profile.id;
 
+    console.info('[referral] referral bonus: validatedLegend=%d -> applied', validatedLegendCount, boosts);
     console.info('[referral] legend boosts ready', {
-      referralCount: countResult.count,
+      validatedLegend: validatedLegendCount,
       boosts,
     });
 
