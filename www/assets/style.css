@@ -1190,3 +1190,14 @@ body.is-inter-level #hud {
   margin-top: 6px;
   justify-content: center;
 }
+
+/* PR#1 — Hide scrollbar in Account overlay while keeping scroll */
+.account-panel .panel-grid.account-panel-body {
+  overflow-y: auto;               /* keep scroll */
+  scrollbar-width: none;          /* Firefox */
+  -ms-overflow-style: none;       /* IE/old Edge */
+}
+.account-panel .panel-grid.account-panel-body::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
