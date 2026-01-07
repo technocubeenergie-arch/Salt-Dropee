@@ -139,15 +139,20 @@
 
   function setHUDLegendBoost(level, shouldShow, color) {
     const container = global.document?.getElementById('hudLegendBoost');
-    const valueEl = global.document?.getElementById('hudLegendBoostValue');
-    if (!container || !valueEl) return;
+    const badgeEl = global.document?.getElementById('hudLegendBoostBadge');
+    if (!container || !badgeEl) return;
 
-    const visible = Boolean(shouldShow) && Math.max(0, Number(level) || 0) > 0;
+    const safeLevel = Math.max(0, Math.floor(Number(level) || 0));
+    const visible = Boolean(shouldShow) && safeLevel > 0;
     container.style.display = visible ? 'flex' : 'none';
 
     if (visible) {
-      valueEl.textContent = `Lvl ${Math.floor(level)}`;
       container.style.color = color || '#fff';
+      badgeEl.src = `assets/badge${safeLevel}.png`;
+      badgeEl.alt = `Badge boost niveau ${safeLevel}`;
+    } else {
+      badgeEl.removeAttribute('src');
+      badgeEl.alt = 'Badge boost indisponible';
     }
   }
 
