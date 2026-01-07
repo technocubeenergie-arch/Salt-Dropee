@@ -272,8 +272,8 @@
     const timeSeconds = Math.max(0, Math.floor(g.timeLeft ?? 0));
     setHUDTime(timeSeconds);
 
-    const legendBoostLevel = Math.max(0, Math.floor(Number(g?.legendBoostLevel) || 0));
-    setHUDLegendBoost(legendBoostLevel, true, color);
+    const badgeLevel = Math.max(0, Math.floor(Number(g?.referralBadgeLevel) || 0));
+    setHUDLegendBoost(badgeLevel, true, color);
 
     const metrics = { x, y, w, h };
 
