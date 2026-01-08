@@ -662,7 +662,7 @@ let levelEnded = false;
 let legendScoreSubmissionAttempted = false;
 let legendRunActive = false;
 
-const DEFAULT_LEGEND_BOOSTS = { timeBonusSeconds: 0, extraShields: 0, scoreMultiplier: 1 };
+const DEFAULT_LEGEND_BOOSTS = { timeBonusSeconds: 0, extraShields: 0, scoreMultiplier: 1, referralBadgeLevel: 0 };
 let legendBoostsCache = null;
 let legendBoostsPromise = null;
 let legendBoostsCacheProfileId = null;
@@ -673,6 +673,29 @@ function getLegendBoostLevelFromMultiplier(multiplier) {
   if (multiplier >= 1.10) return 2;
   if (multiplier > 1.0)  return 1;
   return 0;
+}
+
+function getReferralBadgeLevelFromValidatedCount(count) {
+  const n = Math.max(0, Math.floor(Number(count) || 0));
+  if (n >= 20) return 7;
+  if (n >= 12) return 6;
+  if (n >= 8) return 5;
+  if (n >= 5) return 4;
+  if (n >= 3) return 3;
+  if (n >= 1) return 2;
+  return 0;
+}
+
+function applyReferralBadgeLevel(level) {
+  const safeLevel = Math.max(0, Math.floor(Number(level) || 0));
+  const instance = game || (typeof Game !== 'undefined' ? Game.instance : null) || null;
+  if (instance) {
+    instance.referralBadgeLevel = safeLevel;
+  }
+  if (typeof setHUDLegendBoost === 'function') {
+    setHUDLegendBoost(safeLevel, true);
+  }
+  return safeLevel;
 }
 
 function canEndLevel(){
@@ -723,6 +746,10 @@ async function loadLegendBoostsForSession() {
       const result = await referralService.fetchLegendBoostsForCurrentPlayer();
       if (result?.ok && result.boosts) {
         const normalized = { ...DEFAULT_LEGEND_BOOSTS, ...result.boosts };
+        const derivedBadgeLevel = Number.isFinite(result.validatedLegendCount)
+          ? getReferralBadgeLevelFromValidatedCount(result.validatedLegendCount)
+          : getReferralBadgeLevelFromValidatedCount(result.referralCount);
+        normalized.referralBadgeLevel = applyReferralBadgeLevel(derivedBadgeLevel);
         logInfo?.('[referral] legend boosts applied', {
           referralCount: typeof result.referralCount === 'number' ? result.referralCount : undefined,
           boosts: normalized,
@@ -873,6 +900,13 @@ async function loadLevel(index, options = {}) {
   resetIntraLevelSpeedRamp(levelState.timeLimit);
 
   const instance = game || Game.instance || null;
+  const currentReferralBadgeLevel = Math.max(
+    0,
+    Math.floor(Number(instance?.referralBadgeLevel) || 0)
+  );
+  const referralBadgeLevel = legendRunActive
+    ? Math.max(0, Math.floor(Number(legendBoosts.referralBadgeLevel) || 0))
+    : currentReferralBadgeLevel;
   const { bg, wallet, music } = await ensureLevelAssets(index);
 
   if (legendRunActive) {
@@ -898,6 +932,7 @@ async function loadLevel(index, options = {}) {
       : L.targetScore;
     instance.legendScoreMultiplier = legendScoreMult;
     instance.legendBoostLevel = legendBoostLevel;
+    instance.referralBadgeLevel = referralBadgeLevel;
     if (instance.arm && typeof instance.arm.applyLevelSpeed === "function") {
       instance.arm.applyLevelSpeed(index + 1);
     }
@@ -912,7 +947,7 @@ async function loadLevel(index, options = {}) {
     applyLegendShieldBoost(legendBoosts.extraShields);
   }
 
-  setHUDLegendBoost(legendBoostLevel, legendRunActive);
+  applyReferralBadgeLevel(referralBadgeLevel);
 
   if (applyBackground && immediateBackground) {
     const eagerBgSrc = L?.background;
@@ -1644,7 +1679,8 @@ class Game{
       leaveTitleScreen({ stopMusic: true });
       setLevelMusic(null);
     }
-    this.timeLeft=CONFIG.runSeconds; this.timeElapsed=0; this.lives=CONFIG.lives; this.score=0; this.comboStreak=0; this.comboMult=comboTiers[0].mult; this.maxCombo=0; this.levelReached=1; this.legendScoreMultiplier=1; this.legendBoostLevel=0;
+    const currentReferralBadgeLevel = Math.max(0, Math.floor(Number(this.referralBadgeLevel) || 0));
+    this.timeLeft=CONFIG.runSeconds; this.timeElapsed=0; this.lives=CONFIG.lives; this.score=0; this.comboStreak=0; this.comboMult=comboTiers[0].mult; this.maxCombo=0; this.levelReached=1; this.legendScoreMultiplier=1; this.legendBoostLevel=0; this.referralBadgeLevel=currentReferralBadgeLevel;
     if (gsap?.killTweensOf) {
       gsap.killTweensOf(comboVis);
     }
@@ -1654,6 +1690,7 @@ class Game{
     this.items=[]; this.effects={invert:0}; this.fx = new FxManager(this);
     this.shake=0; this.bgIndex=0; this.didFirstCatch=false; this.updateBgByScore();
     loadLevel(currentLevelIndex, { applyBackground: !showTitle, playMusic: !showTitle, immediateBackground: !showTitle });
+    loadLegendBoostsForSession().catch(() => {});
     if (showTitle) this.renderTitle(); else this.render();
   }
   diffMult(){ return Math.pow(CONFIG.spawnRampFactor, Math.floor(this.timeElapsed/CONFIG.spawnRampEverySec)); }
