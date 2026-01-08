@@ -136,6 +136,10 @@
 
     const opts = (options && typeof options === "object") ? options : {};
     const screenAlreadyVisible = screen.classList.contains("show");
+    const body = global.document?.body || null;
+    if (body) {
+      body.classList.remove('is-legend-level');
+    }
 
     clearMainOverlay(screen);
 

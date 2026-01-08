@@ -615,6 +615,7 @@ function enterTitleScreen() {
   setProgressApplicationEnabled(false);
   if (typeof document !== 'undefined' && document.body) {
     document.body.classList.add('is-title');
+    document.body.classList.remove('is-legend-level');
   }
   if (typeof overlay !== 'undefined' && overlay) {
     overlay.classList.remove('overlay-rules');
@@ -870,6 +871,9 @@ async function loadLevel(index, options = {}) {
   legendScoreSubmissionAttempted = false;
   legendRunActive = isLegendLevel(index);
   setActiveHandVariant(legendRunActive ? 'legend' : 'default');
+  if (typeof document !== 'undefined' && document.body) {
+    document.body.classList.toggle('is-legend-level', legendRunActive);
+  }
 
   if (legendRunActive) {
     const eagerLegendWallet = levelAssets[index]?.wallet || (typeof getLegendWalletImage === 'function' ? getLegendWalletImage() : null);

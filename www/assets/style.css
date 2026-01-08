@@ -81,6 +81,51 @@ body * {
   transition: none;
 }
 
+#legendBgOverlay {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  opacity: 0;
+  transition: none;
+  pointer-events: none;
+  z-index: 1;
+}
+
+body.is-legend-level #legendBgOverlay {
+  background-image: url("./fondniveau61.webp");
+  animation: legend-bg-flash 30.3s linear infinite;
+  animation-timing-function: steps(1, end);
+}
+
+@keyframes legend-bg-flash {
+  0% {
+    opacity: 0;
+  }
+  39.6% {
+    opacity: 0;
+  }
+  40.1% {
+    opacity: 1;
+  }
+  40.59% {
+    opacity: 0;
+  }
+  60.39% {
+    opacity: 0;
+  }
+  60.88% {
+    opacity: 1;
+  }
+  61.37% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
 body.is-title #gameCanvas,
 body.is-title #hud {
   visibility: hidden;

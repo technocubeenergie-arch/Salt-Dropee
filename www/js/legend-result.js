@@ -10,7 +10,11 @@
     const screen = global.document.getElementById("legendResultScreen");
     const title = global.document.getElementById("legendTitle");
     const message = global.document.getElementById("legendMessage");
+    const body = global.document?.body || null;
     if (!screen) return;
+    if (body) {
+      body.classList.remove('is-legend-level');
+    }
 
     global.clearMainOverlay(screen);
 
