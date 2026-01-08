@@ -167,7 +167,9 @@ body.is-inter-level #hud {
   align-items: stretch;
   justify-content: center;
   /* Padding fixe condensé pour rester dans le canvas */
-  padding: 20px 10px;
+  --title-overlay-pad-y: 20px;
+  --title-overlay-pad-x: 10px;
+  padding: var(--title-overlay-pad-y) var(--title-overlay-pad-x);
 }
 
 #overlay {
@@ -589,6 +591,11 @@ body.is-inter-level #hud {
 
 .progress-busy-overlay[data-busy="true"] {
   display: flex;
+}
+
+.overlay.overlay-title .progress-busy-overlay {
+  inset: calc(-1 * var(--title-overlay-pad-y, 0px))
+    calc(-1 * var(--title-overlay-pad-x, 0px));
 }
 
 .progress-busy-card {
