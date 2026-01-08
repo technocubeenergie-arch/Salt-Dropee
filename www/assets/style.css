@@ -84,18 +84,19 @@ body * {
 #legendBgOverlay {
   position: absolute;
   inset: 0;
-  background-image: url("./fondniveau61.webp");
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
   opacity: 0;
-  transition: opacity 0.2s ease;
+  transition: none;
   pointer-events: none;
   z-index: 1;
 }
 
 body.is-legend-level #legendBgOverlay {
+  background-image: url("./fondniveau61.webp");
   animation: legend-bg-flash 10s linear infinite;
+  animation-timing-function: steps(1, end);
 }
 
 @keyframes legend-bg-flash {
@@ -103,18 +104,12 @@ body.is-legend-level #legendBgOverlay {
     opacity: 1;
   }
   10% {
-    opacity: 1;
-  }
-  10.001% {
     opacity: 0;
   }
   50% {
-    opacity: 0;
-  }
-  55% {
     opacity: 1;
   }
-  55.001% {
+  55% {
     opacity: 0;
   }
   100% {
