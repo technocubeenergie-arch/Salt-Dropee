@@ -582,7 +582,7 @@ body.is-inter-level #hud {
   display: none;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 0;
   background: rgba(0, 0, 0, 0.45);
   pointer-events: none;
 }
