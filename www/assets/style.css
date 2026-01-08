@@ -815,7 +815,7 @@ body.is-inter-level #hud {
   display:none;
   align-items:flex-end;
   text-align:right;
-  padding:0;
+  padding:0px 55px;
   border-radius:0;
   background:none;
   line-height:1.05;
