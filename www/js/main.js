@@ -675,6 +675,17 @@ function getLegendBoostLevelFromMultiplier(multiplier) {
   return 0;
 }
 
+function getReferralBadgeLevelFromValidatedCount(count) {
+  const n = Math.max(0, Math.floor(Number(count) || 0));
+  if (n >= 20) return 7;
+  if (n >= 12) return 6;
+  if (n >= 8) return 5;
+  if (n >= 5) return 4;
+  if (n >= 3) return 3;
+  if (n >= 1) return 2;
+  return 0;
+}
+
 function applyReferralBadgeLevel(level) {
   const safeLevel = Math.max(0, Math.floor(Number(level) || 0));
   const instance = game || (typeof Game !== 'undefined' ? Game.instance : null) || null;
@@ -735,9 +746,9 @@ async function loadLegendBoostsForSession() {
       const result = await referralService.fetchLegendBoostsForCurrentPlayer();
       if (result?.ok && result.boosts) {
         const normalized = { ...DEFAULT_LEGEND_BOOSTS, ...result.boosts };
-        const derivedBadgeLevel = Number.isFinite(result.referralBadgeLevel)
-          ? result.referralBadgeLevel
-          : getLegendBoostLevelFromMultiplier(normalized.scoreMultiplier);
+        const derivedBadgeLevel = Number.isFinite(result.validatedLegendCount)
+          ? getReferralBadgeLevelFromValidatedCount(result.validatedLegendCount)
+          : getReferralBadgeLevelFromValidatedCount(result.referralCount);
         normalized.referralBadgeLevel = applyReferralBadgeLevel(derivedBadgeLevel);
         logInfo?.('[referral] legend boosts applied', {
           referralCount: typeof result.referralCount === 'number' ? result.referralCount : undefined,
