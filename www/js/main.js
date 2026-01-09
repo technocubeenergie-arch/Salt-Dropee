@@ -666,6 +666,7 @@ const legendBgFlashState = {
   lastScore: 0,
   triggeredScores: new Set(),
   soundTimeouts: new Map(),
+  hapticTimeouts: new Map(),
 };
 
 const DEFAULT_LEGEND_BOOSTS = { timeBonusSeconds: 0, extraShields: 0, scoreMultiplier: 1, referralBadgeLevel: 0 };
@@ -711,6 +712,10 @@ function resetLegendBgFlashState() {
     clearTimeout(timeoutId);
   }
   legendBgFlashState.soundTimeouts.clear();
+  for (const timeoutId of legendBgFlashState.hapticTimeouts.values()) {
+    clearTimeout(timeoutId);
+  }
+  legendBgFlashState.hapticTimeouts.clear();
   if (typeof resetLegendBgFlash === 'function') {
     resetLegendBgFlash();
   }
@@ -750,6 +755,19 @@ function updateLegendBgFlashForScore(nextScore) {
         }
       }, 1000);
       legendBgFlashState.soundTimeouts.set(threshold, timeoutId);
+    }
+    if (!legendBgFlashState.hapticTimeouts.has(threshold)) {
+      const timeoutId = setTimeout(() => {
+        legendBgFlashState.hapticTimeouts.delete(threshold);
+        const instance = game || (typeof Game !== 'undefined' ? Game.instance : null);
+        const hapticsEnabled = !!instance?.settings?.haptics;
+        if (hapticsEnabled && typeof navigator !== 'undefined' && navigator.vibrate) {
+          try {
+            navigator.vibrate(1000);
+          } catch (_) {}
+        }
+      }, 1500);
+      legendBgFlashState.hapticTimeouts.set(threshold, timeoutId);
     }
     shouldFlash = true;
   }
