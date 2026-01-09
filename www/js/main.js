@@ -764,7 +764,7 @@ function scheduleLegendFlashSequence(sequenceId, threshold, config) {
 
   const {
     bgSrc,
-    flashDurationMs = 200,
+    flashDurationMs = 300,
     soundName,
     soundDelayMs = 0,
     hapticDelayMs = 0,
@@ -839,7 +839,7 @@ function updateLegendBgFlashForScore(nextScore) {
       shouldTrigger: shouldTriggerLegendBgFlashScore,
       config: {
         bgSrc: 'assets/fondniveau61.webp',
-        flashDurationMs: 200,
+        flashDurationMs: 300,
         soundName: 'thunder',
         soundDelayMs: 1000,
         hapticDelayMs: 1500,
@@ -851,7 +851,7 @@ function updateLegendBgFlashForScore(nextScore) {
       shouldTrigger: shouldTriggerLegendBgFlashScoreTierTwo,
       config: {
         bgSrc: 'assets/fondniveau62.webp',
-        flashDurationMs: 200,
+        flashDurationMs: 300,
         soundName: 'thunder1',
         soundDelayMs: 200,
         hapticDelayMs: 700,
