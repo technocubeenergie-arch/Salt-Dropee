@@ -7,7 +7,8 @@ const sounds = {
   bonusok: new Audio("assets/sounds/bonusok.mp3"),
   off: new Audio("assets/sounds/off.mp3"),
   forcefield: new Audio("assets/sounds/forcefield.mp3"),
-  zap: new Audio("assets/sounds/zap.mp3")
+  zap: new Audio("assets/sounds/zap.mp3"),
+  thunder: new Audio("assets/sounds/thunder.mp3")
 };
 
 let soundEnabled = true; // ON par défaut (prévoir un toggle plus tard)

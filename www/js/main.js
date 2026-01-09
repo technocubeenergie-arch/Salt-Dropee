@@ -665,6 +665,7 @@ let legendRunActive = false;
 const legendBgFlashState = {
   lastScore: 0,
   triggeredScores: new Set(),
+  soundTimeouts: new Map(),
 };
 
 const DEFAULT_LEGEND_BOOSTS = { timeBonusSeconds: 0, extraShields: 0, scoreMultiplier: 1, referralBadgeLevel: 0 };
@@ -706,6 +707,10 @@ function applyReferralBadgeLevel(level) {
 function resetLegendBgFlashState() {
   legendBgFlashState.lastScore = 0;
   legendBgFlashState.triggeredScores.clear();
+  for (const timeoutId of legendBgFlashState.soundTimeouts.values()) {
+    clearTimeout(timeoutId);
+  }
+  legendBgFlashState.soundTimeouts.clear();
   if (typeof resetLegendBgFlash === 'function') {
     resetLegendBgFlash();
   }
@@ -737,6 +742,15 @@ function updateLegendBgFlashForScore(nextScore) {
     if (!shouldTriggerLegendBgFlashScore(threshold)) continue;
     if (legendBgFlashState.triggeredScores.has(threshold)) continue;
     legendBgFlashState.triggeredScores.add(threshold);
+    if (!legendBgFlashState.soundTimeouts.has(threshold)) {
+      const timeoutId = setTimeout(() => {
+        legendBgFlashState.soundTimeouts.delete(threshold);
+        if (typeof playSound === 'function') {
+          playSound('thunder');
+        }
+      }, 1000);
+      legendBgFlashState.soundTimeouts.set(threshold, timeoutId);
+    }
     shouldFlash = true;
   }
 
