@@ -662,6 +662,10 @@ let gameState = "playing";  // "playing" | "paused" | "inter"
 let levelEnded = false;
 let legendScoreSubmissionAttempted = false;
 let legendRunActive = false;
+const legendBgFlashState = {
+  lastScore: 0,
+  triggeredScores: new Set(),
+};
 
 const DEFAULT_LEGEND_BOOSTS = { timeBonusSeconds: 0, extraShields: 0, scoreMultiplier: 1, referralBadgeLevel: 0 };
 let legendBoostsCache = null;
@@ -699,6 +703,48 @@ function applyReferralBadgeLevel(level) {
   return safeLevel;
 }
 
+function resetLegendBgFlashState() {
+  legendBgFlashState.lastScore = 0;
+  legendBgFlashState.triggeredScores.clear();
+  if (typeof resetLegendBgFlash === 'function') {
+    resetLegendBgFlash();
+  }
+}
+
+function shouldTriggerLegendBgFlashScore(scoreValue) {
+  if (!Number.isFinite(scoreValue)) return false;
+  const value = Math.max(0, Math.floor(scoreValue));
+  if (value === 0) return false;
+  return value % 1000 === 0 && value % 3000 !== 0;
+}
+
+function updateLegendBgFlashForScore(nextScore) {
+  const prevScore = legendBgFlashState.lastScore;
+  legendBgFlashState.lastScore = nextScore;
+
+  if (!legendRunActive || gameState !== "playing") return;
+
+  const prev = Math.max(0, Math.floor(Number(prevScore) || 0));
+  const next = Math.max(0, Math.floor(Number(nextScore) || 0));
+  if (next <= prev) return;
+
+  const startBucket = Math.floor(prev / 1000);
+  const endBucket = Math.floor(next / 1000);
+  let shouldFlash = false;
+
+  for (let bucket = startBucket + 1; bucket <= endBucket; bucket += 1) {
+    const threshold = bucket * 1000;
+    if (!shouldTriggerLegendBgFlashScore(threshold)) continue;
+    if (legendBgFlashState.triggeredScores.has(threshold)) continue;
+    legendBgFlashState.triggeredScores.add(threshold);
+    shouldFlash = true;
+  }
+
+  if (shouldFlash && typeof triggerLegendBgFlash === 'function') {
+    triggerLegendBgFlash();
+  }
+}
+
 function canEndLevel(){
   return !levelEnded && gameState === "playing";
 }
@@ -706,6 +752,7 @@ function canEndLevel(){
 function resetLegendState(options = {}) {
   const { resetLevelIndex = false } = options;
   legendRunActive = false;
+  resetLegendBgFlashState();
   if (resetLevelIndex) {
     currentLevelIndex = 0;
     window.currentLevelIndex = currentLevelIndex;
@@ -874,6 +921,7 @@ async function loadLevel(index, options = {}) {
   if (typeof document !== 'undefined' && document.body) {
     document.body.classList.toggle('is-legend-level', legendRunActive);
   }
+  resetLegendBgFlashState();
 
   if (legendRunActive) {
     const eagerLegendWallet = levelAssets[index]?.wallet || (typeof getLegendWalletImage === 'function' ? getLegendWalletImage() : null);
@@ -1741,6 +1789,7 @@ class Game{
       score = this.score;
       lives = this.lives;
       timeLeft = this.timeLeft;
+      updateLegendBgFlashForScore(this.score);
       return;
     }
 
@@ -1796,6 +1845,7 @@ class Game{
       }
     }
     this.items = remaining;
+    updateLegendBgFlashForScore(this.score);
     updateActiveBonuses(dt);
     updateControlInversionTimer(this, dt);
     this.updateBgByScore(); if (this.shake>0) this.shake = Math.max(0, this.shake - dt*6);
