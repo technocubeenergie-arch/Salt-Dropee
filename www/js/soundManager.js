@@ -12,10 +12,25 @@ const sounds = {
   thunder1: new Audio("assets/sounds/thunder1.mp3")
 };
 
+const audioState = window.SD_AUDIO_STATE || (window.SD_AUDIO_STATE = {});
+if (!audioState.trackedAudio) {
+  audioState.trackedAudio = new Set();
+}
+if (!audioState.trackedMeta) {
+  audioState.trackedMeta = new Map();
+}
+Object.values(sounds).forEach((aud) => {
+  if (!aud) return;
+  audioState.trackedAudio.add(aud);
+  audioState.trackedMeta.set(aud, { role: 'sfx' });
+});
+
 let soundEnabled = true; // ON par défaut (prévoir un toggle plus tard)
 
 function playSound(name) {
   if (!soundEnabled) return;
+  if (audioState.audioPausedByGamePause) return;
+  if (window.SD_AUDIO?.isAudioPausedByGamePause?.()) return;
   const s = sounds[name];
   if (!s) return;
   try {

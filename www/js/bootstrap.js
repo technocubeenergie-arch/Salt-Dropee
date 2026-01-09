@@ -86,9 +86,9 @@
     // Application tardive d'une progression Supabase si elle s'est résolue pendant le rendu initial.
     await applyPendingProgressIfPossible();
 
-    addEvent(document, 'visibilitychange', ()=>{ if (document.hidden && game.state==='playing'){ const now = performance.now(); if (game.ignoreVisibilityUntil && now < game.ignoreVisibilityUntil) return; resetPointerDragState({ releaseCapture: true }); game.state='paused'; game.renderPause(); } });
+    addEvent(document, 'visibilitychange', ()=>{ if (document.hidden && game.state==='playing'){ const now = performance.now(); if (game.ignoreVisibilityUntil && now < game.ignoreVisibilityUntil) return; resetPointerDragState({ releaseCapture: true }); window.SD_AUDIO?.pauseAllAudio?.({ reason: 'visibility' }); game.state='paused'; game.renderPause(); } });
 
-    addEvent(canvas, INPUT.tap, (e)=>{ if (game.state!=='playing') return; const now=performance.now(); if (game.ignoreClicksUntil && now < game.ignoreClicksUntil) return; const pt=getCanvasPointSafe(e); if (pt.y<40 && pt.x>BASE_W-80){ playSound("click"); game.state='paused'; game.renderPause(); } });
+    addEvent(canvas, INPUT.tap, (e)=>{ if (game.state!=='playing') return; const now=performance.now(); if (game.ignoreClicksUntil && now < game.ignoreClicksUntil) return; const pt=getCanvasPointSafe(e); if (pt.y<40 && pt.x>BASE_W-80){ playSound("click"); window.SD_AUDIO?.pauseAllAudio?.({ reason: 'ui-pause' }); game.state='paused'; game.renderPause(); } });
 
     game.render();
   }
