@@ -169,6 +169,35 @@
     ease: "back.out(2.2)",
   };
 
+  const legendBgFlashState = {
+    timeoutId: null,
+  };
+
+  function triggerLegendBgFlash(durationMs = 200) {
+    const el = global.document?.getElementById('legendBgOverlay');
+    if (!el) return;
+
+    el.style.opacity = 1;
+    if (legendBgFlashState.timeoutId) {
+      clearTimeout(legendBgFlashState.timeoutId);
+    }
+    legendBgFlashState.timeoutId = setTimeout(() => {
+      el.style.opacity = 0;
+      legendBgFlashState.timeoutId = null;
+    }, durationMs);
+  }
+
+  function resetLegendBgFlash() {
+    const el = global.document?.getElementById('legendBgOverlay');
+    if (legendBgFlashState.timeoutId) {
+      clearTimeout(legendBgFlashState.timeoutId);
+      legendBgFlashState.timeoutId = null;
+    }
+    if (el) {
+      el.style.opacity = 0;
+    }
+  }
+
   function getHudBonusState(type) {
     if (!hudBonusPopState[type]) {
       hudBonusPopState[type] = { scale: 1, tween: null };
@@ -465,6 +494,8 @@
     comboVis,
     triggerHudBonusPop,
     getHudBonusScale,
+    triggerLegendBgFlash,
+    resetLegendBgFlash,
     showOverlay,
     hideOverlay,
     getOverlayElements,
