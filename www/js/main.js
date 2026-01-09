@@ -2004,6 +2004,7 @@ class Game{
     }
 
     this.titleStartInFlight = true;
+    stopMenuMusic();
 
     try {
       setProgressApplicationEnabled(true);

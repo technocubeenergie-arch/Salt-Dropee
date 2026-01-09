@@ -185,9 +185,11 @@
   function getMenuMusic() {
     if (!menuMusic) {
       menuMusic = new Audio(MENU_MUSIC_SRC);
-      menuMusic.loop = true;
-      menuMusic.preload = "auto";
+    } else if (!menuMusic.src) {
+      menuMusic.src = MENU_MUSIC_SRC;
     }
+    menuMusic.loop = true;
+    menuMusic.preload = "auto";
     return menuMusic;
   }
 
@@ -198,8 +200,23 @@
   }
 
   function stopMenuMusic() {
+    if (!menuMusic) return;
+    if (gsap?.killTweensOf) {
+      gsap.killTweensOf(menuMusic);
+    }
+    try {
+      menuMusic.pause();
+      menuMusic.currentTime = 0;
+    } catch (_) {}
+    menuMusic.loop = false;
+    if (menuMusic.src) {
+      try {
+        menuMusic.removeAttribute('src');
+        menuMusic.load();
+      } catch (_) {}
+    }
     if (currentMusic === menuMusic) {
-      setLevelMusic(null);
+      currentMusic = null;
     }
   }
 
