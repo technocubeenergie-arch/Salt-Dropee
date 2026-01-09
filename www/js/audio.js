@@ -20,6 +20,20 @@
     ? inputApi.removeEvent
     : (target, type, handler, opts) => target?.removeEventListener?.(type, handler, opts);
 
+  const audioState = global.SD_AUDIO_STATE || (global.SD_AUDIO_STATE = {});
+  if (!audioState.trackedAudio) {
+    audioState.trackedAudio = new Set();
+  }
+  if (!audioState.trackedMeta) {
+    audioState.trackedMeta = new Map();
+  }
+  if (!audioState.pausedSnapshot) {
+    audioState.pausedSnapshot = new Map();
+  }
+  if (typeof audioState.audioPausedByGamePause !== 'boolean') {
+    audioState.audioPausedByGamePause = false;
+  }
+
   let currentMusic = null;
   const musicVolume = 0.6;
   let musicEnabled = true;
@@ -31,6 +45,29 @@
   if (typeof global.isSoundEnabled === 'function') {
     try {
       musicEnabled = !!global.isSoundEnabled();
+    } catch (_) {}
+  }
+
+  function registerAudioElement(audio, meta = {}) {
+    if (!audio) return;
+    audioState.trackedAudio.add(audio);
+    const existing = audioState.trackedMeta.get(audio) || {};
+    audioState.trackedMeta.set(audio, { ...existing, ...meta });
+  }
+
+  function getAudioRole(audio) {
+    return audioState.trackedMeta.get(audio)?.role || 'sfx';
+  }
+
+  function pauseAudioElement(audio, { reset = false } = {}) {
+    if (!audio) return;
+    try {
+      if (!audio.paused) {
+        audio.pause();
+      }
+      if (reset) {
+        audio.currentTime = 0;
+      }
     } catch (_) {}
   }
 
@@ -60,6 +97,7 @@
     audio.loop = false;
     audio.volume = 0.9;
 
+    registerAudioElement(audio, { role: 'sfx' });
     interLevelAudio = { element: audio, src };
     return audio;
   }
@@ -75,6 +113,7 @@
   }
 
   function playInterLevelAudioForLevel(levelIndex) {
+    if (audioState.audioPausedByGamePause) return;
     if (!canPlayInterLevelAudio()) return;
     const src = getInterLevelSoundSrc(levelIndex);
     if (!src) return;
@@ -124,6 +163,9 @@
     if (!aud || !musicEnabled) {
       return Promise.resolve(false);
     }
+    if (audioState.audioPausedByGamePause) {
+      return Promise.resolve(false);
+    }
 
     if (gsap && typeof gsap.killTweensOf === 'function') {
       gsap.killTweensOf(aud);
@@ -164,6 +206,7 @@
     if (!currentMusic) {
       return;
     }
+    registerAudioElement(currentMusic, { role: 'music' });
     if (!sameAudio) {
       try {
         currentMusic.currentTime = 0;
@@ -190,11 +233,15 @@
     }
     menuMusic.loop = true;
     menuMusic.preload = "auto";
+    registerAudioElement(menuMusic, { role: 'music' });
     return menuMusic;
   }
 
   function playMenuMusic() {
     unlockMusicOnce();
+    if (audioState.audioPausedByGamePause) {
+      return;
+    }
     const audio = getMenuMusic();
     setLevelMusic(audio);
   }
@@ -274,9 +321,70 @@
     }
   }
 
+  function pauseAllAudio({ reason } = {}) {
+    audioState.audioPausedByGamePause = true;
+    audioState.pausedSnapshot.clear();
+
+    for (const audio of audioState.trackedAudio) {
+      if (!audio) continue;
+      const role = getAudioRole(audio);
+      const wasPlaying = !audio.paused;
+      if (wasPlaying) {
+        audioState.pausedSnapshot.set(audio, {
+          role,
+          time: Number.isFinite(audio.currentTime) ? audio.currentTime : 0,
+        });
+      }
+      if (role === 'music') {
+        pauseAudioElement(audio, { reset: false });
+      } else {
+        pauseAudioElement(audio, { reset: true });
+      }
+    }
+
+    const audioContext = global.SD_AUDIO_CONTEXT || global.audioContext || null;
+    if (audioContext && typeof audioContext.suspend === 'function' && audioContext.state === 'running') {
+      audioContext.suspend().catch(() => {});
+    }
+  }
+
+  function resumeAllAudio({ reason } = {}) {
+    if (reason !== 'user-resume') return false;
+    if (!audioState.audioPausedByGamePause) return false;
+
+    audioState.audioPausedByGamePause = false;
+
+    const audioContext = global.SD_AUDIO_CONTEXT || global.audioContext || null;
+    if (audioContext && typeof audioContext.resume === 'function' && audioContext.state === 'suspended') {
+      audioContext.resume().catch(() => {});
+    }
+
+    const activeScreen = typeof global.getActiveScreen === 'function' ? global.getActiveScreen() : null;
+    const gameState = global.gameState;
+    const game = global.game;
+    const isPlaying = gameState === 'playing' || game?.state === 'playing';
+    const isTitle = activeScreen === 'title' || game?.state === 'title';
+
+    if (currentMusic) {
+      if (currentMusic === menuMusic) {
+        if (isTitle) {
+          safePlayMusic(currentMusic);
+        }
+      } else if (isPlaying) {
+        safePlayMusic(currentMusic);
+      }
+    }
+
+    return true;
+  }
+
   global.setSoundEnabled = patchedSetSoundEnabled;
 
   const exported = {
+    registerAudioElement,
+    pauseAllAudio,
+    resumeAllAudio,
+    isAudioPausedByGamePause: () => audioState.audioPausedByGamePause,
     playMenuMusic,
     stopMenuMusic,
     setLevelMusic,

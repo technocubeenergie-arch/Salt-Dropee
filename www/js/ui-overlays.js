@@ -287,6 +287,9 @@
       setReturnView = () => {},
     } = options;
 
+    if (typeof global.SD_AUDIO?.pauseAllAudio === 'function') {
+      global.SD_AUDIO.pauseAllAudio({ reason: 'ui-pause' });
+    }
     setActiveScreen('paused', { via: 'renderPause' });
     overlayEl.classList.remove('overlay-title');
     setReturnView();
@@ -311,6 +314,9 @@
     showExclusiveOverlay(overlayEl);
     addEvent(global.document?.getElementById('resume'), INPUT.tap, ()=>{
       playSound("click");
+      if (typeof global.SD_AUDIO?.resumeAllAudio === 'function') {
+        global.SD_AUDIO.resumeAllAudio({ reason: 'user-resume' });
+      }
       overlayEl.innerHTML='';
       hideOverlay(overlayEl);
       onResume();
