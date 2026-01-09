@@ -33,6 +33,12 @@
   if (typeof audioState.audioPausedByGamePause !== 'boolean') {
     audioState.audioPausedByGamePause = false;
   }
+  if (!Object.prototype.hasOwnProperty.call(audioState, 'lastRequestedMusic')) {
+    audioState.lastRequestedMusic = null;
+  }
+  if (!Object.prototype.hasOwnProperty.call(audioState, 'lastRequestedMusicType')) {
+    audioState.lastRequestedMusicType = null;
+  }
 
   let currentMusic = null;
   const musicVolume = 0.6;
@@ -203,6 +209,10 @@
       tryFadeOut(currentMusic);
     }
     currentMusic = audio || null;
+    audioState.lastRequestedMusic = currentMusic;
+    audioState.lastRequestedMusicType = currentMusic
+      ? (currentMusic === menuMusic ? 'menu' : 'level')
+      : null;
     if (!currentMusic) {
       return;
     }
@@ -239,9 +249,6 @@
 
   function playMenuMusic() {
     unlockMusicOnce();
-    if (audioState.audioPausedByGamePause) {
-      return;
-    }
     const audio = getMenuMusic();
     setLevelMusic(audio);
   }
@@ -264,6 +271,10 @@
     }
     if (currentMusic === menuMusic) {
       currentMusic = null;
+    }
+    if (audioState.lastRequestedMusic === menuMusic) {
+      audioState.lastRequestedMusic = null;
+      audioState.lastRequestedMusicType = null;
     }
   }
 
@@ -351,7 +362,6 @@
   function resumeAllAudio({ reason } = {}) {
     if (reason !== 'user-resume') return false;
     if (!audioState.audioPausedByGamePause) return false;
-
     audioState.audioPausedByGamePause = false;
 
     const audioContext = global.SD_AUDIO_CONTEXT || global.audioContext || null;
@@ -359,20 +369,12 @@
       audioContext.resume().catch(() => {});
     }
 
-    const activeScreen = typeof global.getActiveScreen === 'function' ? global.getActiveScreen() : null;
-    const gameState = global.gameState;
-    const game = global.game;
-    const isPlaying = gameState === 'playing' || game?.state === 'playing';
-    const isTitle = activeScreen === 'title' || game?.state === 'title';
-
-    if (currentMusic) {
-      if (currentMusic === menuMusic) {
-        if (isTitle) {
-          safePlayMusic(currentMusic);
-        }
-      } else if (isPlaying) {
-        safePlayMusic(currentMusic);
-      }
+    const desiredMusic = audioState.lastRequestedMusic || currentMusic;
+    if (desiredMusic) {
+      try {
+        desiredMusic.muted = false;
+      } catch (_) {}
+      safePlayMusic(desiredMusic);
     }
 
     return true;
