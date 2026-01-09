@@ -177,7 +177,7 @@
     const el = global.document?.getElementById('legendBgOverlay');
     if (!el) return;
 
-    const { durationMs = 300, src } = options;
+    const { durationMs = 450, src } = options;
     if (typeof src === 'string' && src.trim()) {
       el.style.backgroundImage = `url("${src}")`;
     }
