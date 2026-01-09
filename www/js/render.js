@@ -173,10 +173,14 @@
     timeoutId: null,
   };
 
-  function triggerLegendBgFlash(durationMs = 200) {
+  function triggerLegendBgFlash(options = {}) {
     const el = global.document?.getElementById('legendBgOverlay');
     if (!el) return;
 
+    const { durationMs = 200, src } = options;
+    if (typeof src === 'string' && src.trim()) {
+      el.style.backgroundImage = `url("${src}")`;
+    }
     el.style.opacity = 1;
     if (legendBgFlashState.timeoutId) {
       clearTimeout(legendBgFlashState.timeoutId);
@@ -195,6 +199,7 @@
     }
     if (el) {
       el.style.opacity = 0;
+      el.style.backgroundImage = '';
     }
   }
 

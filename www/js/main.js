@@ -664,9 +664,7 @@ let legendScoreSubmissionAttempted = false;
 let legendRunActive = false;
 const legendBgFlashState = {
   lastScore: 0,
-  triggeredScores: new Set(),
-  soundTimeouts: new Map(),
-  hapticTimeouts: new Map(),
+  sequences: {},
 };
 
 const DEFAULT_LEGEND_BOOSTS = { timeBonusSeconds: 0, extraShields: 0, scoreMultiplier: 1, referralBadgeLevel: 0 };
@@ -707,15 +705,26 @@ function applyReferralBadgeLevel(level) {
 
 function resetLegendBgFlashState() {
   legendBgFlashState.lastScore = 0;
-  legendBgFlashState.triggeredScores.clear();
-  for (const timeoutId of legendBgFlashState.soundTimeouts.values()) {
-    clearTimeout(timeoutId);
-  }
-  legendBgFlashState.soundTimeouts.clear();
-  for (const timeoutId of legendBgFlashState.hapticTimeouts.values()) {
-    clearTimeout(timeoutId);
-  }
-  legendBgFlashState.hapticTimeouts.clear();
+  const sequences = Object.values(legendBgFlashState.sequences || {});
+  sequences.forEach((sequence) => {
+    sequence.triggeredScores.clear();
+    for (const timeoutId of sequence.frameTimeouts.values()) {
+      clearTimeout(timeoutId);
+    }
+    for (const timeoutId of sequence.soundTimeouts.values()) {
+      clearTimeout(timeoutId);
+    }
+    for (const timeoutId of sequence.hapticTimeouts.values()) {
+      clearTimeout(timeoutId);
+    }
+    for (const timeoutId of sequence.hapticStopTimeouts.values()) {
+      clearTimeout(timeoutId);
+    }
+    sequence.frameTimeouts.clear();
+    sequence.soundTimeouts.clear();
+    sequence.hapticTimeouts.clear();
+    sequence.hapticStopTimeouts.clear();
+  });
   if (typeof resetLegendBgFlash === 'function') {
     resetLegendBgFlash();
   }
@@ -726,6 +735,90 @@ function shouldTriggerLegendBgFlashScore(scoreValue) {
   const value = Math.max(0, Math.floor(scoreValue));
   if (value === 0) return false;
   return value % 1000 === 0 && value % 3000 !== 0;
+}
+
+function shouldTriggerLegendBgFlashScoreTierTwo(scoreValue) {
+  if (!Number.isFinite(scoreValue)) return false;
+  const value = Math.max(0, Math.floor(scoreValue));
+  if (value === 0) return false;
+  return value % 3000 === 0;
+}
+
+function getLegendFlashSequenceState(id) {
+  if (!legendBgFlashState.sequences[id]) {
+    legendBgFlashState.sequences[id] = {
+      triggeredScores: new Set(),
+      frameTimeouts: new Map(),
+      soundTimeouts: new Map(),
+      hapticTimeouts: new Map(),
+      hapticStopTimeouts: new Map(),
+    };
+  }
+  return legendBgFlashState.sequences[id];
+}
+
+function scheduleLegendFlashSequence(sequenceId, threshold, config) {
+  const sequenceState = getLegendFlashSequenceState(sequenceId);
+  if (sequenceState.triggeredScores.has(threshold)) return false;
+  sequenceState.triggeredScores.add(threshold);
+
+  const {
+    bgSrc,
+    flashDurationMs = 200,
+    soundName,
+    soundDelayMs = 0,
+    hapticDelayMs = 0,
+    hapticDurationMs = 0,
+  } = config;
+
+  logDebug?.('[legend-flash]', { sequence: sequenceId, threshold, event: 'frame-on' });
+  if (typeof triggerLegendBgFlash === 'function') {
+    triggerLegendBgFlash({ durationMs: flashDurationMs, src: bgSrc });
+  }
+
+  if (!sequenceState.frameTimeouts.has(threshold)) {
+    const frameTimeoutId = setTimeout(() => {
+      sequenceState.frameTimeouts.delete(threshold);
+      logDebug?.('[legend-flash]', { sequence: sequenceId, threshold, event: 'frame-off' });
+    }, flashDurationMs);
+    sequenceState.frameTimeouts.set(threshold, frameTimeoutId);
+  }
+
+  if (soundName && !sequenceState.soundTimeouts.has(threshold)) {
+    const timeoutId = setTimeout(() => {
+      sequenceState.soundTimeouts.delete(threshold);
+      logDebug?.('[legend-flash]', { sequence: sequenceId, threshold, event: 'sound-start', soundName });
+      if (typeof playSound === 'function') {
+        playSound(soundName);
+      }
+    }, soundDelayMs);
+    sequenceState.soundTimeouts.set(threshold, timeoutId);
+  }
+
+  if (hapticDurationMs > 0 && !sequenceState.hapticTimeouts.has(threshold)) {
+    const timeoutId = setTimeout(() => {
+      sequenceState.hapticTimeouts.delete(threshold);
+      const instance = game || (typeof Game !== 'undefined' ? Game.instance : null);
+      const hapticsEnabled = !!instance?.settings?.haptics;
+      logDebug?.('[legend-flash]', { sequence: sequenceId, threshold, event: 'haptic-start' });
+      if (hapticsEnabled && typeof navigator !== 'undefined' && navigator.vibrate) {
+        try {
+          navigator.vibrate(hapticDurationMs);
+        } catch (_) {}
+      }
+    }, hapticDelayMs);
+    sequenceState.hapticTimeouts.set(threshold, timeoutId);
+  }
+
+  if (hapticDurationMs > 0 && !sequenceState.hapticStopTimeouts.has(threshold)) {
+    const stopTimeoutId = setTimeout(() => {
+      sequenceState.hapticStopTimeouts.delete(threshold);
+      logDebug?.('[legend-flash]', { sequence: sequenceId, threshold, event: 'haptic-stop' });
+    }, hapticDelayMs + hapticDurationMs);
+    sequenceState.hapticStopTimeouts.set(threshold, stopTimeoutId);
+  }
+
+  return true;
 }
 
 function updateLegendBgFlashForScore(nextScore) {
@@ -740,40 +833,39 @@ function updateLegendBgFlashForScore(nextScore) {
 
   const startBucket = Math.floor(prev / 1000);
   const endBucket = Math.floor(next / 1000);
-  let shouldFlash = false;
+  const sequences = [
+    {
+      id: 'legend61',
+      shouldTrigger: shouldTriggerLegendBgFlashScore,
+      config: {
+        bgSrc: 'assets/fondniveau61.webp',
+        flashDurationMs: 200,
+        soundName: 'thunder',
+        soundDelayMs: 1000,
+        hapticDelayMs: 1500,
+        hapticDurationMs: 1000,
+      },
+    },
+    {
+      id: 'legend62',
+      shouldTrigger: shouldTriggerLegendBgFlashScoreTierTwo,
+      config: {
+        bgSrc: 'assets/fondniveau62.webp',
+        flashDurationMs: 200,
+        soundName: 'thunder1',
+        soundDelayMs: 200,
+        hapticDelayMs: 700,
+        hapticDurationMs: 1500,
+      },
+    },
+  ];
 
   for (let bucket = startBucket + 1; bucket <= endBucket; bucket += 1) {
     const threshold = bucket * 1000;
-    if (!shouldTriggerLegendBgFlashScore(threshold)) continue;
-    if (legendBgFlashState.triggeredScores.has(threshold)) continue;
-    legendBgFlashState.triggeredScores.add(threshold);
-    if (!legendBgFlashState.soundTimeouts.has(threshold)) {
-      const timeoutId = setTimeout(() => {
-        legendBgFlashState.soundTimeouts.delete(threshold);
-        if (typeof playSound === 'function') {
-          playSound('thunder');
-        }
-      }, 1000);
-      legendBgFlashState.soundTimeouts.set(threshold, timeoutId);
-    }
-    if (!legendBgFlashState.hapticTimeouts.has(threshold)) {
-      const timeoutId = setTimeout(() => {
-        legendBgFlashState.hapticTimeouts.delete(threshold);
-        const instance = game || (typeof Game !== 'undefined' ? Game.instance : null);
-        const hapticsEnabled = !!instance?.settings?.haptics;
-        if (hapticsEnabled && typeof navigator !== 'undefined' && navigator.vibrate) {
-          try {
-            navigator.vibrate(1000);
-          } catch (_) {}
-        }
-      }, 1500);
-      legendBgFlashState.hapticTimeouts.set(threshold, timeoutId);
-    }
-    shouldFlash = true;
-  }
-
-  if (shouldFlash && typeof triggerLegendBgFlash === 'function') {
-    triggerLegendBgFlash();
+    sequences.forEach((sequence) => {
+      if (!sequence.shouldTrigger(threshold)) return;
+      scheduleLegendFlashSequence(sequence.id, threshold, sequence.config);
+    });
   }
 }
 
